@@ -242,4 +242,33 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         const body = await popup.evaluate(() => document.body.innerText);
         expect(body).toMatch(/0x[0-9a-f]{4,}…?[0-9a-f]{0,8}/i);
     });
+
+    it("deploys a token end-to-end from the UI", async () => {
+        // Home → "+ Deploy"
+        await clickByText(popup, "+ Deploy");
+        await popup.waitForSelector("input[placeholder*='Acme']", { timeout: 30_000 });
+
+        await popup.type("input[placeholder*='Acme']", "Smoke Coin");
+        await popup.type("input[placeholder='ACME']", "SMC");
+
+        // Click Deploy and verify the button immediately reflects busy state —
+        // a "click does nothing" regression fails here.
+        await clickByText(popup, "Deploy token");
+        await popup.waitForFunction(
+            () => document.body.innerText.includes("Deploying…"),
+            { timeout: 10_000, polling: 250 },
+        );
+
+        // Account activation (if first tx) + proving + inclusion.
+        await popup.waitForFunction(
+            () => {
+                const t = document.body.innerText;
+                return t.includes("Token deployed") || t.toLowerCase().includes("error");
+            },
+            { timeout: 300_000, polling: 2_000 },
+        );
+        const body = await popup.evaluate(() => document.body.innerText);
+        expect(body).toContain("Token deployed");
+        expect(consoleErrors.filter((e) => !/favicon/i.test(e)), consoleErrors.join("\n")).toHaveLength(0);
+    }, 360_000);
 });
