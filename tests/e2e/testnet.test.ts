@@ -157,28 +157,33 @@ describe.skipIf(!RUN)("testnet e2e — sponsored flows with real proofs", () => 
     it("sends PRIVATELY to an independent wallet on testnet; receiver discovers", async () => {
         await addContact(network.id, { address: main.toString(), label: "Main", source: "manual" }, walletB);
 
+        // DELTA-based: the receiver account is PERSISTENT on testnet, so its
+        // balance accumulates across runs — exact-equality assertions pass only
+        // on the first-ever run and then "fail" forever (learned the hard way).
+        const before = await getTokenBalance(walletB, receiver, token);
+
         await transfer({
             wallet: walletA, network, sender: main, tokenAddress, to: receiver,
             amount: u(25), mode: "private",
         });
 
-        const got = await waitFor(
+        await waitFor(
             async () => {
                 const b = await getTokenBalance(walletB, receiver, token);
-                return b.private === u(25) ? b : undefined;
+                return b.private === before.private + u(25);
             },
             { label: "receiver discovers private note on testnet", timeoutMs: 1_200_000, intervalMs: 20_000 },
         );
-        expect(got.public).toBe(0n);
     }, 1_500_000);
 
     it("sends PUBLICLY on testnet", async () => {
+        const before = await getTokenBalance(walletB, receiver, token);
         await transfer({
             wallet: walletA, network, sender: main, tokenAddress, to: receiver,
             amount: u(10), mode: "public",
         });
         await waitFor(
-            async () => (await getTokenBalance(walletB, receiver, token)).public === u(10),
+            async () => (await getTokenBalance(walletB, receiver, token)).public === before.public + u(10),
             { label: "public transfer reflected for receiver", timeoutMs: 900_000, intervalMs: 15_000 },
         );
     }, 1_200_000);
