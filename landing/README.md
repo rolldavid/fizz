@@ -1,7 +1,16 @@
 # Fizz landing page
 
-Self-contained static page — host the contents of this folder anywhere
-(GitHub Pages, Netlify, a $0 static bucket). No build step.
+Self-contained static page — no build step. Hosted target: **Railway**.
+
+## Deploy on Railway
+
+1. railway.app → New Project → **Deploy from GitHub repo** → `rolldavid/fizz`.
+2. Service settings:
+   - **Root Directory**: `landing`
+   - Railway auto-detects a static site (no build command, output = `.`).
+     If it asks: Build command — none; Start command — none (static).
+3. Networking → **Generate Domain** (or attach your custom domain).
+4. Stamp that domain into the share metadata (step below) and redeploy.
 
 ## Before deploying
 
