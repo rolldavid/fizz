@@ -1,0 +1,10 @@
+# Netlify config for the STATIC landing page (landing/).
+# This file overrides any UI-configured build settings — the landing is
+# plain HTML with no build step, so the command is intentionally empty.
+# (Without this, Netlify resolves `yarn run build` against the repo-root
+# package.json and tries to build the browser EXTENSION, which fails.)
+
+[build]
+  base    = "landing"
+  publish = "."
+  command = ""
