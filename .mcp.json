@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "aztec": {
+      "command": "npx",
+      "args": ["-y", "@aztec/mcp-server@latest"]
+    },
+    "noir": {
+      "command": "npx",
+      "args": ["-y", "noir-mcp-server@latest"]
+    }
+  }
+}

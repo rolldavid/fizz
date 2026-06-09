@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fizz — the lightweight private wallet for Aztec</title>
+    <meta name="description" content="Tokens with sparkle. Fizz is a lightweight browser-extension wallet for quick, low-value private transactions on the Aztec network." />
+
+    <!-- ⚠️ SHARE METADATA: link previews (Twitter/X especially) require ABSOLUTE
+         URLs. Before deploying, set your real domain in one shot:
+           sed -i '' 's|https://fizz-wallet.example|https://YOUR-DOMAIN|g' landing/index.html -->
+    <link rel="canonical" href="https://fizz-wallet.example/" />
+    <meta property="og:url" content="https://fizz-wallet.example/" />
+    <meta property="og:site_name" content="Fizz" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="Fizz — the lightweight private wallet for Aztec" />
+    <meta property="og:description" content="Quick, private, low-stakes. Send and receive private tokens on Aztec straight from your browser — keys and proofs never leave your device." />
+    <meta property="og:image" content="https://fizz-wallet.example/ogfizz.png" />
+    <meta property="og:image:secure_url" content="https://fizz-wallet.example/ogfizz.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="2400" />
+    <meta property="og:image:height" content="1260" />
+    <meta property="og:image:alt" content="Fizz — tokens with sparkle. A lightweight private wallet for the Aztec network." />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Fizz — the lightweight private wallet for Aztec" />
+    <meta name="twitter:description" content="Quick, private, low-stakes. Private tokens on Aztec straight from your browser — keys never leave your device." />
+    <meta name="twitter:image" content="https://fizz-wallet.example/ogfizz.png" />
+    <meta name="twitter:image:alt" content="Fizz — tokens with sparkle. A lightweight private wallet for the Aztec network." />
+
+    <meta name="theme-color" content="#140E24" />
+    <link rel="icon" type="image/png" href="./fizzmark.png" />
+    <link rel="apple-touch-icon" href="./fizzmark.png" />
+    <style>
+        :root {
+            --bg: #140e24;
+            --surface: #1f1735;
+            --surface-2: #2a1f3d;
+            --border-strong: #45356b;
+            --text: #f5f2fc;
+            --dim: #7b6fa8;
+            --accent: #ff5c94;
+            --purple: #a85dc2;
+            --blue: #5b8af5;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+        .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+        /* bubbles */
+        .bubbles { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+        .bubbles span {
+            position: absolute; bottom: -30px; border-radius: 50%;
+            opacity: 0; animation: rise 9s ease-in infinite;
+        }
+        .bubbles span:nth-child(1) { left: 8%;  width: 12px; height: 12px; background: rgba(255,92,148,.30); animation-duration: 8s; }
+        .bubbles span:nth-child(2) { left: 22%; width: 7px;  height: 7px;  background: rgba(91,138,245,.30); animation-duration: 11s; animation-delay: 2s; }
+        .bubbles span:nth-child(3) { left: 38%; width: 16px; height: 16px; background: rgba(168,93,194,.26); animation-duration: 9.5s; animation-delay: 1s; }
+        .bubbles span:nth-child(4) { left: 57%; width: 8px;  height: 8px;  background: rgba(255,92,148,.24); animation-duration: 12s; animation-delay: 3.5s; }
+        .bubbles span:nth-child(5) { left: 72%; width: 13px; height: 13px; background: rgba(91,138,245,.26); animation-duration: 8.6s; animation-delay: .6s; }
+        .bubbles span:nth-child(6) { left: 86%; width: 6px;  height: 6px;  background: rgba(255,92,148,.36); animation-duration: 10s; animation-delay: 2.8s; }
+        .bubbles span:nth-child(7) { left: 47%; width: 5px;  height: 5px;  background: rgba(168,93,194,.34); animation-duration: 13s; animation-delay: 5s; }
+        @keyframes rise {
+            0% { transform: translateY(0); opacity: 0; }
+            10% { opacity: 1; }
+            100% { transform: translateY(-105vh) translateX(12px); opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) { .bubbles { display: none; } }
+
+        header.hero { text-align: center; padding: 88px 0 56px; }
+        .hero img.logo { height: 110px; margin-bottom: 18px; }
+        .hero h1 { font-size: clamp(26px, 5vw, 40px); font-weight: 800; letter-spacing: -0.02em; }
+        .hero h1 em { font-style: normal; background: linear-gradient(135deg, var(--accent), var(--purple)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .hero p.sub { color: var(--dim); max-width: 560px; margin: 14px auto 0; font-size: 17px; }
+        .hero p.lightweight {
+            display: inline-block; margin-top: 18px; font-size: 13px; color: var(--dim);
+            border: 1px solid var(--border-strong); border-radius: 999px; padding: 6px 16px;
+            background: var(--surface);
+        }
+
+        .cta-row { display: flex; gap: 12px; justify-content: center; margin-top: 28px; flex-wrap: wrap; }
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px; font-weight: 700;
+            padding: 14px 26px; border-radius: 999px; text-decoration: none; font-size: 15px;
+            transition: transform .15s ease, box-shadow .15s ease;
+        }
+        .btn:active { transform: scale(.98); }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            color: #fff; box-shadow: 0 0 22px rgba(255,92,148,.35);
+        }
+        .btn-primary:hover { box-shadow: 0 0 30px rgba(255,92,148,.5); }
+        .btn-ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border-strong); }
+        .btn-ghost:hover { border-color: var(--accent); }
+
+        .benefits { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 48px 0; }
+        .benefit { background: var(--surface); border: 1px solid var(--surface-2); border-radius: 16px; padding: 20px; }
+        .benefit .emoji { font-size: 24px; }
+        .benefit h3 { font-size: 15px; margin: 8px 0 4px; }
+        .benefit p { color: var(--dim); font-size: 13px; }
+
+        .install { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 20px; padding: 28px; margin: 24px 0 56px; }
+        .install h2 { font-size: 20px; margin-bottom: 6px; }
+        .install p { color: var(--dim); font-size: 14px; }
+        .install ol { margin: 14px 0 0 20px; color: var(--dim); font-size: 14px; }
+        .install li { margin: 6px 0; }
+        .install code { background: var(--surface-2); border-radius: 6px; padding: 2px 7px; font-size: 12.5px; color: var(--text); }
+        .pill { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 3px 10px; margin-bottom: 10px; }
+
+        footer { border-top: 1px solid var(--surface-2); padding: 28px 0 48px; color: var(--dim); font-size: 13px; text-align: center; }
+        footer a { color: var(--dim); }
+        footer a:hover { color: var(--accent); }
+        .honesty { max-width: 640px; margin: 0 auto 16px; }
+    </style>
+</head>
+<body>
+    <div class="bubbles" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+
+    <div class="wrap">
+        <header class="hero">
+            <img class="logo" src="./fizzlogo.svg" alt="Fizz" />
+            <h1>Private tokens, <em>with sparkle</em>.</h1>
+            <p class="sub">
+                Fizz is a lightweight wallet for the Aztec network that lives in your browser.
+                Send and receive tokens privately, flip balances between private and public,
+                and mint your own — with zero-knowledge proofs generated right on your device.
+            </p>
+            <p class="lightweight">🫧 Built for quick, low-value transactions — pocket change, not vaults</p>
+            <div class="cta-row">
+                <!-- Swap for the Chrome Web Store URL at publish time. -->
+                <a class="btn btn-primary" href="#install">Add Fizz to Chrome</a>
+                <a class="btn btn-ghost" href="https://docs.aztec.network" target="_blank" rel="noopener noreferrer">What's Aztec?</a>
+            </div>
+        </header>
+
+        <section class="benefits">
+            <div class="benefit">
+                <div class="emoji">🔒</div>
+                <h3>Private by default</h3>
+                <p>Amounts, senders, and recipients stay hidden on-chain. Proofs are generated in your browser — your keys and data never leave the device.</p>
+            </div>
+            <div class="benefit">
+                <div class="emoji">⚡</div>
+                <h3>Start in seconds</h3>
+                <p>Network fees are sponsored on the Aztec testnet — make your first private transaction with an empty wallet. No bridging, no faucet queue.</p>
+            </div>
+            <div class="benefit">
+                <div class="emoji">🫧</div>
+                <h3>Two balances, one tap</h3>
+                <p>Every token has a private side and a public side. Convert between them whenever you like — shield when it matters, go public when it doesn't.</p>
+            </div>
+            <div class="benefit">
+                <div class="emoji">🚀</div>
+                <h3>Make your own token</h3>
+                <p>Deploy a standard Aztec token and mint supply — privately or publicly — straight from the popup. Great for experiments, communities, and games.</p>
+            </div>
+            <div class="benefit">
+                <div class="emoji">👥</div>
+                <h3>Multiple accounts</h3>
+                <p>Spin up separate accounts from one recovery phrase to keep activities unlinkable — one for funding, one for spending.</p>
+            </div>
+            <div class="benefit">
+                <div class="emoji">🪶</div>
+                <h3>Genuinely lightweight</h3>
+                <p>No servers, no accounts, no tracking. A small extension that talks directly to the Aztec node you choose — even your own.</p>
+            </div>
+        </section>
+
+        <section class="install" id="install">
+            <span class="pill">Alpha</span>
+            <h2>Install the extension</h2>
+            <p>
+                Fizz is in alpha on the Aztec testnet. The Chrome Web Store listing is coming soon —
+                until then, load it straight from the repo:
+            </p>
+            <ol>
+                <li>Download or clone the repo, then run <code>yarn install &amp;&amp; yarn build</code>.</li>
+                <li>Open <code>chrome://extensions</code> and switch on <strong>Developer mode</strong>.</li>
+                <li>Click <strong>Load unpacked</strong> and pick the <code>dist/</code> folder.</li>
+                <li>Pin Fizz to your toolbar and pop it open. 🫧</li>
+            </ol>
+        </section>
+
+        <footer>
+            <p class="honesty">
+                Fizz is a lightweight wallet designed for quick, low-value transactions on an
+                alpha network. It is not a vault — please don't keep more in it than you'd carry
+                in a pocket.
+            </p>
+            <p>
+                <a href="https://docs.aztec.network" target="_blank" rel="noopener noreferrer">Aztec network</a>
+                &nbsp;·&nbsp; open source &nbsp;·&nbsp; no analytics, ever
+            </p>
+        </footer>
+    </div>
+</body>
+</html>

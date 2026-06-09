@@ -1,0 +1,56 @@
+{
+  "name": "fizz-wallet",
+  "version": "0.1.0",
+  "description": "Fizz — dark-mode Aztec network browser-extension wallet. Private + public balances, in-browser PXE, passkey or mnemonic unlock.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest run --project unit",
+    "test:watch": "vitest --project unit",
+    "test:e2e": "vitest run --project e2e",
+    "test:all": "vitest run",
+    "verify": "yarn install --frozen-lockfile && yarn typecheck && yarn test && yarn build",
+    "package": "yarn verify && cd dist && zip -rq ../aztec-wallet-$npm_package_version.zip . && cd .. && echo \"Packaged: aztec-wallet-$npm_package_version.zip\""
+  },
+  "dependencies": {
+    "@aztec/accounts": "4.3.0",
+    "@aztec/aztec.js": "4.3.0",
+    "@aztec/constants": "4.3.0",
+    "@aztec/entrypoints": "4.3.0",
+    "@aztec/foundation": "4.3.0",
+    "@aztec/kv-store": "4.3.0",
+    "@aztec/noir-contracts.js": "4.3.0",
+    "@aztec/pxe": "4.3.0",
+    "@aztec/stdlib": "4.3.0",
+    "@aztec/wallet-sdk": "4.3.0",
+    "@aztec/wallets": "4.3.0",
+    "@noble/hashes": "1.8.0",
+    "@scure/bip39": "1.6.0",
+    "qrcode": "1.5.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "viem": "2.51.3"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.28",
+    "@types/chrome": "^0.0.279",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react-swc": "^3.7.2",
+    "fast-check": "^3.23.1",
+    "puppeteer-core": "^25.1.0",
+    "typescript": "~5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-node-polyfills": "^0.22.0",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

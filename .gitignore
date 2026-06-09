@@ -1,0 +1,12 @@
+node_modules
+dist
+.DS_Store
+*.log
+.vite
+.cache
+.env
+.env.local
+.tsbuildinfo
+chrome/
+*.zip
+LOOP_STATE.md
