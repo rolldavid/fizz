@@ -4,6 +4,7 @@ import { Header, shortAddress } from "../components/Header";
 import { Identicon } from "../components/Identicon";
 import { BookmarkIcon, CheckIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
+import { trackOp } from "../../lib/state/activity";
 import { loadTokens, type TokenEntry } from "../../lib/aztec/tokens";
 import { parseUnits } from "../../lib/aztec/balances";
 import { shield, transfer, unshield, type TransferMode } from "../../lib/aztec/transfer";
@@ -96,32 +97,36 @@ export function Send({ onBack }: { onBack: () => void }) {
         if (!wallet || !account || !token) return;
         setBusy(true);
         try {
-            const value = parseUnits(amount, token.decimals);
-            const tokenAddress = AztecAddress.fromString(token.address);
-            const sender = account.address;
-            if (!account.isDeployed) {
-                // First transaction ever: the account contract must be
-                // published + initialized on-chain before it can send.
-                setBusyText("Activating your account (one-time setup)…");
-                await ensureAccountDeployed();
-            }
-            setBusyText("Proving + sending…");
-            let result: { txHash: string };
-            if (intent === "send") {
-                const recipientAddr = AztecAddress.fromString(recipient);
-                result = await transfer({
-                    wallet, network, sender, tokenAddress, to: recipientAddr, amount: value, mode: privacy,
-                });
-                // Remember the recipient so a reciprocal private payment from them
-                // is discoverable on the fast tagged path — no naming required.
-                void rememberSentRecipient(network.id, recipient, wallet);
-            } else if (direction === "shield") {
-                result = await shield({ wallet, network, sender, tokenAddress, amount: value });
-            } else {
-                result = await unshield({ wallet, network, sender, tokenAddress, amount: value });
-            }
-            setConfirming(null);
-            setDone({ txHash: result.txHash, recipient });
+            // trackOp: proving + inclusion can exceed the 5-min idle window;
+            // the auto-lock defers while this runs instead of killing the tx.
+            await trackOp(async () => {
+                const value = parseUnits(amount, token.decimals);
+                const tokenAddress = AztecAddress.fromString(token.address);
+                const sender = account.address;
+                if (!account.isDeployed) {
+                    // First transaction ever: the account contract must be
+                    // published + initialized on-chain before it can send.
+                    setBusyText("Activating your account (one-time setup)…");
+                    await ensureAccountDeployed();
+                }
+                setBusyText("Proving + sending…");
+                let result: { txHash: string };
+                if (intent === "send") {
+                    const recipientAddr = AztecAddress.fromString(recipient);
+                    result = await transfer({
+                        wallet, network, sender, tokenAddress, to: recipientAddr, amount: value, mode: privacy,
+                    });
+                    // Remember the recipient so a reciprocal private payment from them
+                    // is discoverable on the fast tagged path — no naming required.
+                    void rememberSentRecipient(network.id, recipient, wallet);
+                } else if (direction === "shield") {
+                    result = await shield({ wallet, network, sender, tokenAddress, amount: value });
+                } else {
+                    result = await unshield({ wallet, network, sender, tokenAddress, amount: value });
+                }
+                setConfirming(null);
+                setDone({ txHash: result.txHash, recipient });
+            });
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         } finally {

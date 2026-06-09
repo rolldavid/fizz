@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Header, shortAddress } from "../components/Header";
 import { CheckIcon, CopyIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
+import { trackOp } from "../../lib/state/activity";
 import {
     SANDBOX_L1_RPC_URL,
     SANDBOX_MINT_AMOUNT,
@@ -42,7 +43,15 @@ export function Bridge({ onBack }: { onBack: () => void }) {
     const [assetAmount, setAssetAmount] = useState("");
 
     const refresh = useCallback(async () => {
-        setPending(await listPendingBridges(network.id));
+        // Every failure path must land in visible state — anything that escapes
+        // here dies as an unhandled rejection and leaves the card spinning
+        // forever (the exact bug this replaced).
+        try {
+            setPending(await listPendingBridges(network.id));
+        } catch (e) {
+            setFundingError(e instanceof Error ? e.message : String(e));
+            return;
+        }
         if (!isSandbox && wallet) {
             try {
                 setFundingError(null);
@@ -54,7 +63,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
     }, [network, wallet, isSandbox]);
 
     useEffect(() => {
-        refresh();
+        void refresh();
     }, [refresh]);
 
     const hasGas = (funding?.eth ?? 0n) > 2_000_000_000_000_000n; // ~0.002 ETH
@@ -65,7 +74,9 @@ export function Bridge({ onBack }: { onBack: () => void }) {
         setDone(false);
         setBusy(true);
         try {
-            await fn();
+            // trackOp: L1 txs + confirmation waits can outlast the idle window;
+            // don't let the auto-lock kill a bridge mid-deposit.
+            await trackOp(fn);
             setDone(true);
             await refresh();
         } catch (e) {
@@ -198,7 +209,16 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                                     )}
                                 </>
                             )}
-                            {!funding && !fundingError && <span className="spinner" />}
+                            {!funding && !fundingError && (
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span className="spinner" />
+                                    <span className="muted" style={{ fontSize: 12 }}>
+                                        {wallet
+                                            ? "Reading L1 balances…"
+                                            : "Waiting for the network connection…"}
+                                    </span>
+                                </div>
+                            )}
                         </div>
 
                         {/* Step 2 — bridge */}

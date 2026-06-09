@@ -10,18 +10,21 @@
  *   1. popup renders the onboarding screen with ZERO console errors
  *   2. create a wallet with a passphrase (real Argon2id + AES-GCM + storage)
  *   3. reveal-and-confirm recovery phrase step
- *   4. wallet boots the in-browser PXE against the LOCAL SANDBOX (wasm,
- *      cross-origin isolation, connect-src CSP all proven in one shot)
+ *   4. wallet boots the in-browser PXE against the DEFAULT network (testnet —
+ *      wasm, cross-origin isolation, connect-src CSP all proven in one shot)
  *   5. Home renders: address, fee-juice card, Send/Receive controls
+ *   6. a token deploys end-to-end from the UI — the live-user path, including
+ *      the first-proof CRS download and the busy-defers-idle-lock behavior
+ *      (no synthetic input events are generated during the wait, so if the
+ *      auto-lock fires mid-deploy this test sees the lock screen and fails)
  *
- * Requires `aztec start --local-network` running and `yarn build` done.
+ * Requires `yarn build` done. Talks to live testnet.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { existsSync, globSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
-import { assertSandboxUp } from "../e2e/helpers";
 
 const RUN = !!process.env.BROWSER;
 const DIST = join(process.cwd(), "dist");
@@ -57,7 +60,6 @@ const allConsole: string[] = [];
 
 describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () => {
     beforeAll(async () => {
-        await assertSandboxUp();
         if (!existsSync(join(DIST, "manifest.json"))) {
             throw new Error("dist/manifest.json missing — run `yarn build` first.");
         }
@@ -67,9 +69,11 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
             headless: false, // extensions don't load in old headless; new headless is flaky with MV3+wasm threads
             userDataDir: profileDir,
             timeout: 180_000,
-            // waitForFunction polls across the PXE's long wasm boot; the
-            // default 180s protocol timeout fires first without this.
-            protocolTimeout: 420_000,
+            // Must exceed the LONGEST waitForFunction below (the 600s deploy
+            // wait): with default polling a wait holds one CDP call open the
+            // whole time, and the protocol timeout would kill it first with a
+            // misleading "Runtime.callFunctionOn timed out" (seen in the wild).
+            protocolTimeout: 900_000,
             // CDP over a pipe: launching headful Chrome for Testing on macOS
             // intermittently never surfaces the WS endpoint on stdout, which
             // times the launcher out. The pipe transport skips that entirely.
@@ -188,6 +192,15 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         const pass = "vivid-marble-acrobat-cherry-flute-42!";
         for (const input of inputs) await input.type(pass);
 
+        // Continue is gated on the strength meter — wait until enabled, or the
+        // click lands on a disabled button and silently does nothing.
+        await popup.waitForFunction(
+            () =>
+                [...document.querySelectorAll("button")].some(
+                    (b) => b.textContent?.includes("Continue") && !b.disabled,
+                ),
+            { timeout: 10_000, polling: 250 },
+        );
         await clickByText(popup, "Continue");
 
         // Recovery phrase step: capture words, confirm saved.
@@ -211,7 +224,7 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         expect(clicked, "finalize-create button not found").toBe(true);
     }, 180_000);
 
-    it("boots the in-browser PXE against the sandbox and reaches Home", async () => {
+    it("boots the in-browser PXE and reaches Home", async () => {
         // The PXE boot loads wasm + circuit artifacts; allow generous time.
         try {
             await popup.waitForFunction(
@@ -245,6 +258,31 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         expect(body).toMatch(/0x[0-9a-f]{4,}…?[0-9a-f]{0,8}/i);
     });
 
+    it("bridge page: funding card settles to balances or an error (never an eternal spinner)", async () => {
+        await clickByText(popup, "Bridge");
+        // The card must leave its loading state: either live L1 balances (the
+        // happy path: address + ETH reading from the public Sepolia RPC) or a
+        // visible error message. An eternal spinner is the regression.
+        await popup.waitForFunction(
+            () => {
+                const t = document.body.innerText;
+                const settled = /ETH/.test(t) || document.querySelector(".error");
+                return t.includes("funding address") && settled;
+            },
+            { timeout: 60_000, polling: 1_000 },
+        );
+        const body = await popup.evaluate(() => document.body.innerText);
+        expect(body).toContain("funding address");
+        console.log(
+            `[smoke] bridge card settled: ${body.includes("ETH") ? "balances shown" : "error shown"}`,
+        );
+        await clickByText(popup, "← Back");
+        await popup.waitForFunction(() => document.body.innerText.includes("Fee juice"), {
+            timeout: 15_000,
+            polling: 500,
+        });
+    }, 90_000);
+
     it("deploys a token end-to-end from the UI", async () => {
         // Proving capability probe: without cross-origin isolation bb.js
         // silently falls back to ONE thread and proofs take minutes.
@@ -263,10 +301,12 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         await popup.type("input[placeholder='ACME']", "SMC");
 
         // Click Deploy and verify the button immediately reflects busy state —
-        // a "click does nothing" regression fails here.
+        // a "click does nothing" regression fails here. The busy button shows
+        // the current stage ("Activating your account…", then "Proving +
+        // publishing the token…").
         await clickByText(popup, "Deploy token");
         await popup.waitForFunction(
-            () => document.body.innerText.includes("Deploying…"),
+            () => /Activating your account|Proving \+ publishing/.test(document.body.innerText),
             { timeout: 10_000, polling: 250 },
         );
         console.log("[smoke] busy state confirmed — deploy in flight");

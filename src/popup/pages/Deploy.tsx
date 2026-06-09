@@ -2,13 +2,14 @@ import { useState } from "react";
 import { Header } from "../components/Header";
 import { ArrowLeftIcon, CheckIcon, CopyIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
+import { trackOp } from "../../lib/state/activity";
 import { deployToken } from "../../lib/aztec/deploy";
 import { addToken } from "../../lib/aztec/tokens";
 import { parseUnits } from "../../lib/aztec/balances";
 
 type Result = { address: string; txHash: string };
 
-export function Deploy({ onBack, onDeployed }: { onBack: () => void; onDeployed: () => void }) {
+export function Deploy({ onBack }: { onBack: () => void }) {
     const { wallet, network, account, ensureAccountDeployed } = useWallet();
 
     const [name, setName] = useState("");
@@ -19,6 +20,7 @@ export function Deploy({ onBack, onDeployed }: { onBack: () => void; onDeployed:
     const [keepMinter, setKeepMinter] = useState(true);
 
     const [busy, setBusy] = useState(false);
+    const [stage, setStage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [result, setResult] = useState<Result | null>(null);
     const [copied, setCopied] = useState(false);
@@ -28,35 +30,42 @@ export function Deploy({ onBack, onDeployed }: { onBack: () => void; onDeployed:
         if (!wallet || !account) return setError("Wallet not loaded.");
         setBusy(true);
         try {
-            const d = Number(decimals);
-            const supplyValue = supply.trim() ? parseUnits(supply, d) : 0n;
-            if (!account.isDeployed) {
-                await ensureAccountDeployed();
-            }
-            const res = await deployToken({
-                wallet,
-                network,
-                deployer: account.address,
-                name: name.trim(),
-                symbol: symbol.trim().toUpperCase(),
-                decimals: d,
-                initialSupply: supplyValue,
-                initialSupplyMode: supplyMode,
-                keepMinterRole: keepMinter,
+            // trackOp: defers the idle auto-lock — first-run proving (CRS
+            // download + ClientIVC) can exceed the 5-min idle window while the
+            // user just watches, and locking mid-flight kills the deploy.
+            await trackOp(async () => {
+                const d = Number(decimals);
+                const supplyValue = supply.trim() ? parseUnits(supply, d) : 0n;
+                if (!account.isDeployed) {
+                    setStage("Activating your account (one-time)…");
+                    await ensureAccountDeployed();
+                }
+                setStage("Proving + publishing the token…");
+                const res = await deployToken({
+                    wallet,
+                    network,
+                    deployer: account.address,
+                    name: name.trim(),
+                    symbol: symbol.trim().toUpperCase(),
+                    decimals: d,
+                    initialSupply: supplyValue,
+                    initialSupplyMode: supplyMode,
+                    keepMinterRole: keepMinter,
+                });
+                const addrStr = res.address.toString();
+                await addToken(network.id, {
+                    address: addrStr,
+                    symbol: symbol.trim().toUpperCase(),
+                    name: name.trim(),
+                    decimals: d,
+                });
+                setResult({ address: addrStr, txHash: res.txHash });
             });
-            const addrStr = res.address.toString();
-            await addToken(network.id, {
-                address: addrStr,
-                symbol: symbol.trim().toUpperCase(),
-                name: name.trim(),
-                decimals: d,
-            });
-            setResult({ address: addrStr, txHash: res.txHash });
-            onDeployed();
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         } finally {
             setBusy(false);
+            setStage(null);
         }
     }
 
@@ -231,12 +240,14 @@ export function Deploy({ onBack, onDeployed }: { onBack: () => void; onDeployed:
                     disabled={busy || !name || !symbol}
                     onClick={deploy}
                 >
-                    {busy ? "Deploying…" : "Deploy token"}
+                    {busy ? stage ?? "Deploying…" : "Deploy token"}
                 </button>
 
                 {busy && (
                     <div className="hint">
-                        Compiling + proving the deployment locally. First time can take 30-60s.
+                        Proofs are generated on your device. The very first transaction also
+                        downloads one-time proving keys (~100&nbsp;MB), so it can take a few
+                        minutes — keep this popup open; it won't auto-lock while working.
                     </div>
                 )}
             </div>

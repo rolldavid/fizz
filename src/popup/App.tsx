@@ -108,9 +108,10 @@ function Shell() {
             {route === "send" && <Send onBack={() => setRoute("home")} />}
             {route === "receive" && <Receive onBack={() => setRoute("home")} />}
             {route === "bridge" && <Bridge onBack={() => setRoute("home")} />}
-            {route === "deploy" && (
-                <Deploy onBack={() => setRoute("home")} onDeployed={() => setRoute("home")} />
-            )}
+            {/* No onDeployed navigation: Deploy renders its own "Token deployed"
+                result screen; navigating here on success unmounted it before the
+                user ever saw it ("deploy did nothing" in live testing). */}
+            {route === "deploy" && <Deploy onBack={() => setRoute("home")} />}
             {route === "mint" && <Mint onBack={() => setRoute("home")} />}
             {route === "contacts" && <Contacts onBack={() => setRoute("home")} />}
             {route === "reveal" && <RevealPhrase onBack={() => setRoute("home")} />}

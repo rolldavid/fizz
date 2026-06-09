@@ -77,13 +77,31 @@ function publicClient(network: AztecNetwork): PublicClient {
     return createPublicClient({ chain: l1ChainFor(network), transport: http(l1RpcUrlFor(network)) });
 }
 
+/**
+ * Bound a hangable await: node/RPC fetches without their own deadline can wedge
+ * forever and the UI shows an eternal spinner. Timing out THROWS — the caller
+ * surfaces it; never converted into a default value.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+    return Promise.race([
+        p,
+        new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Timed out ${what} after ${ms / 1000}s.`)), ms),
+        ),
+    ]);
+}
+
 export async function getL1FundingStatus(
     wallet: AztecWallet,
     network: AztecNetwork,
 ): Promise<L1FundingStatus> {
     const address = getL1FundingAddress();
     const client = publicClient(network);
-    const { l1ContractAddresses } = await (wallet as any).aztecNode.getNodeInfo();
+    const { l1ContractAddresses } = await withTimeout(
+        (wallet as any).aztecNode.getNodeInfo(),
+        30_000,
+        "fetching node info (L1 contract addresses)",
+    );
     const feeAssetAddr = l1ContractAddresses.feeJuiceAddress?.toString() as `0x${string}`;
     if (!feeAssetAddr) throw new Error("Node did not report an L1 fee-asset address.");
     const handler = l1ContractAddresses.feeAssetHandlerAddress;

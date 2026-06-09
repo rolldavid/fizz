@@ -3,6 +3,7 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Header } from "../components/Header";
 import { ArrowLeftIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
+import { trackOp } from "../../lib/state/activity";
 import { loadTokens, type TokenEntry } from "../../lib/aztec/tokens";
 import { parseUnits } from "../../lib/aztec/balances";
 import { getMintAuthority, mintToken, type MintAuthority } from "../../lib/aztec/mint";
@@ -70,22 +71,26 @@ export function Mint({ onBack }: { onBack: () => void }) {
         if (!token) return setError("Pick a token.");
         setBusy(true);
         try {
-            const value = parseUnits(amount, token.decimals);
-            const recipient = toSelf ? account.address : AztecAddress.fromString(to.trim());
-            if (!account.isDeployed) {
-                await ensureAccountDeployed();
-            }
-            const result = await mintToken({
-                wallet,
-                network,
-                minter: account.address,
-                tokenAddress: AztecAddress.fromString(token.address),
-                to: recipient,
-                amount: value,
-                mode,
+            // trackOp: proving + inclusion can exceed the idle window; the
+            // auto-lock defers while this runs instead of killing the tx.
+            await trackOp(async () => {
+                const value = parseUnits(amount, token.decimals);
+                const recipient = toSelf ? account.address : AztecAddress.fromString(to.trim());
+                if (!account.isDeployed) {
+                    await ensureAccountDeployed();
+                }
+                const result = await mintToken({
+                    wallet,
+                    network,
+                    minter: account.address,
+                    tokenAddress: AztecAddress.fromString(token.address),
+                    to: recipient,
+                    amount: value,
+                    mode,
+                });
+                setDone({ txHash: result.txHash });
+                setAmount("");
             });
-            setDone({ txHash: result.txHash });
-            setAmount("");
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         } finally {

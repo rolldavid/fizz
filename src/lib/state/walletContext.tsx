@@ -28,6 +28,7 @@ import {
 import { markFeeConsumed, resolveFeePaymentMethod } from "../aztec/fee";
 import { syncContactsToPxe, syncKnownSendersToPxe } from "../aztec/contacts";
 import { secureGet, secureSet, setMetaKeyProvider } from "../secureStorage";
+import { hasActiveOps, trackOp } from "./activity";
 
 type AccountManager = Awaited<ReturnType<AztecWallet["createSchnorrAccount"]>>;
 
@@ -280,7 +281,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         }
 
         if (!deployInFlightRef.current) {
-            deployInFlightRef.current = (async () => {
+            deployInFlightRef.current = trackOp(async () => {
                 const net = networkRef.current;
                 const fee = await resolveFeePaymentMethod(w, net, manager.address);
                 if (!fee.method) {
@@ -294,7 +295,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 await deployAccountContract({ wallet: w, manager, feeMethod: fee.method });
                 await markFeeConsumed(fee);
                 setAccount((prev) => (prev ? { ...prev, isDeployed: true } : prev));
-            })().finally(() => {
+            }).finally(() => {
                 deployInFlightRef.current = null;
             });
         }
@@ -455,12 +456,23 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     // the boot/boot-error screen which also holds it), re-lock after 5 minutes
     // without user interaction. Detached/pinned popups otherwise keep the
     // unlocked seed in memory indefinitely.
+    //
+    // While a user-initiated transaction is in flight (first deploy = CRS
+    // download + proving + inclusion, easily >5 min of just watching), locking
+    // would tear down the PXE mid-proof — so the deadline DEFERS until the
+    // operation settles, then a fresh idle window starts.
     useEffect(() => {
         if (status !== "ready" && status !== "loading") return;
         let timer: number | undefined;
         const arm = () => {
             window.clearTimeout(timer);
-            timer = window.setTimeout(lock, IDLE_LOCK_MS);
+            timer = window.setTimeout(() => {
+                if (hasActiveOps()) {
+                    arm();
+                    return;
+                }
+                lock();
+            }, IDLE_LOCK_MS);
         };
         const events = ["mousedown", "keydown", "pointermove", "wheel", "touchstart"] as const;
         for (const e of events) window.addEventListener(e, arm, { passive: true });
