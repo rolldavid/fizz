@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy Policy — Fizz</title>
+    <meta name="description" content="Fizz privacy policy: we collect nothing. No servers, no analytics, no telemetry." />
+    <link rel="canonical" href="https://fizzwallet.com/privacy.html" />
+    <meta name="theme-color" content="#140E24" />
+    <link rel="icon" type="image/png" href="./fizzmark.png" />
+    <style>
+        :root { --bg:#140e24; --surface:#1f1735; --surface-2:#2a1f3d; --border:#45356b; --text:#f5f2fc; --dim:#7b6fa8; --accent:#ff5c94; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+        .wrap { max-width: 720px; margin: 0 auto; padding: 48px 24px 64px; }
+        a { color: var(--accent); }
+        img.mark { height: 40px; margin-bottom: 12px; }
+        h1 { font-size: 26px; margin-bottom: 4px; }
+        .updated { color: var(--dim); font-size: 13px; margin-bottom: 28px; }
+        h2 { font-size: 17px; margin: 26px 0 8px; }
+        p, li { color: var(--dim); font-size: 14.5px; }
+        strong { color: var(--text); }
+        ul { margin: 8px 0 8px 20px; }
+        .card { background: var(--surface); border: 1px solid var(--surface-2); border-radius: 14px; padding: 16px 18px; margin: 14px 0; }
+        .back { display: inline-block; margin-top: 36px; color: var(--dim); text-decoration: none; }
+        .back:hover { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <a href="./index.html"><img class="mark" src="./fizzmark.png" alt="Fizz" /></a>
+        <h1>Privacy Policy</h1>
+        <div class="updated">Last updated: June 9, 2026 · applies to the Fizz browser extension</div>
+
+        <div class="card">
+            <p><strong>The short version: we collect nothing.</strong> Fizz has no servers,
+            no analytics, no telemetry, and no accounts. Everything it stores, it stores
+            on your device, encrypted.</p>
+        </div>
+
+        <h2>What the extension stores locally</h2>
+        <ul>
+            <li>Your encrypted vault — the 12-word recovery phrase encrypted with
+                AES-256-GCM under a key derived from your passkey or passphrase.</li>
+            <li>Wallet metadata — contacts, known senders, pending bridge claims, account
+                labels — encrypted at rest under a key derived from your seed.</li>
+            <li>Non-sensitive settings (selected network, token display list).</li>
+            <li>The Aztec PXE database (notes, sync state) in IndexedDB.</li>
+        </ul>
+        <p>None of this leaves your device.</p>
+
+        <h2>What the extension transmits</h2>
+        <p>Fizz speaks JSON-RPC to <strong>one party</strong>: the Aztec node you select —
+        a public node we preconfigure, or any node you choose, including your own. Like
+        any light wallet, that node necessarily sees your IP address, the addresses you
+        query, and the transactions you submit. Choosing your own node removes that
+        trust in a third party. We operate no node and receive no traffic ourselves.</p>
+        <p>If you open the testnet faucet, that is a normal website visit to its
+        operator — we deliberately do <strong>not</strong> include your address in the link.</p>
+        <p>If you bridge from L1, the L1 transaction is public, like any Ethereum
+        transaction, and links your L1 address to your Aztec address. Fizz warns about
+        this in the flow.</p>
+
+        <h2>What we (the developers) receive</h2>
+        <p>Nothing. We have no way to identify you, contact you, or see your activity.</p>
+
+        <h2>Changes</h2>
+        <p>Material changes to this policy ship with an extension update and a
+        changelog entry.</p>
+
+        <a class="back" href="./index.html">← Back to fizzwallet.com</a>
+    </div>
+</body>
+</html>
