@@ -1,66 +1,129 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Header } from "../components/Header";
+import { useCallback, useEffect, useState } from "react";
+import { Header, shortAddress } from "../components/Header";
+import { CheckIcon, CopyIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
 import {
     SANDBOX_L1_RPC_URL,
     SANDBOX_MINT_AMOUNT,
     bridgeFeeJuice,
     directRpcProvider,
-    getInjectedProvider,
     listPendingBridges,
     type PendingBridge,
 } from "../../lib/aztec/bridge";
+import {
+    bridgeFromFundingAccount,
+    getL1FundingStatus,
+    type L1FundingStatus,
+} from "../../lib/aztec/l1Funding";
 import { formatUnits, parseUnits } from "../../lib/aztec/balances";
 
+/**
+ * Bridge: get fee juice (gas) onto L2.
+ *
+ * Sandbox  → one click; anvil's unlocked accounts pay, the handler mints.
+ * Testnet+ → the wallet's own L1 FUNDING ACCOUNT (derived from your phrase at
+ *            the standard Ethereum path — restorable in MetaMask):
+ *              1. user sends a little Sepolia ETH to the funding address
+ *              2. "Get free JUICE" mints a fixed batch via the network handler
+ *                 (gas-only), or bridges their own AZTEC balance
+ *              3. the claim auto-pays their next Fizz transaction
+ */
 export function Bridge({ onBack }: { onBack: () => void }) {
     const { wallet, account, network } = useWallet();
     const isSandbox = network.id === "sandbox";
-    const [amount, setAmount] = useState("0.05");
     const [busy, setBusy] = useState(false);
+    const [stage, setStage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [done, setDone] = useState(false);
     const [pending, setPending] = useState<PendingBridge[]>([]);
-
-    // Extension popups never get an injected provider (MetaMask only injects
-    // into web pages). On sandbox we drive anvil directly — its accounts are
-    // unlocked. On real networks an EIP-1193 wallet is required, which today
-    // means bridging from a dapp page rather than inside the popup.
-    const provider = useMemo(
-        () => (isSandbox ? directRpcProvider(SANDBOX_L1_RPC_URL) : getInjectedProvider()),
-        [isSandbox],
-    );
+    const [funding, setFunding] = useState<L1FundingStatus | null>(null);
+    const [fundingError, setFundingError] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
+    const [assetAmount, setAssetAmount] = useState("");
 
     const refresh = useCallback(async () => {
         setPending(await listPendingBridges(network.id));
-    }, [network.id]);
+        if (!isSandbox && wallet) {
+            try {
+                setFundingError(null);
+                setFunding(await getL1FundingStatus(wallet, network));
+            } catch (e) {
+                setFundingError(e instanceof Error ? e.message : String(e));
+            }
+        }
+    }, [network, wallet, isSandbox]);
 
     useEffect(() => {
         refresh();
     }, [refresh]);
 
-    async function submit() {
+    const hasGas = (funding?.eth ?? 0n) > 2_000_000_000_000_000n; // ~0.002 ETH
+    const hasAsset = (funding?.feeAsset ?? 0n) > 0n;
+
+    async function run(fn: () => Promise<unknown>) {
         setError(null);
-        if (!wallet || !account) return setError("Wallet not loaded.");
-        if (!provider) return setError("No L1 wallet available for this network.");
+        setDone(false);
         setBusy(true);
         try {
-            // Sandbox: the L1 fee-asset handler mints a FIXED amount per call.
-            const wei = isSandbox ? SANDBOX_MINT_AMOUNT : parseUnits(amount, 18);
-            await bridgeFeeJuice({
-                wallet,
-                network,
-                recipient: account.address,
-                amount: wei,
-                provider,
-                // On sandbox the fee asset handler mints for the user. On real
-                // networks the user must already hold the L1 fee juice token.
-                mint: isSandbox,
-            });
+            await fn();
+            setDone(true);
             await refresh();
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         } finally {
             setBusy(false);
+            setStage(null);
         }
+    }
+
+    function sandboxBridge() {
+        if (!wallet || !account) return setError("Wallet not loaded.");
+        return run(async () => {
+            setStage("Minting + depositing on local L1…");
+            await bridgeFeeJuice({
+                wallet,
+                network,
+                recipient: account.address,
+                amount: SANDBOX_MINT_AMOUNT,
+                provider: directRpcProvider(SANDBOX_L1_RPC_URL),
+                mint: true,
+            });
+        });
+    }
+
+    function mintBridge() {
+        if (!wallet || !account) return setError("Wallet not loaded.");
+        return run(async () => {
+            setStage("Minting free JUICE + depositing on L1 (two txs)…");
+            await bridgeFromFundingAccount({
+                wallet,
+                network,
+                recipient: account.address,
+                mode: "mint",
+            });
+        });
+    }
+
+    function assetBridge() {
+        if (!wallet || !account) return setError("Wallet not loaded.");
+        return run(async () => {
+            const amount = parseUnits(assetAmount, 18);
+            setStage(`Approving + depositing ${assetAmount} ${funding?.feeAssetSymbol ?? "AZTEC"}…`);
+            await bridgeFromFundingAccount({
+                wallet,
+                network,
+                recipient: account.address,
+                mode: "asset",
+                amount,
+            });
+        });
+    }
+
+    async function copyFunding() {
+        if (!funding) return;
+        await navigator.clipboard.writeText(funding.address);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
     }
 
     return (
@@ -70,68 +133,134 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                 <button className="muted" style={{ alignSelf: "flex-start" }} onClick={onBack}>
                     ← Back
                 </button>
-                <div style={{ fontWeight: 600, fontSize: 16 }}>Bridge ETH → Fee Juice</div>
-                <p className="hint">
-                    Deposit on L1 to mint fee juice on L2 ({network.name}). After the L1 → L2
-                    message lands, your next transaction consumes the claim as it pays gas.
-                </p>
-
-                {!isSandbox && (
-                    <div className="card" style={{ borderColor: "var(--danger)" }}>
-                        <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                            ⚠️ Bridging publicly links your identities
-                        </div>
-                        <div className="hint">
-                            The deposit is a normal L1 transaction: anyone can see that your L1
-                            address funded this Aztec address, permanently. If you care about that
-                            link, fund from a fresh L1 address — or use the faucet instead, which
-                            doesn't touch L1 from your wallet.
-                        </div>
-                    </div>
-                )}
-
-                {!provider && !isSandbox && (
-                    <div className="card" style={{ borderColor: "var(--danger)" }}>
-                        <div className="error">No L1 wallet available.</div>
-                        <div className="hint" style={{ marginTop: 6 }}>
-                            Browser-extension popups can't reach MetaMask. On {network.name}, use
-                            the faucet to get fee juice, or bridge from a dapp page with your L1
-                            wallet and send to your address here.
-                        </div>
-                    </div>
-                )}
+                <div style={{ fontWeight: 600, fontSize: 16 }}>Get fee juice (gas)</div>
 
                 {isSandbox ? (
-                    <div className="field">
-                        <label>Amount</label>
-                        <div className="card" style={{ fontVariantNumeric: "tabular-nums" }}>
-                            {formatUnits(SANDBOX_MINT_AMOUNT, 18)} JUICE
-                            <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-                                Fixed by the sandbox's L1 fee-asset handler (mints exactly this per
-                                call, no real ETH needed).
+                    <>
+                        <p className="hint">
+                            One click — the local L1 mints a fixed batch and deposits it to your
+                            account. Your next transaction claims it automatically.
+                        </p>
+                        <button
+                            className="btn btn-primary btn-block"
+                            disabled={busy}
+                            onClick={sandboxBridge}
+                        >
+                            {busy ? stage ?? "Bridging…" : `Get ${formatUnits(SANDBOX_MINT_AMOUNT, 18)} JUICE`}
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <p className="hint">
+                            Fizz has its own L1 funding address, made from your recovery phrase
+                            (standard Ethereum derivation — the same 12 words restore it in
+                            MetaMask too). Fund it once, bridge whenever you need gas.
+                        </p>
+
+                        {/* Step 1 — funding address + balances */}
+                        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            <div className="muted">Step 1 · Your L1 funding address (Sepolia)</div>
+                            {fundingError && <div className="error">{fundingError}</div>}
+                            {funding && (
+                                <>
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 8,
+                                            justifyContent: "space-between",
+                                        }}
+                                    >
+                                        <span
+                                            style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }}
+                                            title={funding.address}
+                                        >
+                                            {shortAddress(funding.address, 10, 8)}
+                                        </span>
+                                        <button className="icon-btn" onClick={copyFunding} title="Copy">
+                                            {copied ? <CheckIcon /> : <CopyIcon />}
+                                        </button>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 14, fontVariantNumeric: "tabular-nums" }}>
+                                        <span className={hasGas ? "" : "muted"}>
+                                            ⛽ {funding.ethFormatted} ETH
+                                        </span>
+                                        <span className={hasAsset ? "" : "muted"}>
+                                            🫧 {funding.feeAssetFormatted} {funding.feeAssetSymbol}
+                                        </span>
+                                    </div>
+                                    {!hasGas && (
+                                        <div className="hint">
+                                            Send ~0.01 Sepolia ETH here first (it pays the L1 gas).
+                                            For best privacy fund it from an exchange withdrawal, not
+                                            a wallet that's publicly you.
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                            {!funding && !fundingError && <span className="spinner" />}
+                        </div>
+
+                        {/* Step 2 — bridge */}
+                        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                            <div className="muted">Step 2 · Bridge to your Fizz account</div>
+                            {funding?.canMint && (
+                                <button
+                                    className="btn btn-primary btn-block"
+                                    disabled={busy || !hasGas}
+                                    onClick={mintBridge}
+                                    title={hasGas ? "" : "Needs Sepolia ETH for gas first"}
+                                >
+                                    {busy && stage?.startsWith("Minting")
+                                        ? stage
+                                        : `Get ${formatUnits(SANDBOX_MINT_AMOUNT, 18)} free testnet JUICE`}
+                                </button>
+                            )}
+                            {hasAsset && (
+                                <>
+                                    <div className="field">
+                                        <label>
+                                            Or bridge your own {funding?.feeAssetSymbol} (balance:{" "}
+                                            {funding?.feeAssetFormatted})
+                                        </label>
+                                        <input
+                                            inputMode="decimal"
+                                            value={assetAmount}
+                                            onChange={(e) => setAssetAmount(e.target.value)}
+                                            placeholder="100"
+                                        />
+                                    </div>
+                                    <button
+                                        className="btn btn-ghost btn-block"
+                                        disabled={busy || !hasGas || !assetAmount.trim()}
+                                        onClick={assetBridge}
+                                    >
+                                        {busy && stage?.startsWith("Approving")
+                                            ? stage
+                                            : `Bridge ${funding?.feeAssetSymbol ?? "AZTEC"} → JUICE`}
+                                    </button>
+                                </>
+                            )}
+                            <div className="hint" style={{ fontSize: 11 }}>
+                                ⚠️ Bridging is a public L1 action: anyone can see this L1 address
+                                funded your Aztec address. ~2.3 JUICE ≈ one transaction.
                             </div>
                         </div>
-                    </div>
-                ) : (
-                    <div className="field">
-                        <label>Amount (ETH-denominated fee juice)</label>
-                        <input
-                            inputMode="decimal"
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                        />
-                    </div>
+                    </>
                 )}
 
                 {error && <div className="error">{error}</div>}
-
-                <button
-                    className="btn btn-primary btn-block"
-                    disabled={busy || !provider || (!isSandbox && !amount)}
-                    onClick={submit}
-                >
-                    {busy ? "Bridging on L1…" : "Bridge"}
-                </button>
+                {done && (
+                    <div className="card" style={{ borderColor: "var(--success)" }}>
+                        <div style={{ color: "var(--success)", fontWeight: 500 }}>
+                            ✓ Deposit sent
+                        </div>
+                        <div className="hint" style={{ marginTop: 4 }}>
+                            The claim lands on L2 in a few minutes and your next transaction uses
+                            it automatically — nothing else to do.
+                        </div>
+                    </div>
+                )}
 
                 {pending.length > 0 && (
                     <div>
@@ -144,8 +273,8 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                                     {formatUnits(BigInt(b.claimAmount), 18)} JUICE
                                 </div>
                                 <div className="muted" style={{ fontSize: 11 }}>
-                                    Posted {new Date(b.createdAt).toLocaleString()} · will auto-claim
-                                    on your next outgoing transaction.
+                                    Posted {new Date(b.createdAt).toLocaleString()} · auto-claims on
+                                    your next outgoing transaction.
                                 </div>
                             </div>
                         ))}

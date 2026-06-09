@@ -29,6 +29,7 @@ import {
 import { registerPasskey, unlockWithPasskey } from "./passkey";
 import { mnemonicToSeed } from "./mnemonic";
 import { deriveMetaKey } from "./metaCrypto";
+import { deriveL1Key, type L1KeyMaterial } from "./l1Account";
 import { isAcceptablePassphrase } from "./passwordStrength";
 
 /** What the store RETAINS while unlocked — deliberately excludes the mnemonic. */
@@ -57,6 +58,7 @@ class VaultStore {
     private envelope: VaultEnvelope | undefined;
     private unlocked: UnlockedSecret | null = null;
     private metaKeyPromise: Promise<CryptoKey> | null = null;
+    private l1Key: L1KeyMaterial | null = null;
 
     async init(): Promise<void> {
         this.envelope = await storage.get<VaultEnvelope>(KEYS.vault);
@@ -86,11 +88,28 @@ class VaultStore {
         return this.metaKeyPromise;
     }
 
+    /**
+     * The in-wallet L1 funding key (BIP-44 m/44'/60'/0'/0/0 — restorable from
+     * the same phrase in any Ethereum wallet). Set at unlock/create; zeroed on
+     * lock. Throws while locked.
+     */
+    getL1Key(): L1KeyMaterial {
+        if (!this.l1Key) throw new Error("Wallet is locked.");
+        return this.l1Key;
+    }
+
+    private setL1Key(mnemonic: string): void {
+        if (this.l1Key) this.l1Key.privateKey.fill(0);
+        this.l1Key = deriveL1Key(mnemonic);
+    }
+
     lock(): void {
         // Zero the seed bytes before dropping the reference.
         if (this.unlocked) this.unlocked.seed.fill(0);
         this.unlocked = null;
         this.metaKeyPromise = null;
+        if (this.l1Key) this.l1Key.privateKey.fill(0);
+        this.l1Key = null;
     }
 
     private assertSupportedVersion(env: VaultEnvelope): void {
@@ -135,6 +154,7 @@ class VaultStore {
             contentKey.fill(0);
         }
         this.unlocked = { seed: mnemonicToSeed(mnemonic) };
+        this.setL1Key(mnemonic);
     }
 
     async createWithPassphrase(mnemonic: string, passphrase: string): Promise<void> {
@@ -163,6 +183,7 @@ class VaultStore {
         await storage.set(KEYS.vault, env);
         this.envelope = env;
         this.unlocked = { seed: mnemonicToSeed(mnemonic) };
+        this.setL1Key(mnemonic);
     }
 
     async unlockWithPasskey(): Promise<RevealedSecret> {
@@ -187,6 +208,7 @@ class VaultStore {
             }
             const mnemonic = new TextDecoder().decode(pt);
             this.unlocked = { seed: mnemonicToSeed(mnemonic) };
+            this.setL1Key(mnemonic);
             return { mnemonic, seed: this.unlocked.seed };
         } finally {
             // Always wipe the raw AES key, including on decrypt failure.
@@ -216,6 +238,7 @@ class VaultStore {
         }
         const mnemonic = new TextDecoder().decode(pt);
         this.unlocked = { seed: mnemonicToSeed(mnemonic) };
+        this.setL1Key(mnemonic);
         return { mnemonic, seed: this.unlocked.seed };
     }
 
@@ -230,6 +253,8 @@ class VaultStore {
         if (this.unlocked) this.unlocked.seed.fill(0);
         this.unlocked = null;
         this.metaKeyPromise = null;
+        if (this.l1Key) this.l1Key.privateKey.fill(0);
+        this.l1Key = null;
     }
 }
 

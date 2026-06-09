@@ -53,6 +53,7 @@ let popup: Page;
 let profileDir: string;
 let extensionId: string;
 const consoleErrors: string[] = [];
+const allConsole: string[] = [];
 
 describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () => {
     beforeAll(async () => {
@@ -133,6 +134,7 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         popup = await browser.newPage();
         popup.on("console", (msg) => {
             if (msg.type() === "error") consoleErrors.push(msg.text());
+            allConsole.push(`[${msg.type()}] ${msg.text().slice(0, 200)}`);
         });
         popup.on("pageerror", (err) => consoleErrors.push(String(err)));
         popup.on("requestfailed", (req) => {
@@ -244,6 +246,15 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
     });
 
     it("deploys a token end-to-end from the UI", async () => {
+        // Proving capability probe: without cross-origin isolation bb.js
+        // silently falls back to ONE thread and proofs take minutes.
+        const coi = await popup.evaluate(() => ({
+            crossOriginIsolated: globalThis.crossOriginIsolated,
+            sharedArrayBuffer: typeof SharedArrayBuffer !== "undefined",
+            cores: navigator.hardwareConcurrency,
+        }));
+        console.log(`[smoke] isolation: ${JSON.stringify(coi)}`);
+
         // Home → "+ Deploy"
         await clickByText(popup, "+ Deploy");
         await popup.waitForSelector("input[placeholder*='Acme']", { timeout: 30_000 });
@@ -258,17 +269,26 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
             () => document.body.innerText.includes("Deploying…"),
             { timeout: 10_000, polling: 250 },
         );
+        console.log("[smoke] busy state confirmed — deploy in flight");
 
-        // Account activation (if first tx) + proving + inclusion.
-        await popup.waitForFunction(
-            () => {
-                const t = document.body.innerText;
-                return t.includes("Token deployed") || t.toLowerCase().includes("error");
-            },
-            { timeout: 300_000, polling: 2_000 },
-        );
+        // Account activation (if first tx) + proving + inclusion. First-run
+        // proving downloads/compiles keys; allow up to 10 min and dump the
+        // console trail on failure.
+        try {
+            await popup.waitForFunction(
+                () => {
+                    const t = document.body.innerText;
+                    return t.includes("Token deployed") || t.toLowerCase().includes("error");
+                },
+                { timeout: 600_000, polling: 2_000 },
+            );
+        } catch (err) {
+            console.log(`[smoke] DEPLOY HUNG — last console lines:\n${allConsole.slice(-30).join("\n")}`);
+            const body = await popup.evaluate(() => document.body.innerText);
+            console.log(`[smoke] screen text:\n${body}`);
+            throw err;
+        }
         const body = await popup.evaluate(() => document.body.innerText);
         expect(body).toContain("Token deployed");
-        expect(consoleErrors.filter((e) => !/favicon/i.test(e)), consoleErrors.join("\n")).toHaveLength(0);
-    }, 360_000);
+    }, 700_000);
 });

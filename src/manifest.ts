@@ -34,6 +34,8 @@ export default defineManifest({
         "http://localhost/*",
         "http://127.0.0.1/*",
         "https://*.aztec-labs.com/*",
+        // L1 RPC for the in-wallet funding account (fee-juice bridging).
+        "https://ethereum-sepolia-rpc.publicnode.com/*",
     ],
     // The Aztec stack (PXE WASMSimulator, bb.js prover, Noir ACVM, foundation
     // crypto) runs WebAssembly inside the popup. MV3 no longer grants
@@ -66,7 +68,7 @@ export default defineManifest({
             // wasm as a data: URL and bb.js FETCHES it — without data: here the
             // PXE can't boot (verified in the real-Chrome gate). data: fetches
             // transmit nothing anywhere, so the exfiltration posture is intact.
-            "connect-src 'self' data: http://localhost:* http://127.0.0.1:* https://*.aztec-labs.com; " +
+            "connect-src 'self' data: http://localhost:* http://127.0.0.1:* https://*.aztec-labs.com https://ethereum-sepolia-rpc.publicnode.com; " +
             "object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none';",
     },
     // Cross-origin isolation makes SharedArrayBuffer available, which lets bb.js

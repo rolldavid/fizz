@@ -9,6 +9,8 @@ export type AztecNetwork = {
     hasSponsoredFPC: boolean;
     /** Optional URL to a hosted faucet that funds new accounts with fee juice. */
     faucetUrl?: string;
+    /** Public L1 JSON-RPC used by the in-wallet funding account for bridging. */
+    l1RpcUrl?: string;
 };
 
 /**
@@ -38,6 +40,7 @@ export const NETWORKS: AztecNetwork[] = [
         // no fee payer until it bridges fee juice from L1 (Home → "Bridge ETH"),
         // after which the first tx deploys the account + pays via the claim.
         hasSponsoredFPC: false,
+        l1RpcUrl: "http://localhost:8545",
     },
     {
         id: "testnet",
@@ -56,6 +59,7 @@ export const NETWORKS: AztecNetwork[] = [
         //     artifact: instance and artifact must match for the PXE to prove.
         hasSponsoredFPC: true,
         faucetUrl: "https://aztec-faucet.nethermind.io/",
+        l1RpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
     },
     {
         id: "devnet",
