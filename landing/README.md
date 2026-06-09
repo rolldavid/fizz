@@ -12,20 +12,18 @@ Self-contained static page — no build step. Hosted target: **Railway**.
 3. Networking → **Generate Domain** (or attach your custom domain).
 4. Stamp that domain into the share metadata (step below) and redeploy.
 
-## Before deploying
+## Domain
 
-1. **Set your domain** in the share metadata (one command):
+Production domain is **fizzwallet.com** — already stamped into the canonical
+link and all OG/Twitter share tags (absolute URLs, as Twitter/X requires).
+Attach the custom domain to the Railway service (Networking → Custom Domain →
+`fizzwallet.com`, plus the CNAME it shows you at your DNS provider).
 
-   ```sh
-   sed -i '' 's|https://fizz-wallet.example|https://YOUR-DOMAIN|g' landing/index.html
-   ```
+## Before going live
 
-   Link previews (Twitter/X especially) require absolute URLs for `og:image`,
-   so this matters — relative paths silently break share cards.
-
-2. **Swap the install CTA** once the Chrome Web Store listing is live: the
-   primary button currently scrolls to the load-unpacked instructions
-   (`#install`); point it at the store URL instead.
+**Swap the install CTA** once the Chrome Web Store listing is live: the
+primary button currently scrolls to the load-unpacked instructions
+(`#install`); point it at the store URL instead.
 
 ## Verify share cards
 
