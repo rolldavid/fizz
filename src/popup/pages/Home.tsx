@@ -291,12 +291,17 @@ export function Home({
                     ))}
                 </div>
 
-                {/* Sticky CTA: token creation lives on fizzwallet.com/launch — this
-                    opens the in-wallet pointer (CreateTokens) with that link. */}
-                <button className="sticky-cta" onClick={() => onNavigate("create")}>
+                {/* Sticky CTA — straight to the web launcher (no intermediate
+                    in-wallet screen). It hands the deploy back here to confirm. */}
+                <a
+                    className="sticky-cta"
+                    href="https://fizzwallet.com/launch"
+                    target="_blank"
+                    rel="noreferrer"
+                >
                     <span>Launch a token on Aztec</span>
-                    <span className="link">Create →</span>
-                </button>
+                    <span className="link">Open ↗</span>
+                </a>
             </div>
         </>
     );
