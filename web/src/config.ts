@@ -23,11 +23,11 @@ export const SEPOLIA_RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com";
  *
  * "FIZZ_WC_PROJECT_ID" is a PLACEHOLDER: injected wallets (MetaMask, Rabby, …)
  * connect fine without a real id, but the WalletConnect QR option will not.
- * Site owner: create a free project at https://cloud.walletconnect.com and
- * build with `VITE_WALLETCONNECT_PROJECT_ID=<id> yarn build` (see web/README.md).
+ * The id is PUBLIC by design (it ships in this client bundle), so the
+ * production value lives here; the env var remains as a build-time override.
  */
 export const WALLETCONNECT_PROJECT_ID =
-    import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? "FIZZ_WC_PROJECT_ID";
+    import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? "9f6e5c83f413daef4d3088b2abeaf8c9";
 
 export const GITHUB_URL = "https://github.com/rolldavid/fizz";
 
