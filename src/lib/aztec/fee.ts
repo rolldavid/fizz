@@ -97,7 +97,8 @@ export async function resolveFeePaymentMethod(
         const method = new FeeJuicePaymentMethodWithClaim(sender, {
             claimAmount: BigInt(claim.claimAmount),
             claimSecret: Fr.fromHexString(claim.claimSecret),
-            messageLeafIndex: BigInt(claim.messageLeafIndex),
+            // listReadyClaims only returns claimable entries (field guaranteed).
+            messageLeafIndex: BigInt(claim.messageLeafIndex!),
         });
         return { method, label: "claim", consumesBridgeId: claim.id };
     }

@@ -16,18 +16,53 @@
  * is fine. On testnet/mainnet, the user must already hold the L1 fee juice token.
  */
 
-import { custom, createWalletClient, publicActions } from "viem";
+import {
+    createPublicClient,
+    createWalletClient,
+    custom,
+    getContract,
+    http,
+    parseEventLogs,
+    publicActions,
+} from "viem";
 import { mainnet, sepolia, foundry } from "viem/chains";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/foundation/curves/bn254";
-import { L1FeeJuicePortalManager } from "@aztec/aztec.js/ethereum";
 import { FeeJuiceContract } from "@aztec/aztec.js/protocol";
 import { getNonNullifiedL1ToL2MessageWitness } from "@aztec/stdlib/messaging";
-import { createLogger } from "@aztec/foundation/log";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { KEYS } from "../storage";
 import { secureGet, secureSet } from "../secureStorage";
+
+// LAZY by necessity, not style: pulling @aztec/aztec.js/ethereum + the
+// l1-artifacts ABIs into the popup's STATIC graph (the straightforward
+// `import`) shipped a build where synthesized input events and screenshots
+// hang at onboarding (compositor/lifecycle stall — gate runs smoke25/26).
+// These only load when a bridge function actually runs.
+const lazyEthereum = () => import("@aztec/aztec.js/ethereum");
+const lazyHash = () => import("@aztec/stdlib/hash");
+const lazyPortalAbi = async () => (await import("@aztec/l1-artifacts/FeeJuicePortalAbi")).FeeJuicePortalAbi;
+const lazyHandlerAbi = async () => (await import("@aztec/l1-artifacts/FeeAssetHandlerAbi")).FeeAssetHandlerAbi;
+const lazyErc20Abi = async () => (await import("@aztec/l1-artifacts/TestERC20Abi")).TestERC20Abi;
+
+/**
+ * Lifecycle of a bridge deposit. The claim SECRET is persisted in the
+ * "depositing" state — BEFORE any L1 transaction is broadcast — because the
+ * secret is the only way to redeem the L1→L2 message. If this page dies
+ * mid-flow (the toolbar popup closes on blur), nothing redeemable is ever
+ * lost:
+ *
+ *   depositing → nothing on-chain yet (at worst a mint/approve landed —
+ *                recoverable funds on the L1 funding address). Dismissable.
+ *   sent       → depositToAztecPublic broadcast; receipt pending. Recovery
+ *                (`recoverInFlightBridges`) finishes the bookkeeping from the
+ *                receipt on the next visit.
+ *   pending    → message confirmed on L1, claim fields complete; waiting to
+ *                be consumable on L2 (listReadyClaims).
+ *   failed     → the deposit tx reverted. Dismissable.
+ */
+export type BridgeStatus = "depositing" | "sent" | "pending" | "failed";
 
 export type PendingBridge = {
     id: string;
@@ -35,11 +70,28 @@ export type PendingBridge = {
     recipient: string;
     claimAmount: string; // bigint as string
     claimSecret: string; // hex
-    messageLeafIndex: string; // bigint as string
-    messageHash: string;
+    /** Set once the deposit is confirmed on L1 (status "pending"). */
+    messageLeafIndex?: string; // bigint as string
+    messageHash?: string;
+    /** Entries persisted before this field existed are complete ("pending"). */
+    status?: BridgeStatus;
+    /** L1 tx hash of depositToAztecPublic, recorded at broadcast. */
+    l1TxHash?: string;
     createdAt: number;
     consumedAt?: number;
+    dismissedAt?: number;
 };
+
+/** Complete, unspent, undismissed — the only entries a fee payment may use. */
+export function isClaimable(b: PendingBridge): boolean {
+    return (
+        (b.status ?? "pending") === "pending" &&
+        !!b.messageHash &&
+        !!b.messageLeafIndex &&
+        !b.consumedAt &&
+        !b.dismissedAt
+    );
+}
 
 function chainForL1(chainId: number) {
     if (chainId === mainnet.id) return mainnet;
@@ -96,6 +148,54 @@ export function directRpcProvider(url: string): EthereumProvider {
 
 export const SANDBOX_L1_RPC_URL = "http://localhost:8545";
 
+/** Insert or replace (by id) and persist. Newest first. */
+async function upsertBridge(entry: PendingBridge): Promise<void> {
+    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+    const idx = all.findIndex((b) => b.id === entry.id);
+    const next = idx >= 0 ? all.map((b) => (b.id === entry.id ? entry : b)) : [entry, ...all];
+    await secureSet(KEYS.pendingBridges, next);
+}
+
+const normalizeHex = (v: string | bigint | number) => {
+    const s = typeof v === "string" ? v : `0x${v.toString(16).padStart(64, "0")}`;
+    return s.toLowerCase();
+};
+
+/**
+ * Find this deposit's DepositToAztecPublic event in a mined receipt and
+ * complete the entry from it. Throws if absent — a deposit receipt without
+ * its event means something is deeply wrong; never mark such a claim usable.
+ */
+async function completeFromReceipt(
+    entry: PendingBridge,
+    receipt: { logs: any[] },
+    portalAddress: string,
+    claimSecretHash: string,
+): Promise<PendingBridge> {
+    const events = parseEventLogs({
+        abi: await lazyPortalAbi(),
+        logs: receipt.logs as any,
+        eventName: "DepositToAztecPublic",
+    }) as any[];
+    const match = events.find(
+        (log) =>
+            log.address.toLowerCase() === portalAddress.toLowerCase() &&
+            normalizeHex(log.args.secretHash) === normalizeHex(claimSecretHash),
+    );
+    if (!match) {
+        throw new Error(
+            "Deposit transaction mined but its DepositToAztecPublic event was not found — " +
+                "refusing to record an unverifiable claim.",
+        );
+    }
+    return {
+        ...entry,
+        status: "pending",
+        messageHash: match.args.key as string,
+        messageLeafIndex: (match.args.index as bigint).toString(),
+    };
+}
+
 export async function bridgeFeeJuice(args: {
     wallet: AztecWallet;
     network: AztecNetwork;
@@ -108,43 +208,131 @@ export async function bridgeFeeJuice(args: {
 
     const accounts = (await provider.request({ method: "eth_requestAccounts" })) as string[];
     if (!accounts?.[0]) throw new Error("No L1 account connected.");
+    const l1Account = accounts[0] as `0x${string}`;
 
     const chain = chainForL1(network.l1ChainId);
     const client = createWalletClient({
-        account: accounts[0] as `0x${string}`,
+        account: l1Account,
         chain,
         transport: custom(provider),
     }).extend(publicActions);
 
     const node = (wallet as any).aztecNode;
     if (!node) throw new Error("Aztec wallet has no node attached.");
+    const { l1ContractAddresses } = await node.getNodeInfo();
+    const portalAddress = l1ContractAddresses.feeJuicePortalAddress?.toString() as `0x${string}`;
+    const feeAssetAddress = l1ContractAddresses.feeJuiceAddress?.toString() as `0x${string}`;
+    if (!portalAddress || !feeAssetAddress) {
+        throw new Error("Node did not report the L1 fee-juice portal/asset addresses.");
+    }
 
-    const manager = await L1FeeJuicePortalManager.new(
-        node,
-        client as any,
-        createLogger("wallet:bridge"),
-    );
-    const claim = await manager.bridgeTokensPublic(recipient, amount, mint);
-
-    const entry: PendingBridge = {
+    // The secret is generated HERE and persisted BEFORE any L1 transaction is
+    // broadcast. The previous flow (SDK portal manager) generated it
+    // internally and only surfaced it after mining — a page death in that
+    // window lost the secret and stranded the deposited funds forever.
+    const { generateClaimSecret } = await lazyEthereum();
+    const [claimSecret, claimSecretHash] = await generateClaimSecret();
+    let entry: PendingBridge = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         network: network.id,
         recipient: recipient.toString(),
-        claimAmount: claim.claimAmount.toString(),
-        claimSecret: claim.claimSecret.toString(),
-        messageLeafIndex: claim.messageLeafIndex.toString(),
-        messageHash: claim.messageHash.toString(),
+        claimAmount: amount.toString(),
+        claimSecret: claimSecret.toString(),
+        status: "depositing",
         createdAt: Date.now(),
     };
+    await upsertBridge(entry);
 
-    const existing = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    await secureSet(KEYS.pendingBridges, [entry, ...existing]);
+    if (mint) {
+        const handlerAddress = l1ContractAddresses.feeAssetHandlerAddress?.toString() as
+            | `0x${string}`
+            | undefined;
+        if (!handlerAddress) {
+            throw new Error("This network has no free fee-asset handler — bridge your own balance.");
+        }
+        const handler = getContract({ address: handlerAddress, abi: await lazyHandlerAbi(), client });
+        const mintAmount = (await handler.read.mintAmount()) as bigint;
+        if (amount !== mintAmount) {
+            throw new Error(`The network's handler mints exactly ${mintAmount} per call.`);
+        }
+        await client.waitForTransactionReceipt({
+            hash: await handler.write.mint([l1Account]),
+        });
+    }
+
+    const feeAsset = getContract({ address: feeAssetAddress, abi: await lazyErc20Abi(), client });
+    await client.waitForTransactionReceipt({
+        hash: await feeAsset.write.approve([portalAddress, amount]),
+    });
+
+    const portal = getContract({ address: portalAddress, abi: await lazyPortalAbi(), client });
+    const depositArgs = [recipient.toString(), amount, claimSecretHash.toString()] as const;
+    await portal.simulate.depositToAztecPublic(depositArgs as any);
+    const l1TxHash = await portal.write.depositToAztecPublic(depositArgs as any);
+
+    // Record the broadcast before waiting: if we die here, recovery completes
+    // the claim from the receipt on the next visit.
+    entry = { ...entry, status: "sent", l1TxHash };
+    await upsertBridge(entry);
+
+    const receipt = await client.waitForTransactionReceipt({ hash: l1TxHash });
+    if (receipt.status !== "success") {
+        entry = { ...entry, status: "failed" };
+        await upsertBridge(entry);
+        throw new Error(`L1 deposit transaction reverted (${l1TxHash}).`);
+    }
+
+    entry = await completeFromReceipt(entry, receipt, portalAddress, claimSecretHash.toString());
+    await upsertBridge(entry);
     return entry;
+}
+
+/**
+ * Finish bookkeeping for deposits whose page died between broadcast and
+ * receipt ("sent"): fetch the receipt from L1 and complete or fail the entry.
+ * Read-only on L1 — safe to call on every Bridge visit.
+ */
+export async function recoverInFlightBridges(
+    networkId: AztecNetwork["id"],
+    l1RpcUrl: string,
+    portalAddress: string,
+): Promise<void> {
+    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+    const stuck = all.filter(
+        (b) => b.network === networkId && b.status === "sent" && b.l1TxHash && !b.dismissedAt,
+    );
+    if (stuck.length === 0) return;
+
+    const client = createPublicClient({ transport: http(l1RpcUrl) });
+    for (const b of stuck) {
+        let receipt;
+        try {
+            receipt = await client.getTransactionReceipt({ hash: b.l1TxHash as `0x${string}` });
+        } catch {
+            continue; // not mined yet (or RPC hiccup) — try again next visit
+        }
+        if (receipt.status !== "success") {
+            await upsertBridge({ ...b, status: "failed" });
+            continue;
+        }
+        const { computeSecretHash } = await lazyHash();
+        const secretHash = await computeSecretHash(Fr.fromHexString(b.claimSecret));
+        await upsertBridge(await completeFromReceipt(b, receipt, portalAddress, secretHash.toString()));
+    }
+}
+
+/** Hide an unrecoverable entry (interrupted pre-broadcast, or reverted). */
+export async function dismissBridge(id: string): Promise<void> {
+    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+    await secureSet(
+        KEYS.pendingBridges,
+        all.map((b) => (b.id === id ? { ...b, dismissedAt: Date.now() } : b)),
+    );
 }
 
 export async function listPendingBridges(networkId: AztecNetwork["id"]): Promise<PendingBridge[]> {
     const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    return all.filter((b) => b.network === networkId && !b.consumedAt);
+    return all.filter((b) => b.network === networkId && !b.consumedAt && !b.dismissedAt);
 }
 
 /**
@@ -166,7 +354,11 @@ export async function listReadyClaims(
     recipient: AztecAddress,
 ): Promise<PendingBridge[]> {
     const recip = recipient.toString();
-    const mine = (await listPendingBridges(networkId)).filter((b) => b.recipient === recip);
+    // In-flight ("depositing"/"sent") and failed entries are never offered to
+    // fee payments — only claims completed from a confirmed L1 receipt.
+    const mine = (await listPendingBridges(networkId)).filter(
+        (b) => b.recipient === recip && isClaimable(b),
+    );
     if (mine.length === 0) return [];
     const node = (wallet as any).aztecNode;
     const pxe = (wallet as any).pxe;
@@ -213,7 +405,7 @@ export async function listReadyClaims(
             await getNonNullifiedL1ToL2MessageWitness(
                 node,
                 feeJuiceAddress,
-                Fr.fromHexString(b.messageHash),
+                Fr.fromHexString(b.messageHash!), // isClaimable guarantees set
                 Fr.fromHexString(b.claimSecret),
                 anchorBlockHash as any,
             );

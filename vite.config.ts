@@ -53,5 +53,7 @@ export default defineConfig(({ mode }) => ({
             // the console — a privacy sink in a shipped wallet. Verbose in dev only.
             LOG_LEVEL: mode === "production" ? "warn" : "info",
         }),
+        // Shown on Home so a tester can verify the loaded build is current.
+        __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
     },
 }));

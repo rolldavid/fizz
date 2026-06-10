@@ -2,6 +2,12 @@ import { defineManifest } from "@crxjs/vite-plugin";
 
 export default defineManifest({
     manifest_version: 3,
+    // Pins the extension ID to bapbaajfnjockbcdhjpgpllflnhgogol on EVERY
+    // unpacked install (and the Web Store build, which derives the published
+    // ID from this same key). fizzwallet.com/bridge + /launch message the
+    // wallet by this ID — without the pin every dev machine gets a random one.
+    // This is only the PUBLIC key; there is no private half to protect.
+    key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4Pgg5vyd9mDoO0hrNEqXDziJk3bv3Qg9KBhgkv6UhS2t+/AupeQtv7dUwT7O5jaqPefu/Y1GIwQgVDXDzY/mPyP6Fu1fjTK1dT8tnMRdn8iFzmGd6vBtfBDHSC6hVpVV8mlHEuBx6ZQYq+tAwA10Zjv60+JfbEEn9uG40bEHy+mSmTBtMVEWa9EIRhjdaBJEGbM9SoFbBCeBn0ZcgOOZBYb4pZKTD01NSnwutvkdft4ER7RBR0oztoSPVK4rnceFKtsz3Mair/YAVgLesUn3i9xnNtoeQ56EYK+OMiZAuNEdWyk8ftOGH8HWbTSztzlW6oAuDV2G+08Hu4idzBt+DwIDAQAB",
     name: "Fizz — Private Aztec Wallet",
     short_name: "Fizz",
     description:
@@ -28,6 +34,17 @@ export default defineManifest({
         type: "module",
     },
     permissions: ["storage"],
+    // The public bridge page hands finished fee-juice deposits to the wallet
+    // as claim tickets (chrome.runtime.sendMessage from the page). Restricted
+    // to our own origins; the background worker re-validates the sender.
+    externally_connectable: {
+        matches: [
+            "https://fizzwallet.com/*",
+            "https://www.fizzwallet.com/*",
+            "https://fizzwallet.netlify.app/*",
+            "http://localhost/*",
+        ],
+    },
     // Host patterns ignore ports — these cover the sandbox node (8080), the
     // sandbox L1 anvil (8545), any custom local node, and the hosted networks.
     host_permissions: [

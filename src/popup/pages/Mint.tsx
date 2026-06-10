@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Header } from "../components/Header";
 import { ArrowLeftIcon } from "../components/icons";
+import { StandaloneGuard } from "../components/StandaloneGuard";
 import { useWallet } from "../../lib/state/walletContext";
 import { trackOp } from "../../lib/state/activity";
 import { loadTokens, type TokenEntry } from "../../lib/aztec/tokens";
@@ -113,6 +114,8 @@ export function Mint({ onBack }: { onBack: () => void }) {
                 </button>
 
                 <div style={{ fontWeight: 600, fontSize: 16 }}>Mint tokens</div>
+
+                <StandaloneGuard route="mint" />
                 <p className="hint">
                     Creates new supply on a token where you hold the minter role — directly into a
                     private or public balance.

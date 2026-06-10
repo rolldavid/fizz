@@ -19,6 +19,14 @@ create wallet → fund-free first tx on testnet (sponsored) → deploy token →
 mint → private send to a second account → convert both ways → lock/unlock →
 restore from phrase.
 
+## 0.5 Stable extension ID (manifest `key`)
+
+The manifest pins a public `key`, which fixes the extension ID to
+`bapbaajfnjockbcdhjpgpllflnhgogol` for every unpacked install AND for the Web
+Store build. fizzwallet.com/bridge and /launch message the wallet by this ID
+(`externally_connectable`), so DO NOT remove or regenerate the key — doing so
+orphans the web integration. There is no private half to protect.
+
 ## 1. One-time developer setup
 
 1. Google account for publishing → https://chrome.google.com/webstore/devconsole

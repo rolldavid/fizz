@@ -31,6 +31,12 @@ export type DeployTokenInput = {
     initialSupplyMode: "private" | "public";
     /** Whether the deployer keeps mint authority for future supply changes. */
     keepMinterRole: boolean;
+    /**
+     * Called with the token's address BEFORE the deploy tx is sent. The
+     * address is deterministic (DeployMethod caches its instance), so callers
+     * can journal it and recover the deploy if this page dies mid-flight.
+     */
+    onPredictedAddress?: (address: string) => void | Promise<void>;
 };
 
 export type DeployTokenResult = {
@@ -60,14 +66,26 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
 
     // The v4 Token constructor sets `admin = deployer`. Admin can later set/revoke
     // minters; we leave that to the user via a separate Manage screen if needed.
-    const deployTx = Token.deploy(wallet as any, deployer, name, symbol, decimals);
+    //
+    // The `{ deployer }` instantiation option locks the deployer at
+    // construction, which makes the contract address resolvable BEFORE send()
+    // — required for the crash journal below. Without it, getInstance() throws
+    // "deployer is not yet locked" until send() locks it from the sender; with
+    // it, send({ from: deployer }) matches the locked value, so the predicted
+    // and deployed addresses always agree.
+    const deployTx = Token.deploy(wallet as any, deployer, name, symbol, decimals, { deployer });
+
+    const sendOptions = {
+        from: deployer,
+        ...(fee.method ? { fee: { paymentMethod: fee.method } } : {}),
+    } as any;
+
+    const instance = await deployTx.getInstance();
+    await input.onPredictedAddress?.(instance.address.toString());
 
     // The default send() waits for mining and resolves to
     // { contract, receipt: { txHash, ... } } (DeployResultMined).
-    const sent = await deployTx.send({
-        from: deployer,
-        ...(fee.method ? { fee: { paymentMethod: fee.method } } : {}),
-    } as any);
+    const sent = await deployTx.send(sendOptions);
     await markFeeConsumed(fee);
 
     const contract: any = sent.contract;

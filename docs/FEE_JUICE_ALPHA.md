@@ -42,6 +42,33 @@ FeeJuicePaymentMethodWithClaim                  ── claim consumed AS the fee
   claims, readiness checked at the PXE's true anchor (non-nullified witness),
   auto-consume on next tx, atomic deploy+claim for fresh accounts.
 
+## 1.5 SHIPPED ARCHITECTURE (2026-06-09): three clean surfaces
+
+The product split the flows (owner direction):
+
+- **The extension is just a wallet** — send / receive / convert / balances.
+  Token deployment is no longer on Home.
+- **fizzwallet.com/bridge** — fee juice in, from ANY Ethereum wallet
+  (RainbowKit), to ANY Aztec address. Fee juice only; one-way by protocol
+  (FeeJuicePortal.depositToAztecPublic is the single canonical entry; the
+  deposit asset is the L1 fee ERC20, never ETH; no user exit exists). After
+  the deposit the page hands the wallet a **claim ticket**
+  (`fizzclaim1:base64url` — src/lib/aztec/claimTicket.ts) via
+  `chrome.runtime.sendMessage` (externally_connectable), with copy-paste
+  import as fallback (Bridge → "Import claim ticket"). The wallet's next
+  transaction auto-pays with the claim.
+- **fizzwallet.com/launch** — token launcher. The page sends a draft
+  (`fizz:launch-token`) to the extension; the extension opens its own
+  standalone window pre-filled at #deploy where the USER reviews and deploys
+  (keys and even the user's address never touch the page); the page polls
+  `fizz:launch-status` for the public result (token address + tx hash).
+
+The in-wallet funding account (pattern A below) REMAINS as the
+no-external-wallet path on the extension's Bridge page. Fund-safety invariant
+shipped with it: the claim secret is persisted BEFORE any L1 broadcast, with
+a status lifecycle (depositing → sent → pending → failed) and receipt-based
+recovery — a popup death can no longer strand a deposit.
+
 ## 2. Candidate patterns, compared
 
 ### A. In-wallet L1 account (derived from the same 12 words) — ★ RECOMMENDED

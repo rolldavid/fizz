@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Header, shortAddress } from "../components/Header";
 import { Identicon } from "../components/Identicon";
+import { DeployRecovery } from "../components/DeployRecovery";
 import { CheckIcon, CopyIcon, KeyIcon, LockIcon, PeopleIcon, QrIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
 import { KEYS, storage } from "../../lib/storage";
@@ -138,6 +139,8 @@ export function Home({ onNavigate }: { onNavigate: (r: Route) => void }) {
                 }
             />
             <div className="content">
+                {/* Surfaces (and recovers) a deploy interrupted by the popup closing. */}
+                <DeployRecovery onRecovered={refresh} />
                 {showIntro && (
                     <div
                         className="card card-accent fade-in"
@@ -312,13 +315,9 @@ export function Home({ onNavigate }: { onNavigate: (r: Route) => void }) {
                             >
                                 Mint
                             </button>
-                            <button
-                                className="btn btn-ghost"
-                                style={{ padding: "4px 10px", fontSize: 11 }}
-                                onClick={() => onNavigate("deploy")}
-                            >
-                                + Deploy
-                            </button>
+                            {/* Token deployment moved to fizzwallet.com/launch — the
+                                wallet stays a wallet. The Deploy page itself remains:
+                                /launch opens it (pre-filled) in a standalone window. */}
                             <button
                                 className="btn btn-ghost"
                                 style={{ padding: "4px 10px", fontSize: 11 }}
@@ -355,6 +354,15 @@ export function Home({ onNavigate }: { onNavigate: (r: Route) => void }) {
                         onAdded={refresh}
                     />
                 )}
+
+                {/* Build stamp: lets a tester confirm at a glance that the
+                    loaded extension matches the code they just pulled. */}
+                <div
+                    className="muted"
+                    style={{ textAlign: "center", fontSize: 10, opacity: 0.6, marginTop: 4 }}
+                >
+                    build {new Date(__BUILD_TIME__).toLocaleString()}
+                </div>
             </div>
         </>
     );
@@ -497,7 +505,7 @@ function FeeJuiceCard({
                         style={{ padding: "4px 10px", fontSize: 11 }}
                         onClick={onBridge}
                     >
-                        Bridge ETH →
+                        Need fee juice? →
                     </button>
                 </div>
             </div>
@@ -519,7 +527,8 @@ function FeeJuiceCard({
             )}
             {needsFunding && !faucetUrl && (
                 <div className="hint" style={{ marginTop: 6 }}>
-                    Bridge ETH from L1 to mint fee juice, or switch to a network with a faucet.
+                    No fee juice yet — bridge some at fizzwallet.com/bridge (tap “Need fee
+                    juice?”), or switch to a network with a faucet.
                 </div>
             )}
             {sponsored && balance === 0n && !row?.loading && (

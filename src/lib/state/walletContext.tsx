@@ -29,6 +29,7 @@ import { markFeeConsumed, resolveFeePaymentMethod } from "../aztec/fee";
 import { syncContactsToPxe, syncKnownSendersToPxe } from "../aztec/contacts";
 import { secureGet, secureSet, setMetaKeyProvider } from "../secureStorage";
 import { hasActiveOps, trackOp } from "./activity";
+import { drainClaimInbox } from "../aztec/claimInbox";
 
 type AccountManager = Awaited<ReturnType<AztecWallet["createSchnorrAccount"]>>;
 
@@ -231,6 +232,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         // Sensitive metadata (contacts, bridge claims) is encrypted at rest
         // under a seed-derived key — install the provider for this session.
         setMetaKeyProvider(() => vaultStore.getMetaKey());
+        // Adopt claim tickets delivered by fizzwallet.com/bridge while we were
+        // locked, so a fee claim is usable even if the user goes straight to
+        // Send. Best-effort: a corrupt inbox must not block unlock, but it must
+        // be VISIBLE (extension console), never silent.
+        void drainClaimInbox().catch((err) => console.error("Claim-inbox drain failed:", err));
         // Tear down any previous PXE before standing up a new one.
         await stopCurrentWallet();
         try {

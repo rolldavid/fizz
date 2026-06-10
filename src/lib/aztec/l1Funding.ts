@@ -97,7 +97,7 @@ export async function getL1FundingStatus(
 ): Promise<L1FundingStatus> {
     const address = getL1FundingAddress();
     const client = publicClient(network);
-    const { l1ContractAddresses } = await withTimeout(
+    const { l1ContractAddresses } = await withTimeout<any>(
         (wallet as any).aztecNode.getNodeInfo(),
         30_000,
         "fetching node info (L1 contract addresses)",

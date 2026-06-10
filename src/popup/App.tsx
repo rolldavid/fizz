@@ -11,9 +11,20 @@ import { Deploy } from "./pages/Deploy";
 import { Mint } from "./pages/Mint";
 import { Contacts } from "./pages/Contacts";
 import { RevealPhrase } from "./pages/RevealPhrase";
+import { ConnectApprove } from "./pages/ConnectApprove";
 import { vaultStore } from "../lib/vault/store";
+import { routeFromHash } from "../lib/runtime/standalone";
 
-type Route = "home" | "send" | "receive" | "bridge" | "deploy" | "mint" | "contacts" | "reveal";
+type Route =
+    | "home"
+    | "send"
+    | "receive"
+    | "bridge"
+    | "deploy"
+    | "mint"
+    | "contacts"
+    | "reveal"
+    | "connect";
 
 function LoadingScreen() {
     const { network, networks, setNetwork, lock, bootError, retryBoot } = useWallet();
@@ -86,7 +97,16 @@ function LoadingScreen() {
 
 function Shell() {
     const { status, account } = useWallet();
-    const [route, setRoute] = useState<Route>("home");
+    // Deep-link support: a standalone window / tab opened at index.html#deploy
+    // lands on that page after unlock (the toolbar popup has no hash → home).
+    const [route, setRoute] = useState<Route>(() => routeFromHash(window.location.hash));
+    // Live hash navigation too: changing the hash on an already-open wallet
+    // page routes without a reload (used by deep links into a running session).
+    useEffect(() => {
+        const onHash = () => setRoute(routeFromHash(window.location.hash));
+        window.addEventListener("hashchange", onHash);
+        return () => window.removeEventListener("hashchange", onHash);
+    }, []);
 
     if (status === "uninitialized") return <Onboarding />;
     if (status === "locked") return <Unlock />;
@@ -115,6 +135,7 @@ function Shell() {
             {route === "mint" && <Mint onBack={() => setRoute("home")} />}
             {route === "contacts" && <Contacts onBack={() => setRoute("home")} />}
             {route === "reveal" && <RevealPhrase onBack={() => setRoute("home")} />}
+            {route === "connect" && <ConnectApprove />}
         </div>
     );
 }

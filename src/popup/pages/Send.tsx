@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Header, shortAddress } from "../components/Header";
 import { Identicon } from "../components/Identicon";
+import { StandaloneGuard } from "../components/StandaloneGuard";
 import { BookmarkIcon, CheckIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
 import { trackOp } from "../../lib/state/activity";
@@ -142,6 +143,8 @@ export function Send({ onBack }: { onBack: () => void }) {
                     ← Back
                 </button>
                 <div style={{ fontWeight: 600, fontSize: 16 }}>Send</div>
+
+                <StandaloneGuard route="send" />
 
                 {/* Primary intent: pay someone vs convert your own balance */}
                 <div className="tabs">

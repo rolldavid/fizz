@@ -244,6 +244,8 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         expect(body).toContain("Fee juice");
         expect(body).toMatch(/Send/);
         expect(body).toMatch(/Receive/);
+        // Build stamp — lets testers confirm the loaded build matches the code.
+        expect(body).toMatch(/build /);
 
         // CSP/wasm sanity: no console errors accumulated during boot.
         const fatal = consoleErrors.filter(
@@ -258,30 +260,23 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         expect(body).toMatch(/0x[0-9a-f]{4,}…?[0-9a-f]{0,8}/i);
     });
 
-    it("bridge page: funding card settles to balances or an error (never an eternal spinner)", async () => {
-        await clickByText(popup, "Bridge");
-        // The card must leave its loading state: either live L1 balances (the
-        // happy path: address + ETH reading from the public Sepolia RPC) or a
-        // visible error message. An eternal spinner is the regression.
+    it("fee-juice screen: web-bridge link-out + ticket import render (wallet stays a wallet)", async () => {
+        await clickByText(popup, "Need fee juice?");
+        // Acquisition lives on fizzwallet.com/bridge now — the wallet screen
+        // shows the link-out card, the claim-ticket import fallback, and any
+        // pending claims. A visible error is acceptable; a dead screen is not.
         await popup.waitForFunction(
-            () => {
-                const t = document.body.innerText;
-                const settled = /ETH/.test(t) || document.querySelector(".error");
-                return t.includes("funding address") && settled;
-            },
-            { timeout: 60_000, polling: 1_000 },
+            () => document.body.innerText.includes("fizzwallet.com/bridge"),
+            { timeout: 30_000, polling: 1_000 },
         );
         const body = await popup.evaluate(() => document.body.innerText);
-        expect(body).toContain("funding address");
-        console.log(
-            `[smoke] bridge card settled: ${body.includes("ETH") ? "balances shown" : "error shown"}`,
-        );
+        expect(body).toContain("claim ticket");
         await clickByText(popup, "← Back");
         await popup.waitForFunction(() => document.body.innerText.includes("Fee juice"), {
             timeout: 15_000,
             polling: 500,
         });
-    }, 90_000);
+    }, 60_000);
 
     it("deploys a token end-to-end from the UI", async () => {
         // Proving capability probe: without cross-origin isolation bb.js
@@ -293,9 +288,34 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         }));
         console.log(`[smoke] isolation: ${JSON.stringify(coi)}`);
 
-        // Home → "+ Deploy"
-        await clickByText(popup, "+ Deploy");
-        await popup.waitForSelector("input[placeholder*='Acme']", { timeout: 30_000 });
+        // Token deployment is no longer on Home (the wallet is just a wallet —
+        // fizzwallet.com/launch owns it). Enter via the #deploy deep link in
+        // the LIVE unlocked session (hashchange routing). Production /launch
+        // opens a fresh window where the user unlocks by hand — that unlock
+        // step can't be reliably synthesized: Chrome's automation input
+        // pipeline drops events on fresh/reloaded extension pages here
+        // (hit-test-verified: button under the cursor, real input unaffected).
+        // Vault unlock crypto is covered by the creation test above.
+        await popup.goto(`chrome-extension://${extensionId}/src/popup/index.html#deploy`, {
+            waitUntil: "domcontentloaded",
+            timeout: 30_000,
+        });
+        try {
+            await popup.waitForSelector("input[placeholder*='Acme']", { timeout: 60_000 });
+        } catch (err) {
+            const body = await popup.evaluate(() => document.body.innerText);
+            console.log(`[smoke] DEPLOY ENTRY FAILED — screen:\n${body.slice(0, 600)}`);
+            console.log(`[smoke] console tail:\n${allConsole.slice(-15).join("\n")}`);
+            throw err;
+        }
+
+        // This page runs as a TAB (puppeteer), which survives blur — the
+        // popup-fragility guard must therefore be hidden here. If this fails,
+        // isToolbarPopup() is misdetecting and every page would nag wrongly.
+        {
+            const body = await popup.evaluate(() => document.body.innerText);
+            expect(body).not.toContain("Open in a window");
+        }
 
         await popup.type("input[placeholder*='Acme']", "Smoke Coin");
         await popup.type("input[placeholder='ACME']", "SMC");
@@ -313,15 +333,22 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
 
         // Account activation (if first tx) + proving + inclusion. First-run
         // proving downloads/compiles keys; allow up to 10 min and dump the
-        // console trail on failure.
+        // console trail on failure. The error check matches the .error ELEMENT
+        // — app error messages don't necessarily contain the word "error", and
+        // a missed one sits until the idle auto-lock wipes the evidence.
         try {
             await popup.waitForFunction(
                 () => {
                     const t = document.body.innerText;
-                    return t.includes("Token deployed") || t.toLowerCase().includes("error");
+                    return t.includes("Token deployed") || !!document.querySelector(".error");
                 },
                 { timeout: 600_000, polling: 2_000 },
             );
+            const errEl = await popup.$(".error");
+            if (errEl) {
+                const msg = await errEl.evaluate((e) => e.textContent);
+                throw new Error(`Deploy surfaced an error: ${msg}`);
+            }
         } catch (err) {
             console.log(`[smoke] DEPLOY HUNG — last console lines:\n${allConsole.slice(-30).join("\n")}`);
             const body = await popup.evaluate(() => document.body.innerText);
@@ -331,4 +358,27 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         const body = await popup.evaluate(() => document.body.innerText);
         expect(body).toContain("Token deployed");
     }, 700_000);
+
+    it("deep link: a fresh window boots LOCKED with the route preserved", async () => {
+        // Mirrors "Open in a window" / the /launch + connect windows: a fresh
+        // page at index.html#bridge must boot to the UNLOCK screen (vault keys
+        // are per-page memory — anything else would be a security bug) with
+        // the hash route intact for after the user unlocks. The unlock click
+        // itself is a human step the automation input pipeline can't deliver
+        // here (see the deploy test's entry comment); unlocking is covered
+        // implicitly by every real session.
+        const page2 = await browser.newPage();
+        await page2.goto(`chrome-extension://${extensionId}/src/popup/index.html#bridge`, {
+            waitUntil: "domcontentloaded",
+            timeout: 30_000,
+        });
+        await page2.waitForSelector("input[type=password]", { timeout: 30_000 });
+        const state = await page2.evaluate(() => ({
+            hash: window.location.hash,
+            text: document.body.innerText.slice(0, 120),
+        }));
+        expect(state.hash).toBe("#bridge");
+        expect(state.text).toContain("Locked tight");
+        await page2.close();
+    }, 60_000);
 });

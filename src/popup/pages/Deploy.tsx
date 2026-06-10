@@ -1,8 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Header } from "../components/Header";
 import { ArrowLeftIcon, CheckIcon, CopyIcon } from "../components/icons";
+import { StandaloneGuard } from "../components/StandaloneGuard";
 import { useWallet } from "../../lib/state/walletContext";
 import { trackOp } from "../../lib/state/activity";
+import {
+    clearDeployJournal,
+    recordDeployStart,
+    recordLastLaunch,
+    saveDeployDraft,
+    takeDeployDraft,
+} from "../../lib/state/opJournal";
 import { deployToken } from "../../lib/aztec/deploy";
 import { addToken } from "../../lib/aztec/tokens";
 import { parseUnits } from "../../lib/aztec/balances";
@@ -21,14 +29,48 @@ export function Deploy({ onBack }: { onBack: () => void }) {
 
     const [busy, setBusy] = useState(false);
     const [stage, setStage] = useState<string | null>(null);
+    const [startedAt, setStartedAt] = useState<number | null>(null);
+    const [elapsed, setElapsed] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const [result, setResult] = useState<Result | null>(null);
     const [copied, setCopied] = useState(false);
 
+    // Draft hand-off: when the user jumps from the fragile toolbar popup to a
+    // standalone window, their typed form follows them (one-shot).
+    useEffect(() => {
+        void takeDeployDraft().then((draft) => {
+            if (!draft) return;
+            setName(draft.name);
+            setSymbol(draft.symbol);
+            setDecimals(draft.decimals);
+            setSupply(draft.supply);
+            setSupplyMode(draft.supplyMode);
+            setKeepMinter(draft.keepMinter);
+        });
+    }, []);
+
+    // Visible elapsed clock while proving — minutes of silent "Deploying…"
+    // read as a hang; a ticking timer reads as work.
+    useEffect(() => {
+        if (startedAt == null) return;
+        const t = window.setInterval(
+            () => setElapsed(Math.floor((Date.now() - startedAt) / 1000)),
+            1_000,
+        );
+        return () => window.clearInterval(t);
+    }, [startedAt]);
+
     async function deploy() {
         setError(null);
+        // Validate on click instead of disabling the button: a disabled button
+        // swallows the click with zero feedback ("nothing happened").
+        if (!name.trim() || !symbol.trim()) {
+            return setError("Give your token a name and a symbol first.");
+        }
         if (!wallet || !account) return setError("Wallet not loaded.");
         setBusy(true);
+        setStartedAt(Date.now());
+        setElapsed(0);
         try {
             // trackOp: defers the idle auto-lock — first-run proving (CRS
             // download + ClientIVC) can exceed the 5-min idle window while the
@@ -51,6 +93,20 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                     initialSupply: supplyValue,
                     initialSupplyMode: supplyMode,
                     keepMinterRole: keepMinter,
+                    // Crash journal: the deploy address is deterministic and
+                    // known pre-send. If this page dies mid-flight (popup
+                    // closed on blur), the next session probes the chain for
+                    // it and recovers the token or explains the interruption.
+                    onPredictedAddress: (address) =>
+                        recordDeployStart({
+                            predictedAddress: address,
+                            name: name.trim(),
+                            symbol: symbol.trim().toUpperCase(),
+                            decimals: d,
+                            networkId: network.id,
+                            hadInitialSupply: supplyValue > 0n,
+                            startedAt: Date.now(),
+                        }),
                 });
                 const addrStr = res.address.toString();
                 await addToken(network.id, {
@@ -59,13 +115,27 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                     name: name.trim(),
                     decimals: d,
                 });
+                await clearDeployJournal();
+                // /launch round-trip: the page that initiated this (if any)
+                // polls the background for the public result.
+                await recordLastLaunch({
+                    address: addrStr,
+                    txHash: res.txHash,
+                    name: name.trim(),
+                    symbol: symbol.trim().toUpperCase(),
+                    at: Date.now(),
+                });
                 setResult({ address: addrStr, txHash: res.txHash });
             });
         } catch (e) {
+            // The failure is visible on screen — the journal would only
+            // produce a stale "interrupted" banner next session.
+            await clearDeployJournal();
             setError(e instanceof Error ? e.message : String(e));
         } finally {
             setBusy(false);
             setStage(null);
+            setStartedAt(null);
         }
     }
 
@@ -151,6 +221,13 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                     the minter.
                 </p>
 
+                <StandaloneGuard
+                    route="deploy"
+                    beforeOpen={() =>
+                        saveDeployDraft({ name, symbol, decimals, supply, supplyMode, keepMinter })
+                    }
+                />
+
                 <div className="field">
                     <label>Name</label>
                     <input
@@ -235,19 +312,32 @@ export function Deploy({ onBack }: { onBack: () => void }) {
 
                 {error && <div className="error">{error}</div>}
 
-                <button
-                    className="btn btn-primary btn-block"
-                    disabled={busy || !name || !symbol}
-                    onClick={deploy}
-                >
+                <button className="btn btn-primary btn-block" disabled={busy} onClick={deploy}>
                     {busy ? stage ?? "Deploying…" : "Deploy token"}
                 </button>
 
                 {busy && (
-                    <div className="hint">
-                        Proofs are generated on your device. The very first transaction also
-                        downloads one-time proving keys (~100&nbsp;MB), so it can take a few
-                        minutes — keep this popup open; it won't auto-lock while working.
+                    <div className="card" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                fontVariantNumeric: "tabular-nums",
+                            }}
+                        >
+                            <span className="spinner" />
+                            <span style={{ fontWeight: 500 }}>
+                                {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}{" "}
+                                elapsed
+                            </span>
+                            <span className="muted">· usually 2–4 min total</span>
+                        </div>
+                        <div className="hint" style={{ margin: 0 }}>
+                            Proofs are generated on your device (the very first transaction also
+                            downloads one-time proving keys). Keep this window open until you see
+                            the confirmation — it won't auto-lock while working.
+                        </div>
                     </div>
                 )}
             </div>
