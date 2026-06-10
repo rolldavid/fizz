@@ -32,6 +32,13 @@ const buildManifest = (env: ConfigEnv): any => {
         "https://aztec-mainnet.drpc.org",
         // Testnet/devnet nodes.
         "https://*.aztec-labs.com",
+        // L1 receipt reads for the fee-juice bridge: recoverInFlightBridges
+        // verifies the DepositToAztecPublic event straight from L1 before a
+        // claim becomes spendable (networks.ts l1RpcUrl). Read-only JSON-RPC,
+        // pinned to exact hosts. Removing these silently strands every bridge
+        // at "sent" — the CSP block is indistinguishable from "not mined yet".
+        "https://ethereum-rpc.publicnode.com",
+        "https://ethereum-sepolia-rpc.publicnode.com",
         // Proving parameters (CRS) — fetched by bb.js ONCE at first proof.
         "https://crs.aztec-cdn.foundation",
         ...(isProd ? [] : ["http://localhost:*", "http://127.0.0.1:*"]),
@@ -82,13 +89,15 @@ const buildManifest = (env: ConfigEnv): any => {
         externally_connectable: { matches: externallyConnectableMatches },
         // Host patterns ignore ports — localhost covers the sandbox node (8080)
         // + anvil (8545); *.aztec-labs.com covers testnet/devnet; the CRS CDN
-        // serves proving params. (The in-wallet L1 funder was removed, so the
-        // Sepolia L1 RPC is no longer here.)
+        // serves proving params; the publicnode hosts are the read-only L1
+        // RPCs the bridge uses to verify deposit receipts (see connectSrc).
         host_permissions: [
             "http://localhost/*",
             "http://127.0.0.1/*",
             "https://aztec-mainnet.drpc.org/*",
             "https://*.aztec-labs.com/*",
+            "https://ethereum-rpc.publicnode.com/*",
+            "https://ethereum-sepolia-rpc.publicnode.com/*",
             "https://crs.aztec-cdn.foundation/*",
         ],
         // The Aztec stack (PXE, bb.js prover, Noir ACVM, foundation crypto) runs

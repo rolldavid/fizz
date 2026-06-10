@@ -54,8 +54,8 @@ export function Bridge({ onBack }: { onBack: () => void }) {
     const prepBusyRef = useRef(false); // synchronous latch (state lags within a tick)
 
     const refresh = useCallback(async () => {
+        setRefreshError(null);
         try {
-            setRefreshError(null);
             // Migrate any legacy plaintext claim inbox (no-op for current builds).
             await drainClaimInbox();
             // Complete deposits whose flow was interrupted (from L1 receipts).
@@ -64,6 +64,12 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                 const portal = l1ContractAddresses.feeJuicePortalAddress?.toString();
                 if (portal) await recoverInFlightBridges(network.id, network.l1RpcUrl, portal);
             }
+        } catch (e) {
+            setRefreshError(e instanceof Error ? e.message : String(e));
+        }
+        // List even when recovery failed: the in-flight cards must stay visible
+        // next to the error, not vanish behind it.
+        try {
             setPending(await listPendingBridges(network.id));
         } catch (e) {
             setRefreshError(e instanceof Error ? e.message : String(e));

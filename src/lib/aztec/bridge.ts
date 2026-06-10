@@ -387,8 +387,17 @@ export async function recoverInFlightBridges(
         let receipt;
         try {
             receipt = await client.getTransactionReceipt({ hash: b.l1TxHash as `0x${string}` });
-        } catch {
-            continue; // not mined yet (or RPC hiccup) — try again next visit
+        } catch (err) {
+            // Only "no receipt yet" is the normal not-mined case — try again
+            // next visit. Anything else (RPC unreachable, origin blocked by the
+            // extension CSP, bad URL) must SURFACE: a blanket catch here once
+            // ate CSP-blocked fetches for every testnet bridge, leaving claims
+            // on "sent… check back in a minute" forever with no error shown.
+            if ((err as { name?: string })?.name === "TransactionReceiptNotFoundError") continue;
+            throw new Error(
+                `Could not reach the L1 RPC (${l1RpcUrl}) to verify bridge deposit ${b.l1TxHash}: ` +
+                    (err instanceof Error ? err.message : String(err)),
+            );
         }
         try {
             if (receipt.status !== "success") {

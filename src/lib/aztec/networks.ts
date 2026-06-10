@@ -55,6 +55,10 @@ export const NETWORKS: AztecNetwork[] = [
         // until it bridges AZTEC → fee juice on fizzwallet.com/bridge. fee.ts
         // still probes on-chain, so this flag is just the (false) hint.
         hasSponsoredFPC: false,
+        // Without this, recoverInFlightBridges never runs on mainnet and every
+        // bridge deposit strands at "sent" (the secret survives locally, but
+        // the claim can't complete). Must stay in the manifest's connect-src.
+        l1RpcUrl: "https://ethereum-rpc.publicnode.com",
     },
     {
         id: "testnet",
