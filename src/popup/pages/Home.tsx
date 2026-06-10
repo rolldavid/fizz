@@ -404,9 +404,11 @@ function AccountSwitcher({
             >
                 <div style={{ fontWeight: 600 }}>Accounts</div>
                 <div className="hint" style={{ fontSize: 11 }}>
-                    Separate accounts keep activities unlinkable — e.g. one address for public
+                    Separate accounts keep activities unlinkable on Aztec — e.g. one for public
                     bridging/funding, another for private spending. All derive from your one
-                    recovery phrase.
+                    recovery phrase. (Funding two from the same L1 wallet, or using one shared
+                    node, can still link them — fund each from a different source for full
+                    separation.)
                 </div>
                 {accounts.map((a) => (
                     <button

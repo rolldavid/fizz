@@ -36,26 +36,32 @@ export type ClaimTicket = {
 };
 
 const PREFIX = "fizzclaim1:";
-const HEX = /^0x[0-9a-fA-F]+$/;
-const DECIMAL = /^\d+$/;
+// Length caps keep a malformed/oversized ticket from bloating storage. Real
+// values are tiny: a field element / tx hash is ≤66 hex chars, and a u128
+// amount / leaf index is ≤39 decimal digits. Generous ceilings, still bounded.
+const HEX = /^0x[0-9a-fA-F]{1,128}$/;
+const DECIMAL = /^\d{1,78}$/;
+const MAX_NETWORK_ID = 32;
 
 export function validateClaimTicket(t: unknown): ClaimTicket {
     const x = t as Record<string, unknown>;
     if (!x || typeof x !== "object") throw new Error("Claim ticket: not an object.");
     if (x.v !== 1) throw new Error(`Claim ticket: unsupported version ${String(x.v)}.`);
     if (x.kind !== "fee-juice-claim") throw new Error("Claim ticket: wrong kind.");
-    if (typeof x.networkId !== "string" || !x.networkId) throw new Error("Claim ticket: missing networkId.");
+    if (typeof x.networkId !== "string" || !x.networkId || x.networkId.length > MAX_NETWORK_ID) {
+        throw new Error("Claim ticket: missing or oversized networkId.");
+    }
     if (typeof x.l1ChainId !== "number" || !Number.isInteger(x.l1ChainId)) {
         throw new Error("Claim ticket: bad l1ChainId.");
     }
     for (const f of ["recipient", "claimSecret", "messageHash", "l1TxHash"] as const) {
         if (typeof x[f] !== "string" || !HEX.test(x[f] as string)) {
-            throw new Error(`Claim ticket: ${f} must be 0x-hex.`);
+            throw new Error(`Claim ticket: ${f} must be 0x-hex (≤128 chars).`);
         }
     }
     for (const f of ["claimAmount", "messageLeafIndex"] as const) {
         if (typeof x[f] !== "string" || !DECIMAL.test(x[f] as string)) {
-            throw new Error(`Claim ticket: ${f} must be a decimal string.`);
+            throw new Error(`Claim ticket: ${f} must be a decimal string (≤78 digits).`);
         }
     }
     if (typeof x.createdAt !== "number") throw new Error("Claim ticket: missing createdAt.");

@@ -32,17 +32,21 @@ export async function secureGet<T>(key: string): Promise<T | undefined> {
     const raw = await storage.get<unknown>(key);
     if (raw === undefined) return undefined;
     if (isEncBlob(raw)) {
-        return decryptJson<T>(await requireKey(), raw);
+        const k = await requireKey();
+        const value = await decryptJson<T>(k, raw, key);
+        // Transparently upgrade legacy (no-AAD) blobs to the AAD-bound format.
+        if (raw.__enc !== 2) await storage.set(key, await encryptJson(k, value, key));
+        return value;
     }
     // Legacy plaintext value: migrate to encrypted in place, then return it.
     const k = await requireKey();
-    await storage.set(key, await encryptJson(k, raw));
+    await storage.set(key, await encryptJson(k, raw, key));
     return raw as T;
 }
 
 export async function secureSet<T>(key: string, value: T): Promise<void> {
     const k = await requireKey();
-    await storage.set(key, await encryptJson(k, value));
+    await storage.set(key, await encryptJson(k, value, key));
 }
 
 export async function secureRemove(key: string): Promise<void> {

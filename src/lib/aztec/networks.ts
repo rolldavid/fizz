@@ -109,7 +109,7 @@ export function validateCustomNodeUrl(raw: string): string {
     try {
         url = new URL(raw.trim());
     } catch {
-        throw new Error("Enter a full node URL, e.g. https://my-node.example or http://localhost:8080");
+        throw new Error("Enter a full node URL, e.g. https://my-node.aztec-labs.com or http://localhost:8080");
     }
     const isLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1";
     if (url.protocol === "http:" && !isLocal) {
@@ -117,6 +117,24 @@ export function validateCustomNodeUrl(raw: string): string {
     }
     if (url.protocol !== "http:" && url.protocol !== "https:") {
         throw new Error("Node URL must be http(s).");
+    }
+    // HONESTY over a silent failure: the extension's CSP `connect-src` (locked
+    // down so a compromised dependency can't exfiltrate the seed) only permits
+    // localhost and *.aztec-labs.com origins. A custom node on any other remote
+    // host would be blocked by the browser at fetch time with an opaque error.
+    // Reject it up front with an explanation instead. (Running your own node
+    // today means localhost — e.g. via an SSH tunnel — or a self-built
+    // extension with your origin added to connect-src.)
+    const isAztecLabs = url.hostname === "aztec-labs.com" || url.hostname.endsWith(".aztec-labs.com");
+    if (!isLocal && !isAztecLabs) {
+        throw new Error(
+            "For your seed's safety the wallet only permits network egress to localhost and " +
+                "*.aztec-labs.com. A node on " +
+                url.hostname +
+                " would be blocked by the extension's content-security policy. Use a localhost " +
+                "node (e.g. an SSH tunnel to your own), or build the extension with your node's " +
+                "origin added to connect-src.",
+        );
     }
     return url.toString().replace(/\/$/, "");
 }

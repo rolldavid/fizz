@@ -9,6 +9,9 @@
  *     once and never retained here — a JS string can't be wiped in place, so
  *     the only winning move is not to keep it. Anything that needs the phrase
  *     later (RevealPhrase) re-authenticates and re-decrypts the vault.
+ *   - Plaintext byte buffers that pass through (decrypted mnemonic, the
+ *     TextEncoder copy handed to encrypt) are `.fill(0)`'d as soon as they're
+ *     consumed — only the un-wipeable JS string survives, briefly.
  *   - The popup CSP (default-src 'none' + pinned connect-src) blocks injected
  *     remote script AND network exfiltration paths; this is defense-in-depth.
  */
@@ -29,7 +32,6 @@ import {
 import { registerPasskey, unlockWithPasskey } from "./passkey";
 import { mnemonicToSeed } from "./mnemonic";
 import { deriveMetaKey } from "./metaCrypto";
-import { deriveL1Key, type L1KeyMaterial } from "./l1Account";
 import { isAcceptablePassphrase } from "./passwordStrength";
 
 /** What the store RETAINS while unlocked — deliberately excludes the mnemonic. */
@@ -43,6 +45,16 @@ export type RevealedSecret = {
     mnemonic: string;
     seed: Uint8Array;
 };
+
+/**
+ * Envelope-format versions we have deliberately RETIRED and will not decrypt.
+ * v1 predates the public release. Critically, this is an explicit retired-set,
+ * NOT a `v < VAULT_VERSION` rejection: the AAD binds each envelope's OWN
+ * version (crypto.ts:vaultAAD), so a future VAULT_VERSION bump leaves older
+ * still-supported envelopes decryptable — bumping the format must not brick
+ * every existing vault. Only add a version here when you truly drop support.
+ */
+const RETIRED_VAULT_VERSIONS = new Set<number>([1]);
 
 function decryptFailure(err: unknown): Error {
     // WebCrypto reports GCM auth failure as an opaque OperationError, which is
@@ -58,7 +70,6 @@ class VaultStore {
     private envelope: VaultEnvelope | undefined;
     private unlocked: UnlockedSecret | null = null;
     private metaKeyPromise: Promise<CryptoKey> | null = null;
-    private l1Key: L1KeyMaterial | null = null;
 
     async init(): Promise<void> {
         this.envelope = await storage.get<VaultEnvelope>(KEYS.vault);
@@ -88,28 +99,11 @@ class VaultStore {
         return this.metaKeyPromise;
     }
 
-    /**
-     * The in-wallet L1 funding key (BIP-44 m/44'/60'/0'/0/0 — restorable from
-     * the same phrase in any Ethereum wallet). Set at unlock/create; zeroed on
-     * lock. Throws while locked.
-     */
-    getL1Key(): L1KeyMaterial {
-        if (!this.l1Key) throw new Error("Wallet is locked.");
-        return this.l1Key;
-    }
-
-    private setL1Key(mnemonic: string): void {
-        if (this.l1Key) this.l1Key.privateKey.fill(0);
-        this.l1Key = deriveL1Key(mnemonic);
-    }
-
     lock(): void {
         // Zero the seed bytes before dropping the reference.
         if (this.unlocked) this.unlocked.seed.fill(0);
         this.unlocked = null;
         this.metaKeyPromise = null;
-        if (this.l1Key) this.l1Key.privateKey.fill(0);
-        this.l1Key = null;
     }
 
     private assertSupportedVersion(env: VaultEnvelope): void {
@@ -122,10 +116,9 @@ class VaultStore {
                     `supported up to v${VAULT_VERSION}). Update the extension to unlock it.`,
             );
         }
-        // v1 envelopes predate the public release; no migration path required.
-        if (env.v < VAULT_VERSION) {
+        if (RETIRED_VAULT_VERSIONS.has(env.v)) {
             throw new Error(
-                `This vault uses an unsupported legacy format (v${env.v}). ` +
+                `This vault uses a retired legacy format (v${env.v}). ` +
                     `Restore from your 12-word recovery phrase instead.`,
             );
         }
@@ -137,10 +130,11 @@ class VaultStore {
      */
     async createWithPasskey(mnemonic: string, userLabel: string): Promise<void> {
         const { credentialId, prfSalt, contentKey } = await registerPasskey(userLabel);
+        const ptBytes = new TextEncoder().encode(mnemonic);
         try {
             const key = await importContentKey(contentKey);
             const aad = vaultAAD({ v: VAULT_VERSION, method: "passkey", credentialId, prfSalt });
-            const blob = await encrypt(key, new TextEncoder().encode(mnemonic), aad);
+            const blob = await encrypt(key, ptBytes, aad);
             const env: VaultEnvelope = {
                 v: VAULT_VERSION,
                 method: "passkey",
@@ -152,9 +146,9 @@ class VaultStore {
             this.envelope = env;
         } finally {
             contentKey.fill(0);
+            ptBytes.fill(0);
         }
         this.unlocked = { seed: mnemonicToSeed(mnemonic) };
-        this.setL1Key(mnemonic);
     }
 
     async createWithPassphrase(mnemonic: string, passphrase: string): Promise<void> {
@@ -172,18 +166,22 @@ class VaultStore {
         const kdf = ARGON2_DEFAULTS;
         const key = await deriveKeyFromPassphrase(passphrase, salt, kdf);
         const aad = vaultAAD({ v: VAULT_VERSION, method: "passphrase", salt: saltB64, kdf });
-        const blob = await encrypt(key, new TextEncoder().encode(mnemonic), aad);
-        const env: VaultEnvelope = {
-            v: VAULT_VERSION,
-            method: "passphrase",
-            salt: saltB64,
-            kdf,
-            blob,
-        };
-        await storage.set(KEYS.vault, env);
-        this.envelope = env;
+        const ptBytes = new TextEncoder().encode(mnemonic);
+        try {
+            const blob = await encrypt(key, ptBytes, aad);
+            const env: VaultEnvelope = {
+                v: VAULT_VERSION,
+                method: "passphrase",
+                salt: saltB64,
+                kdf,
+                blob,
+            };
+            await storage.set(KEYS.vault, env);
+            this.envelope = env;
+        } finally {
+            ptBytes.fill(0);
+        }
         this.unlocked = { seed: mnemonicToSeed(mnemonic) };
-        this.setL1Key(mnemonic);
     }
 
     async unlockWithPasskey(): Promise<RevealedSecret> {
@@ -207,8 +205,8 @@ class VaultStore {
                 throw decryptFailure(err);
             }
             const mnemonic = new TextDecoder().decode(pt);
+            pt.fill(0); // wipe the decrypted plaintext bytes (the string is all that's left)
             this.unlocked = { seed: mnemonicToSeed(mnemonic) };
-            this.setL1Key(mnemonic);
             return { mnemonic, seed: this.unlocked.seed };
         } finally {
             // Always wipe the raw AES key, including on decrypt failure.
@@ -224,21 +222,24 @@ class VaultStore {
         if (!this.envelope.salt) {
             throw new Error("Vault envelope is missing salt.");
         }
-        const salt = b64.decode(this.envelope.salt);
-        const key = await deriveKeyFromPassphrase(
-            passphrase,
-            salt,
-            this.envelope.kdf ?? ARGON2_DEFAULTS,
-        );
         let pt: Uint8Array;
         try {
+            // Decode salt INSIDE the try so a tampered/non-base64 salt surfaces
+            // the same neutral failure as any other corruption (no raw
+            // DOMException leaking past the friendly wrapper, no oracle).
+            const salt = b64.decode(this.envelope.salt);
+            const key = await deriveKeyFromPassphrase(
+                passphrase,
+                salt,
+                this.envelope.kdf ?? ARGON2_DEFAULTS,
+            );
             pt = await decrypt(key, this.envelope.blob, vaultAAD(this.envelope));
         } catch (err) {
             throw decryptFailure(err);
         }
         const mnemonic = new TextDecoder().decode(pt);
+        pt.fill(0); // wipe the decrypted plaintext bytes
         this.unlocked = { seed: mnemonicToSeed(mnemonic) };
-        this.setL1Key(mnemonic);
         return { mnemonic, seed: this.unlocked.seed };
     }
 
@@ -253,8 +254,6 @@ class VaultStore {
         if (this.unlocked) this.unlocked.seed.fill(0);
         this.unlocked = null;
         this.metaKeyPromise = null;
-        if (this.l1Key) this.l1Key.privateKey.fill(0);
-        this.l1Key = null;
     }
 }
 

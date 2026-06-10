@@ -23,28 +23,39 @@ describe("metaCrypto", () => {
         const k1 = await deriveMetaKey(SEED);
         const k2 = await deriveMetaKey(SEED);
         // CryptoKey identity differs but ciphertext from one decrypts with the other.
-        const blob = await encryptJson(k1, { hello: "world" });
-        await expect(decryptJson(k2, blob)).resolves.toEqual({ hello: "world" });
+        const blob = await encryptJson(k1, { hello: "world" }, "k");
+        await expect(decryptJson(k2, blob, "k")).resolves.toEqual({ hello: "world" });
     });
 
     it("different seeds give incompatible keys", async () => {
         const k1 = await deriveMetaKey(SEED);
         const k2 = await deriveMetaKey(new Uint8Array(32).fill(8));
-        const blob = await encryptJson(k1, ["x"]);
-        await expect(decryptJson(k2, blob)).rejects.toThrow();
+        const blob = await encryptJson(k1, ["x"], "k");
+        await expect(decryptJson(k2, blob, "k")).rejects.toThrow();
     });
 
     it("rejects wrong seed length", async () => {
         await expect(deriveMetaKey(new Uint8Array(16))).rejects.toThrow(/32-byte/);
     });
 
-    it("round-trips structured values exactly and marks blobs", async () => {
+    it("round-trips structured values exactly and marks blobs as v2", async () => {
         const key = await freshKey();
         const value = { list: [1, 2, 3], s: "claim-secret-0xabc", nested: { b: true } };
-        const blob = await encryptJson(key, value);
+        const blob = await encryptJson(key, value, "k");
         expect(isEncBlob(blob)).toBe(true);
+        expect(blob.__enc).toBe(2);
         expect(JSON.stringify(blob)).not.toContain("claim-secret"); // nothing leaks
-        await expect(decryptJson(key, blob)).resolves.toEqual(value);
+        await expect(decryptJson(key, blob, "k")).resolves.toEqual(value);
+    });
+
+    it("AAD binds the storage key — a blob from one key won't decrypt under another", async () => {
+        const key = await freshKey();
+        const blob = await encryptJson(key, { spendable: "claim" }, "aztec.pendingBridges");
+        // Same key, but presented as if it were a different storage key → reject.
+        await expect(decryptJson(key, blob, "aztec.contacts")).rejects.toThrow();
+        await expect(decryptJson(key, blob, "aztec.pendingBridges")).resolves.toEqual({
+            spendable: "claim",
+        });
     });
 });
 

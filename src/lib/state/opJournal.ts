@@ -60,17 +60,29 @@ export type DeployDraft = {
 };
 
 const DRAFT_KEY = "fizz.deployDraft.v1";
+/**
+ * A draft is a UI convenience, never authority — the user reviews and confirms
+ * every deploy in-wallet. The TTL just prevents a stale draft (e.g. a
+ * launch-token hand-off that opened the Unlock screen and was abandoned) from
+ * silently pre-filling a much later manual Deploy visit.
+ */
+const DRAFT_TTL_MS = 5 * 60_000;
 
 export async function saveDeployDraft(draft: DeployDraft): Promise<void> {
-    await sessionArea()?.set({ [DRAFT_KEY]: draft });
+    await sessionArea()?.set({ [DRAFT_KEY]: { ...draft, savedAt: Date.now() } });
 }
 
 export async function takeDeployDraft(): Promise<DeployDraft | null> {
     const area = sessionArea();
     if (!area) return null;
     const got = await area.get(DRAFT_KEY);
-    const draft = (got?.[DRAFT_KEY] as DeployDraft) ?? null;
-    if (draft) await area.remove(DRAFT_KEY);
+    const stored = (got?.[DRAFT_KEY] as (DeployDraft & { savedAt?: number }) | undefined) ?? null;
+    if (stored) await area.remove(DRAFT_KEY);
+    if (!stored) return null;
+    if (typeof stored.savedAt === "number" && Date.now() - stored.savedAt > DRAFT_TTL_MS) {
+        return null; // expired — don't pre-fill
+    }
+    const { savedAt: _omit, ...draft } = stored;
     return draft;
 }
 
@@ -98,52 +110,4 @@ export async function readLastLaunch(): Promise<LastLaunch | null> {
     if (!area) return null;
     const got = await area.get(LAUNCH_RESULT_KEY);
     return (got?.[LAUNCH_RESULT_KEY] as LastLaunch) ?? null;
-}
-
-// ── Connect (fizzwallet.com/bridge → wallet address grant) ──────────────────
-// /bridge deposits ONLY into the connected Fizz account, so the page asks for
-// the active address. The background can't know it (vault-locked), so it
-// opens the #connect approval window; the user decides there. Session-scoped:
-// grants die with the browser. Only ever served to our own origins.
-
-export type ConnectRequest = { origin: string; at: number };
-export type ConnectGrant = {
-    origin: string;
-    /** Set when approved. */
-    address?: string;
-    networkId?: string;
-    denied?: boolean;
-    at: number;
-};
-
-const CONNECT_REQUEST_KEY = "fizz.connectRequest.v1";
-const CONNECT_GRANT_KEY = "fizz.connectGrant.v1";
-
-export async function recordConnectRequest(req: ConnectRequest): Promise<void> {
-    const area = sessionArea();
-    if (!area) throw new Error("storage.session unavailable.");
-    // A new request supersedes any previous grant — the page is asking fresh.
-    await area.remove(CONNECT_GRANT_KEY);
-    await area.set({ [CONNECT_REQUEST_KEY]: req });
-}
-
-export async function readConnectRequest(): Promise<ConnectRequest | null> {
-    const area = sessionArea();
-    if (!area) return null;
-    const got = await area.get(CONNECT_REQUEST_KEY);
-    return (got?.[CONNECT_REQUEST_KEY] as ConnectRequest) ?? null;
-}
-
-export async function recordConnectGrant(grant: ConnectGrant): Promise<void> {
-    const area = sessionArea();
-    if (!area) throw new Error("storage.session unavailable.");
-    await area.remove(CONNECT_REQUEST_KEY);
-    await area.set({ [CONNECT_GRANT_KEY]: grant });
-}
-
-export async function readConnectGrant(): Promise<ConnectGrant | null> {
-    const area = sessionArea();
-    if (!area) return null;
-    const got = await area.get(CONNECT_GRANT_KEY);
-    return (got?.[CONNECT_GRANT_KEY] as ConnectGrant) ?? null;
 }

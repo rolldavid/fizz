@@ -11,7 +11,6 @@ import { Deploy } from "./pages/Deploy";
 import { Mint } from "./pages/Mint";
 import { Contacts } from "./pages/Contacts";
 import { RevealPhrase } from "./pages/RevealPhrase";
-import { ConnectApprove } from "./pages/ConnectApprove";
 import { vaultStore } from "../lib/vault/store";
 import { routeFromHash } from "../lib/runtime/standalone";
 
@@ -23,8 +22,7 @@ type Route =
     | "deploy"
     | "mint"
     | "contacts"
-    | "reveal"
-    | "connect";
+    | "reveal";
 
 function LoadingScreen() {
     const { network, networks, setNetwork, lock, bootError, retryBoot } = useWallet();
@@ -135,7 +133,6 @@ function Shell() {
             {route === "mint" && <Mint onBack={() => setRoute("home")} />}
             {route === "contacts" && <Contacts onBack={() => setRoute("home")} />}
             {route === "reveal" && <RevealPhrase onBack={() => setRoute("home")} />}
-            {route === "connect" && <ConnectApprove />}
         </div>
     );
 }

@@ -47,8 +47,16 @@ function withDomain(seed: Uint8Array, tag: string): Uint8Array {
 }
 
 async function deriveFr(seed: Uint8Array, tag: string): Promise<Fr> {
-    const wide = await sha512(withDomain(seed, tag));
-    return Fr.fromBufferReduce(Buffer.from(wide));
+    // `domained` holds a copy of the seed; zero it (and the wide hash) after use
+    // so derivation leaves no extra copies of seed-derived material lingering.
+    const domained = withDomain(seed, tag);
+    const wide = await sha512(domained);
+    domained.fill(0);
+    try {
+        return Fr.fromBufferReduce(Buffer.from(wide));
+    } finally {
+        wide.fill(0);
+    }
 }
 
 /**

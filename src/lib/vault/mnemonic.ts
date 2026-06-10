@@ -20,6 +20,9 @@ export function mnemonicToSeed(phrase: string): Uint8Array {
         throw new Error("Invalid recovery phrase.");
     }
     const seed = mnemonicToSeedSync(normalized);
-    // Take the first 32 bytes as the account-derivation secret.
-    return seed.slice(0, 32);
+    // Take the first 32 bytes as the account-derivation secret, then wipe the
+    // full 64-byte BIP-39 seed (the other 32 bytes would otherwise linger).
+    const out = seed.slice(0, 32);
+    seed.fill(0);
+    return out;
 }

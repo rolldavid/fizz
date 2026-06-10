@@ -6,9 +6,8 @@ import {
     type ClaimTicket,
 } from "../../src/lib/aztec/claimTicket";
 import {
-    appendToClaimInbox,
     drainClaimInbox,
-    readClaimInbox,
+    importClaimTicketText,
     ticketToPendingBridge,
     CLAIM_INBOX_KEY,
 } from "../../src/lib/aztec/claimInbox";
@@ -50,37 +49,41 @@ describe("claim ticket encode/decode", () => {
         expect(() => validateClaimTicket(ticket({ recipient: "1234" }))).toThrow(/0x-hex/);
         expect(() => validateClaimTicket(ticket({ claimAmount: "10.5" }))).toThrow(/decimal/);
         expect(() => validateClaimTicket(ticket({ kind: "nft" as any }))).toThrow(/kind/);
+        // Length caps: oversized hex / decimal / networkId rejected.
+        expect(() => validateClaimTicket(ticket({ claimSecret: "0x" + "a".repeat(200) }))).toThrow(/0x-hex/);
+        expect(() => validateClaimTicket(ticket({ claimAmount: "9".repeat(100) }))).toThrow(/decimal/);
+        expect(() => validateClaimTicket(ticket({ networkId: "x".repeat(40) }))).toThrow(/networkId/);
     });
 });
 
-describe("claim inbox → encrypted store", () => {
-    it("appends with messageHash dedupe and drains into pendingBridges", async () => {
-        await appendToClaimInbox(ticket());
-        await appendToClaimInbox(ticket()); // duplicate — replaced, not doubled
-        expect(await readClaimInbox()).toHaveLength(1);
-
-        const adopted = await drainClaimInbox();
+describe("manual ticket import → encrypted store", () => {
+    it("imports a pasted ticket straight into pendingBridges (no plaintext hop), dedupes", async () => {
+        const text = encodeClaimTicket(ticket());
+        const adopted = await importClaimTicketText(text);
         expect(adopted).toBe(1);
-        expect(await readClaimInbox()).toHaveLength(0); // cleared after adopt
 
         const pending = await listPendingBridges("testnet");
         expect(pending).toHaveLength(1);
         expect(pending[0].claimSecret).toBe("0x0badc0de");
         expect(isClaimable(pending[0])).toBe(true);
 
-        // Draining again with the same ticket re-delivered: store-level dedupe.
-        await appendToClaimInbox(ticket());
-        expect(await drainClaimInbox()).toBe(0);
+        // Re-importing the same ticket is a store-level no-op (messageHash dedupe).
+        expect(await importClaimTicketText(text)).toBe(0);
         expect(await listPendingBridges("testnet")).toHaveLength(1);
     });
 
-    it("drops invalid inbox entries loudly but keeps valid ones", async () => {
+    it("drainClaimInbox migrates a legacy plaintext inbox, then clears it", async () => {
         const chrome = (globalThis as any).chrome;
-        await chrome.storage.local.set({
-            [CLAIM_INBOX_KEY]: [{ junk: true }, ticket()],
-        });
-        const valid = await readClaimInbox();
-        expect(valid).toHaveLength(1);
+        // Simulate an inbox left by an older build (one junk entry + one valid).
+        await chrome.storage.local.set({ [CLAIM_INBOX_KEY]: [{ junk: true }, ticket()] });
+        const adopted = await drainClaimInbox();
+        expect(adopted).toBe(1); // junk dropped, valid migrated
+        expect(await listPendingBridges("testnet")).toHaveLength(1);
+        const after = await chrome.storage.local.get(CLAIM_INBOX_KEY);
+        expect(after[CLAIM_INBOX_KEY]).toEqual([]); // cleared
+        // A non-array (corrupted) inbox is a safe no-op.
+        await chrome.storage.local.set({ [CLAIM_INBOX_KEY]: "garbage" });
+        expect(await drainClaimInbox()).toBe(0);
     });
 
     it("ticketToPendingBridge maps complete pending entries", () => {

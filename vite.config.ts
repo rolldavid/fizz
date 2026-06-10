@@ -49,9 +49,11 @@ export default defineConfig(({ mode }) => ({
     },
     define: {
         "process.env": JSON.stringify({
-            // The Aztec SDK logger reads this. "info" logs addresses/tx detail to
-            // the console — a privacy sink in a shipped wallet. Verbose in dev only.
-            LOG_LEVEL: mode === "production" ? "warn" : "info",
+            // The Aztec SDK logger reads this. "info"/"warn" can print addresses +
+            // tx detail to the console — a privacy sink in a shipped wallet
+            // (devtools, screen-share, console-scraping extensions). Ship "error"
+            // so prod stays quiet; verbose only in dev.
+            LOG_LEVEL: mode === "production" ? "error" : "info",
         }),
         // Shown on Home so a tester can verify the loaded build is current.
         __BUILD_TIME__: JSON.stringify(new Date().toISOString()),

@@ -39,8 +39,14 @@ export async function deriveMetaKey(seed: Uint8Array): Promise<CryptoKey> {
 }
 
 export type EncBlob = {
-    /** Discriminator + format version for encrypted-at-rest values. */
-    __enc: 1;
+    /**
+     * Format version for encrypted-at-rest values:
+     *   1 — no AAD (legacy; read-only for migration).
+     *   2 — AES-GCM AAD binds the storage key, so ciphertext from one storage
+     *       key can't be substituted onto another (the meta-key is the same for
+     *       all of them) and a rollback to an old value is detectable.
+     */
+    __enc: 1 | 2;
     /** base64 12-byte IV */
     iv: string;
     /** base64 ciphertext (AES-256-GCM) */
@@ -51,10 +57,15 @@ export function isEncBlob(v: unknown): v is EncBlob {
     return (
         typeof v === "object" &&
         v !== null &&
-        (v as any).__enc === 1 &&
+        ((v as any).__enc === 1 || (v as any).__enc === 2) &&
         typeof (v as any).iv === "string" &&
         typeof (v as any).ct === "string"
     );
+}
+
+/** AAD for a v2 blob: binds the storage key (+ a small format epoch). */
+function metaAAD(storageKey: string): Uint8Array {
+    return new TextEncoder().encode(JSON.stringify({ k: storageKey, ev: 1 }));
 }
 
 function toB64(bytes: Uint8Array): string {
@@ -69,18 +80,25 @@ function fromB64(b64: string): Uint8Array {
     return out;
 }
 
-export async function encryptJson(key: CryptoKey, value: unknown): Promise<EncBlob> {
+export async function encryptJson(key: CryptoKey, value: unknown, storageKey: string): Promise<EncBlob> {
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const pt = new TextEncoder().encode(JSON.stringify(value));
-    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, pt));
-    return { __enc: 1, iv: toB64(iv), ct: toB64(ct) };
+    const ct = new Uint8Array(
+        await crypto.subtle.encrypt(
+            { name: "AES-GCM", iv, additionalData: metaAAD(storageKey) as BufferSource },
+            key,
+            pt,
+        ),
+    );
+    pt.fill(0);
+    return { __enc: 2, iv: toB64(iv), ct: toB64(ct) };
 }
 
-export async function decryptJson<T>(key: CryptoKey, blob: EncBlob): Promise<T> {
-    const pt = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: fromB64(blob.iv) as BufferSource },
-        key,
-        fromB64(blob.ct) as BufferSource,
-    );
+export async function decryptJson<T>(key: CryptoKey, blob: EncBlob, storageKey: string): Promise<T> {
+    // v1 blobs were written without AAD; decrypt them unbound (migration only —
+    // secureStorage re-writes them as v2 on read). v2 binds the storage key.
+    const params: AesGcmParams = { name: "AES-GCM", iv: fromB64(blob.iv) as BufferSource };
+    if (blob.__enc === 2) params.additionalData = metaAAD(storageKey) as BufferSource;
+    const pt = await crypto.subtle.decrypt(params, key, fromB64(blob.ct) as BufferSource);
     return JSON.parse(new TextDecoder().decode(new Uint8Array(pt))) as T;
 }

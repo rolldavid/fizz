@@ -1,17 +1,23 @@
 /**
- * Claim-ticket inbox — where tickets from fizzwallet.com/bridge land before
- * the wallet adopts them.
+ * Adopting fee-juice claim tickets into the wallet.
  *
- * The background service worker receives tickets via onMessageExternal and
- * can ONLY write plaintext storage (the meta encryption key lives in the
- * unlocked popup, never in the SW). So tickets wait in a plaintext inbox and
- * the popup drains them into the ENCRYPTED pendingBridges store at unlock /
- * Bridge refresh. Acceptable at-rest exposure: a ticket's worst case is
- * triggering its own claim for its fixed recipient (see claimTicket.ts), and
- * it was just displayed on a public web page anyway.
+ * A claim ticket (from fizzwallet.com/bridge) is brought in by the user PASTING
+ * it on the Bridge screen — there is NO external/cross-origin writer (the
+ * background worker handles only ping/launch and never writes claims). So a
+ * pasted ticket is decoded and written STRAIGHT into the encrypted
+ * pendingBridges store (`adoptClaimTicket`); it never sits in plaintext.
+ *
+ * A claim ticket carries no spending power beyond triggering its own claim for
+ * the recipient baked into the L1→L2 message, and `listReadyClaims` only ever
+ * offers a claim with a live on-chain non-nullified witness — so a fabricated
+ * or foreign ticket simply never becomes spendable.
+ *
+ * `drainClaimInbox` remains only to migrate any leftover PLAINTEXT inbox left by
+ * an older build (which did route tickets through a plaintext inbox) into the
+ * encrypted store on unlock, then clears it. With no writer it is a no-op.
  */
 
-import { validateClaimTicket, type ClaimTicket } from "./claimTicket";
+import { decodeClaimTicket, validateClaimTicket, type ClaimTicket } from "./claimTicket";
 import { KEYS } from "../storage";
 import { secureGet, secureSet } from "../secureStorage";
 import type { PendingBridge } from "./bridge";
@@ -22,37 +28,6 @@ function localArea(): { get: Function; set: Function } {
     const area = (globalThis as any).chrome?.storage?.local;
     if (!area) throw new Error("chrome.storage.local unavailable.");
     return area;
-}
-
-export async function readClaimInbox(): Promise<ClaimTicket[]> {
-    const got = await localArea().get(CLAIM_INBOX_KEY);
-    const raw = (got?.[CLAIM_INBOX_KEY] as unknown[]) ?? [];
-    const valid: ClaimTicket[] = [];
-    for (const t of raw) {
-        try {
-            valid.push(validateClaimTicket(t));
-        } catch (err) {
-            // One corrupt/malicious ticket must not brick the wallet — drop it
-            // LOUDLY (visible in the extension console), keep the rest.
-            console.error("Dropping invalid claim ticket from inbox:", err);
-        }
-    }
-    return valid;
-}
-
-/** Used by the background service worker. Dedupes by messageHash. */
-export async function appendToClaimInbox(ticket: ClaimTicket): Promise<void> {
-    validateClaimTicket(ticket);
-    const area = localArea();
-    const got = await area.get(CLAIM_INBOX_KEY);
-    const existing = ((got?.[CLAIM_INBOX_KEY] as ClaimTicket[]) ?? []).filter(
-        (t) => t?.messageHash !== ticket.messageHash,
-    );
-    await area.set({ [CLAIM_INBOX_KEY]: [ticket, ...existing] });
-}
-
-async function writeClaimInbox(tickets: ClaimTicket[]): Promise<void> {
-    await localArea().set({ [CLAIM_INBOX_KEY]: tickets });
 }
 
 /** A ticket adopted into the wallet's encrypted pending-bridge store. */
@@ -71,29 +46,46 @@ export function ticketToPendingBridge(t: ClaimTicket): PendingBridge {
     };
 }
 
-/**
- * Adopt every inbox ticket into the encrypted store (any network — entries
- * are network-tagged and surface when that network is active). Returns how
- * many were adopted. Requires the vault to be unlocked (meta key).
- */
-export async function drainClaimInbox(): Promise<number> {
-    const tickets = await readClaimInbox();
+/** Write a validated ticket straight into the encrypted store. Dedupe by messageHash. */
+async function adoptTickets(tickets: ClaimTicket[]): Promise<number> {
     if (tickets.length === 0) return 0;
-
     const existing = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
     const known = new Set(existing.map((b) => b.messageHash).filter(Boolean));
     const fresh = tickets.filter((t) => !known.has(t.messageHash));
     if (fresh.length > 0) {
         await secureSet(KEYS.pendingBridges, [...fresh.map(ticketToPendingBridge), ...existing]);
     }
-    // Clear the inbox only AFTER the encrypted write succeeded.
-    await writeClaimInbox([]);
     return fresh.length;
 }
 
-/** Manual fallback: paste a ticket string into the Bridge page. */
+/**
+ * Manual import: paste a ticket string on the Bridge screen. Decodes (which
+ * validates) and writes encrypted — no plaintext hop. Returns 1 if newly
+ * adopted, 0 if already present.
+ */
 export async function importClaimTicketText(text: string): Promise<number> {
-    const { decodeClaimTicket } = await import("./claimTicket");
-    await appendToClaimInbox(decodeClaimTicket(text));
-    return drainClaimInbox();
+    return adoptTickets([decodeClaimTicket(text)]);
+}
+
+/**
+ * Migrate any leftover PLAINTEXT inbox from an older build into the encrypted
+ * store, then clear it. No current code writes the inbox, so this is normally a
+ * no-op; kept for clean upgrades. Requires the vault unlocked (meta key).
+ */
+export async function drainClaimInbox(): Promise<number> {
+    const got = await localArea().get(CLAIM_INBOX_KEY);
+    const raw = got?.[CLAIM_INBOX_KEY];
+    if (!Array.isArray(raw) || raw.length === 0) return 0;
+    const valid: ClaimTicket[] = [];
+    for (const t of raw) {
+        try {
+            valid.push(validateClaimTicket(t));
+        } catch (err) {
+            // One corrupt entry must not block the migration — drop it loudly.
+            console.error("Dropping invalid legacy claim-inbox entry:", err);
+        }
+    }
+    const adopted = await adoptTickets(valid);
+    await localArea().set({ [CLAIM_INBOX_KEY]: [] }); // clear only after the encrypted write
+    return adopted;
 }

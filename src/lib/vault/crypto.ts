@@ -18,12 +18,15 @@ export const VAULT_VERSION = 2;
 /**
  * Argon2id parameters for the passphrase KDF. Memory-hard, so the on-disk vault
  * ciphertext is far costlier to brute-force offline than PBKDF2 (which is cheap
- * to parallelize on GPUs/ASICs). 64 MiB / t=3 / p=1 is ~1.5s per guess on a
- * laptop. Stored in the envelope and bound into the AAD so the params can be
- * raised later without breaking existing vaults and can't be silently downgraded.
+ * to parallelize on GPUs/ASICs). 128 MiB / t=3 / p=1 is a few seconds per guess
+ * on a laptop and well above the OWASP Argon2id floor — a deliberate hardening
+ * over the prior 64 MiB, since the vault blob is offline-attackable. The params
+ * are stored per-vault in the envelope and bound into the AAD, so this raise is
+ * NON-BRICKING (existing vaults decrypt with their own stored params) and can't
+ * be silently downgraded.
  */
 export type Argon2Params = { algo: "argon2id"; m: number; t: number; p: number };
-export const ARGON2_DEFAULTS: Argon2Params = { algo: "argon2id", m: 65_536, t: 3, p: 1 };
+export const ARGON2_DEFAULTS: Argon2Params = { algo: "argon2id", m: 131_072, t: 3, p: 1 };
 
 export type VaultBlob = {
     /** Base64 nonce */
