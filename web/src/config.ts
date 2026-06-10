@@ -26,15 +26,13 @@ export const L1_RPC_URL = "https://ethereum-rpc.publicnode.com";
 export const AZTEC_TOKEN_URL = "https://aztec.network/token";
 
 /**
- * WalletConnect Cloud project id.
- *
- * "FIZZ_WC_PROJECT_ID" is a PLACEHOLDER: injected wallets (MetaMask, Rabby, …)
- * connect fine without a real id, but the WalletConnect QR option will not.
- * The id is PUBLIC by design (it ships in this client bundle), so the
- * production value lives here; the env var remains as a build-time override.
+ * WalletConnect Cloud project id, from the build environment only (no value in
+ * source). Set VITE_WALLETCONNECT_PROJECT_ID at build time. Without it, injected
+ * wallets (MetaMask, Rabby, …) still connect; only the WalletConnect QR option
+ * is unavailable. The id is a public client identifier, so it's safe to expose
+ * in the built bundle — keeping it out of source just avoids committing it.
  */
-export const WALLETCONNECT_PROJECT_ID =
-    import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? "9f6e5c83f413daef4d3088b2abeaf8c9";
+export const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? "";
 
 export const GITHUB_URL = "https://github.com/rolldavid/fizz";
 

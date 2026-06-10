@@ -1,8 +1,13 @@
 node_modules
 dist
-# web/ (fizzwallet.com pages) has its own package; only its BUILT output
-# (committed into landing/) ships.
 web/node_modules
+web/dist
+# Netlify builds the web app from web/ on deploy and writes these into landing/,
+# so the build output is no longer committed. The static home (landing/index.html,
+# _headers, images, privacy.html) IS committed.
+landing/bridge/
+landing/launch/
+landing/webassets/
 .DS_Store
 *.log
 .vite

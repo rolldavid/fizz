@@ -1,10 +1,15 @@
-# Netlify config for the STATIC landing page (landing/).
-# This file overrides any UI-configured build settings — the landing is
-# plain HTML with no build step, so the command is intentionally empty.
-# (Without this, Netlify resolves `yarn run build` against the repo-root
-# package.json and tries to build the browser EXTENSION, which fails.)
-
+# Netlify builds ONLY the web app (web/): the /bridge + /launch tool pages plus
+# the static landing home. It does NOT build the browser extension.
+#
+# `base = "web"` keeps Netlify off the repo-root build (which builds the
+# extension and would fail/timeout here) and installs only web/ deps (web has
+# its own yarn.lock). `yarn build` runs tsc + vite, then deploy-to-landing.mjs
+# writes the built tool pages into ../landing next to the committed static home
+# (index.html, _headers, images). That combined dir is what we publish.
+#
+# Set VITE_WALLETCONNECT_PROJECT_ID in the Netlify UI
+# (Site settings -> Environment variables); it is read at build time.
 [build]
-  base    = "landing"
-  publish = "."
-  command = ""
+  base    = "web"
+  command = "yarn build"
+  publish = "../landing"
