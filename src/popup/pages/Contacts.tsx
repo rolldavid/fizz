@@ -70,7 +70,7 @@ export function Contacts({ onBack }: { onBack: () => void }) {
                 <div>
                     <div style={{ fontWeight: 600, fontSize: 16 }}>Contacts</div>
                     <div className="muted" style={{ marginTop: 4, lineHeight: 1.5 }}>
-                        Your address book for sending — and for receiving privately. Aztec only
+                        Your address book for sending, and for receiving privately. Aztec only
                         discovers private notes from registered senders, so to receive a private
                         transfer from someone you haven't sent to yet, add them here first. Anyone
                         you've sent to is tracked automatically; public transfers always arrive.
@@ -83,7 +83,7 @@ export function Contacts({ onBack }: { onBack: () => void }) {
                     <div className="card hint" style={{ textAlign: "center" }}>
                         <div style={{ marginBottom: 8 }}>No contacts yet.</div>
                         <div>
-                            Add anyone you want to receive private transfers from — Aztec can't
+                            Add anyone you want to receive private transfers from. Aztec can't
                             detect a private note from an unregistered sender.
                         </div>
                     </div>

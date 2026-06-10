@@ -144,8 +144,8 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
                 </div>
                 <p className="hint">
                     {makingPrivate
-                        ? "Moves your public balance into your private balance — it stays in your wallet, just hidden on-chain."
-                        : "Moves your private balance back to public — it stays in your wallet, now visible on-chain."}
+                        ? "Moves your public balance into your private balance. It stays in your wallet, just hidden on-chain."
+                        : "Moves your private balance back to public. It stays in your wallet, now visible on-chain."}
                 </p>
 
                 <div className="card" style={{ display: "flex", justifyContent: "space-between" }}>
@@ -176,7 +176,7 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
 
                 <div className="hint" style={{ fontSize: 11 }}>
                     ⚠️ Converting touches the public ledger with your address and the exact amount.
-                    Converting the same amount in and out makes the two sides easy to link — vary
+                    Converting the same amount in and out makes the two sides easy to link. Vary
                     amounts and timing if that matters to you.
                 </div>
 

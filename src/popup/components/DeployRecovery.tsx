@@ -69,9 +69,9 @@ export function DeployRecovery({ onRecovered }: { onRecovered: () => void }) {
                     ✓ {journal.symbol} deploy finished on-chain
                 </div>
                 <div className="hint" style={{ marginTop: 4 }}>
-                    It completed while the window was closed — we've added it to your list.
+                    It completed while the window was closed. We've added it to your list.
                     {journal.hadInitialSupply &&
-                        " The initial-supply mint didn't run (it's a second step) — mint it from the token menu."}
+                        " The initial-supply mint didn't run (it's a second step). Mint it from the token menu."}
                 </div>
             </div>
         );
@@ -82,7 +82,7 @@ export function DeployRecovery({ onRecovered }: { onRecovered: () => void }) {
             <div style={{ fontWeight: 500 }}>Your {journal.symbol} deploy was interrupted</div>
             <div className="hint" style={{ marginTop: 4 }}>
                 The window closed mid-deploy, which cancels the work (it may also still be
-                landing — check again in a minute). Next time use “Open in a window” and keep
+                landing, check again in a minute). Next time use “Open in a window” and keep
                 it open until the confirmation shows.
             </div>
             {probeError && <div className="error" style={{ marginTop: 6 }}>{probeError}</div>}

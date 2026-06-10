@@ -74,7 +74,7 @@ export function ImportToken({ onBack }: { onBack: () => void }) {
 
                 <div style={{ fontWeight: 600, fontSize: 16 }}>Import a token</div>
                 <p className="hint">
-                    Paste the token's contract address — Fizz reads its name, symbol and decimals
+                    Paste the token's contract address. Fizz reads its name, symbol and decimals
                     straight from the contract.
                 </p>
 

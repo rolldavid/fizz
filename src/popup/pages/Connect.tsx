@@ -100,7 +100,7 @@ export function Connect({ onDone }: { onDone: () => void }) {
                             <Bullet>It can ask your wallet to open a token launch.</Bullet>
                             <Bullet>You review and confirm every deploy here, in the wallet.</Bullet>
                             <Bullet>
-                                It never sees your address, balances, or keys — and can't move funds.
+                                It never sees your address, balances, or keys, and can't move funds.
                             </Bullet>
                         </div>
 

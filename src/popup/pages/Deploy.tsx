@@ -188,7 +188,7 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                     </div>
 
                     <div className="hint">
-                        We've imported {symbol.toUpperCase()} into your token list — you can mint,
+                        We've imported {symbol.toUpperCase()} into your token list. You can mint,
                         send, and receive it right away.
                     </div>
 
@@ -214,7 +214,7 @@ export function Deploy({ onBack }: { onBack: () => void }) {
 
                 <div style={{ fontWeight: 600, fontSize: 16 }}>Deploy a token</div>
                 <p className="hint">
-                    Mints a standard AIP-20 token on Aztec — supports public + private balances,
+                    Mints a standard AIP-20 token on Aztec. Supports public + private balances,
                     shielding, and unshielding out of the box. You'll be the admin and (optionally)
                     the minter.
                 </p>
@@ -327,7 +327,7 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                         <div className="hint" style={{ margin: 0 }}>
                             Proofs are generated on your device (the very first transaction also
                             downloads one-time proving keys). Keep this window open until you see
-                            the confirmation — it won't auto-lock while working.
+                            the confirmation. It won't auto-lock while working.
                         </div>
                     </div>
                 )}

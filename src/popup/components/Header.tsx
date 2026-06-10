@@ -44,7 +44,7 @@ export function Header({ right }: { right?: React.ReactNode }) {
                         </option>
                     ))}
                     <option value="custom">
-                        {network.id === "custom" ? `Custom — ${network.nodeUrl}` : "Custom node…"}
+                        {network.id === "custom" ? `Custom: ${network.nodeUrl}` : "Custom node…"}
                     </option>
                 </select>
                 {network.id === "custom" && (

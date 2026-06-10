@@ -404,7 +404,7 @@ function FeeJuiceLine({
         <button
             className="fee-line"
             onClick={onBridge}
-            title={sponsored ? "Fees are sponsored here — bridging is optional" : "Get gas"}
+            title={sponsored ? "Fees are sponsored here. Bridging is optional" : "Get gas"}
         >
             <span className="muted">Gas</span>
             <span className="fee-line-amount">

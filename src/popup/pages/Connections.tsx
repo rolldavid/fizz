@@ -52,7 +52,7 @@ export function Connections({ onBack }: { onBack: () => void }) {
                 {conns !== null && conns.length === 0 && (
                     <div className="card hint" style={{ display: "flex", gap: 8, alignItems: "center" }}>
                         <LinkIcon size={16} />
-                        No connected sites yet. When you connect one — like fizzwallet.com/launch —
+                        No connected sites yet. When you connect one, like fizzwallet.com/launch,
                         it shows up here.
                     </div>
                 )}

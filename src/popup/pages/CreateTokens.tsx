@@ -21,7 +21,7 @@ export function CreateTokens({ onBack, onMintMore }: { onBack: () => void; onMin
                 <div style={{ fontWeight: 600, fontSize: 16 }}>Create a token</div>
 
                 <p className="hint">
-                    Launch your own token on Aztec — public + private balances and shielding built
+                    Launch your own token on Aztec: public + private balances and shielding built
                     in. You design it on the web and confirm the deploy right here in Fizz;
                     {isAlpha
                         ? " proving runs on your device, and you'll need a little gas (fee juice) to deploy."

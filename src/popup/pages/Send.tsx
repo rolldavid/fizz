@@ -132,7 +132,7 @@ export function Send({ onBack }: { onBack: () => void }) {
                         {tokens.length === 0 && <option value="">No tokens imported</option>}
                         {tokens.map((t) => (
                             <option key={t.address} value={t.address}>
-                                {t.symbol} — {t.name}
+                                {t.symbol}: {t.name}
                             </option>
                         ))}
                     </select>
@@ -204,8 +204,8 @@ export function Send({ onBack }: { onBack: () => void }) {
 
                 <div className="hint">
                     {privacy === "private"
-                        ? "Sent privately — amount, sender and recipient stay hidden on-chain. The recipient sees it once they've added you."
-                        : "Sent publicly — visible on-chain, like a normal token transfer. Arrives instantly, no setup."}
+                        ? "Sent privately. Amount, sender and recipient stay hidden on-chain. The recipient sees it once they've added you."
+                        : "Sent publicly. Visible on-chain, like a normal token transfer. Arrives instantly, no setup."}
                 </div>
 
                 {error && <div className="error">{error}</div>}
@@ -301,7 +301,7 @@ function ConfirmSendModal({
                             <div style={{ fontWeight: 600 }}>{contact.label}</div>
                         ) : (
                             <div className="muted" style={{ fontSize: 11 }}>
-                                Not in your contacts — verify every character:
+                                Not in your contacts. Verify every character:
                             </div>
                         )}
                     </div>
@@ -438,7 +438,7 @@ function SendSuccessCard({
                         Save {shortAddress(recipient, 8, 6)} as a contact?
                     </div>
                     <div className="hint" style={{ marginBottom: 8 }}>
-                        Optional — gives them a name for quick-pick. They're already on your
+                        Optional: gives them a name for quick-pick. They're already on your
                         known-sender list, so a private payment back to you will be detected
                         either way.
                     </div>

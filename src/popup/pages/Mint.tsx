@@ -114,7 +114,7 @@ export function Mint({ onBack }: { onBack: () => void }) {
 
                 <div style={{ fontWeight: 600, fontSize: 16 }}>Mint tokens</div>
                 <p className="hint">
-                    Creates new supply on a token where you hold the minter role — directly into a
+                    Creates new supply on a token where you hold the minter role, directly into a
                     private or public balance.
                 </p>
 
@@ -124,7 +124,7 @@ export function Mint({ onBack }: { onBack: () => void }) {
                         {tokens.length === 0 && <option value="">No tokens imported</option>}
                         {tokens.map((t) => (
                             <option key={t.address} value={t.address}>
-                                {t.symbol} — {t.name}
+                                {t.symbol}: {t.name}
                             </option>
                         ))}
                     </select>
@@ -136,7 +136,7 @@ export function Mint({ onBack }: { onBack: () => void }) {
                     <div className="card hint">
                         This account doesn't hold the minter role for {token.symbol}
                         {authority.isAdmin
-                            ? " — but you're the admin, so you can grant it to yourself from the token's management tools."
+                            ? ", but you're the admin, so you can grant it to yourself from the token's management tools."
                             : "."}
                     </div>
                 )}
@@ -203,8 +203,8 @@ export function Mint({ onBack }: { onBack: () => void }) {
 
                         <div className="hint">
                             {mode === "private"
-                                ? "Minted privately — the new supply appears only in the recipient's private balance."
-                                : "Minted publicly — the new supply is visible on-chain in the recipient's public balance."}
+                                ? "Minted privately. The new supply appears only in the recipient's private balance."
+                                : "Minted publicly. The new supply is visible on-chain in the recipient's public balance."}
                         </div>
 
                         {error && <div className="error">{error}</div>}
@@ -236,7 +236,7 @@ export function Mint({ onBack }: { onBack: () => void }) {
                         </button>
                         {busy && (
                             <div className="hint">
-                                Proof generation runs locally in your browser — this can take a little
+                                Proof generation runs locally in your browser. This can take a little
                                 while.
                             </div>
                         )}

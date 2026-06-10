@@ -114,13 +114,13 @@ export function Onboarding() {
                             Tokens with sparkle. Privacy on tap.
                         </p>
                         <p className="hint" style={{ textAlign: "center" }}>
-                            Fizz is a lightweight wallet for the Aztec network — made for quick,
+                            Fizz is a lightweight wallet for the Aztec network, made for quick,
                             low-value transactions. Your keys stay on this device; no server ever
                             sees them. (Like any light wallet, the Aztec node you connect to does
                             see your address and IP; you can point Fizz at your own node anytime.)
                         </p>
                         <p className="hint" style={{ textAlign: "center", fontSize: 11 }}>
-                            🫧 Pocket change, not vaults — keep only what you'd carry in a pocket.
+                            🫧 Pocket change, not vaults. Keep only what you'd carry in a pocket.
                         </p>
                         <button className="btn btn-primary btn-block" onClick={startCreate}>
                             Create new wallet
@@ -171,7 +171,7 @@ export function Onboarding() {
                         <p className="hint">
                             Write these 12 words down in order and store them somewhere safe.
                             Anyone with this phrase controls your funds. They restore your wallet
-                            (on any device, in this app) — back them up before continuing.
+                            (on any device, in this app). Back them up before continuing.
                         </p>
                         <div className="mnemonic-grid">
                             {generatedWords.map((w, i) => (
@@ -188,8 +188,8 @@ export function Onboarding() {
                             {busy
                                 ? "Setting up…"
                                 : method === "passkey"
-                                  ? "I've saved it — create with passkey"
-                                  : "I've saved it — create wallet"}
+                                  ? "I've saved it. Create with passkey"
+                                  : "I've saved it. Create wallet"}
                         </button>
                         {error && <div className="error">{error}</div>}
                         <button
@@ -329,7 +329,7 @@ function StrengthMeter({ strength, show }: { strength: PassStrength; show: boole
                     }}
                 >
                     {strength.label}
-                    {strength.hint ? ` — ${strength.hint}` : ""}
+                    {strength.hint ? `, ${strength.hint}` : ""}
                 </div>
             )}
         </div>

@@ -62,7 +62,7 @@ function LoadingScreen() {
                         >
                             {networks.map((n) => (
                                 <option key={n.id} value={n.id}>
-                                    {n.name} — {n.description}
+                                    {n.name}: {n.description}
                                 </option>
                             ))}
                         </select>
@@ -88,7 +88,7 @@ function LoadingScreen() {
                 <div className="spinner" />
                 <div style={{ fontWeight: 500 }}>Connecting to {network.name}</div>
                 <div className="muted" style={{ maxWidth: 260 }}>
-                    Getting the bubbles going — your private prover loads right in the browser.
+                    Getting the bubbles going. Your private prover loads right in the browser.
                     First run takes the longest.
                 </div>
                 <button

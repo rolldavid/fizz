@@ -96,7 +96,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                 {isSandbox ? (
                     <>
                         <p className="hint">
-                            One click — the local L1 mints a fixed batch and deposits it to your
+                            One click. The local L1 mints a fixed batch and deposits it to your
                             account. Your next transaction claims it automatically.
                         </p>
                         <button
@@ -114,7 +114,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                         <p className="hint">
                             {isAlpha
                                 ? "Fee juice pays Aztec network fees. On mainnet there's no " +
-                                  "sponsor — every transaction needs fee juice, so you'll want some " +
+                                  "sponsor. Every transaction needs fee juice, so you'll want some " +
                                   "before sending or deploying."
                                 : "Fee juice pays Aztec network fees (~2.3 per transaction). On " +
                                   "testnet your fees are usually sponsored, so this is optional."}
@@ -130,7 +130,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                                     ? "Bridge AZTEC → fee juice on our web bridge. You enter this " +
                                       "wallet's address there; the claim lands back here and " +
                                       "auto-pays your next transaction."
-                                    : "Bridge it from Ethereum on our web bridge — the claim lands " +
+                                    : "Bridge it from Ethereum on our web bridge. The claim lands " +
                                       "back here and auto-pays your next transaction."}
                             </div>
                             <a
@@ -185,7 +185,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                                                 setImportText("");
                                                 setImportMsg(
                                                     n > 0
-                                                        ? "✓ Claim imported — it auto-pays your next transaction once ready."
+                                                        ? "✓ Claim imported. It auto-pays your next transaction once ready."
                                                         : "Already imported.",
                                                 );
                                                 await refresh();
@@ -216,7 +216,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                         <div style={{ color: "var(--success)", fontWeight: 500 }}>✓ Deposit sent</div>
                         <div className="hint" style={{ marginTop: 4 }}>
                             The claim lands on L2 in a few minutes and your next transaction uses
-                            it automatically — nothing else to do.
+                            it automatically, nothing else to do.
                         </div>
                     </div>
                 )}
@@ -237,9 +237,9 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                                         {status === "pending" &&
                                             `Posted ${new Date(b.createdAt).toLocaleString()} · auto-claims on your next outgoing transaction.`}
                                         {status === "sent" &&
-                                            "L1 deposit sent — confirming. This finishes automatically; check back in a minute."}
+                                            "L1 deposit sent, confirming. This finishes automatically; check back in a minute."}
                                         {status === "depositing" &&
-                                            "Interrupted before the deposit reached L1 (the window closed). Nothing was bridged — dismiss and retry."}
+                                            "Interrupted before the deposit reached L1 (the window closed). Nothing was bridged. Dismiss and retry."}
                                         {status === "failed" &&
                                             "The L1 deposit transaction reverted. Dismiss and retry."}
                                     </div>

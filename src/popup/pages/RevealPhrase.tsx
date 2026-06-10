@@ -141,7 +141,7 @@ export function RevealPhrase({ onBack }: { onBack: () => void }) {
                     <>
                         <p className="hint">
                             Write these 12 words down in order. Importing them into a fresh install
-                            of this wallet — on any device — restores this exact account.
+                            of this wallet, on any device, restores this exact account.
                         </p>
                         <div className="mnemonic-grid">
                             {revealed.words.map((w, i) => (
@@ -155,7 +155,7 @@ export function RevealPhrase({ onBack }: { onBack: () => void }) {
                             onClick={() => copy(revealed.words.join(" "), "phrase")}
                         >
                             {copied === "phrase" ? <CheckIcon /> : <CopyIcon />}{" "}
-                            {copied === "phrase" ? "Copied — clears in 30s" : "Copy phrase"}
+                            {copied === "phrase" ? "Copied, clears in 30s" : "Copy phrase"}
                         </button>
                         <div className="hint" style={{ fontSize: 11 }}>
                             ⚠️ Copying puts the phrase on your system clipboard, where other apps,
@@ -178,7 +178,7 @@ export function RevealPhrase({ onBack }: { onBack: () => void }) {
                                     <code style={{ fontSize: 10 }}>
                                         aztec-wallet create-account --secret-key &lt;key&gt;
                                     </code>{" "}
-                                    (deploy salt is 0). Treat it like the phrase — it controls your
+                                    (deploy salt is 0). Treat it like the phrase. It controls your
                                     funds.
                                 </div>
                                 <div
@@ -212,7 +212,7 @@ export function RevealPhrase({ onBack }: { onBack: () => void }) {
                                 onBack();
                             }}
                         >
-                            Done — hide
+                            Done, hide
                         </button>
                     </>
                 )}
