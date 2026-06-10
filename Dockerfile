@@ -40,9 +40,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 RUN npm install -g serve@14
 
+# landing/ from the build stage already includes serve.json (the security
+# headers; serve reads it from the served dir) plus the built tool pages.
 COPY --from=build /app/landing ./landing
-# serve.json carries the security headers (serve reads it from the served dir).
-COPY serve.json ./landing/serve.json
 # landing/README.md is internal docs; don't serve it.
 RUN rm -f ./landing/README.md
 
