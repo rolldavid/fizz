@@ -21,24 +21,6 @@ export type LastLaunch = {
     at: number;
 };
 
-/** Reply to "fizz:connect" — pending:true means an approval window opened (src/background/index.ts). */
-export type ConnectPending = { ok: boolean; pending?: boolean; error?: string };
-
-/**
- * Reply to "fizz:connect-status" (src/background/index.ts):
- *   granted:true  → address + networkId of the account the USER approved.
- *   denied:true   → the user clicked Deny in the approval window.
- *   neither       → no decision yet; keep polling.
- */
-export type ConnectStatus = {
-    ok: boolean;
-    granted?: boolean;
-    denied?: boolean;
-    address?: string;
-    networkId?: string;
-    error?: string;
-};
-
 export function fizzMessagingAvailable(): boolean {
     return (
         typeof chrome !== "undefined" &&

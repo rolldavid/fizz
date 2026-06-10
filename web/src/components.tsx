@@ -35,7 +35,8 @@ export function Shell({ page, children }: { page: "bridge" | "launch"; children:
                         <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">GitHub</a>
                     </p>
                     <p className="small" style={{ marginTop: 8 }}>
-                        No servers, no analytics — these pages talk only to the chains and (if installed) your Fizz wallet.
+                        Fizz runs no servers and no analytics of its own. Each page lists exactly which networks
+                        and services it contacts.
                     </p>
                 </footer>
             </div>
