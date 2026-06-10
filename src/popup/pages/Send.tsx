@@ -26,7 +26,7 @@ import {
  * which mixed "pay someone" with "convert my own funds" and used jargon. The
  * two-level model maps to the same underlying transfer/shield/unshield calls.
  */
-export function Send({ onBack }: { onBack: () => void }) {
+export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContact: () => void }) {
     const { wallet, network, account, ensureAccountDeployed } = useWallet();
     const [tokens, setTokens] = useState<TokenEntry[]>([]);
     const [tokenAddr, setTokenAddr] = useState("");
@@ -147,32 +147,45 @@ export function Send({ onBack }: { onBack: () => void }) {
                         style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }}
                     />
                 </div>
-                {filteredContacts.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <div className="muted">Contacts</div>
-                        {filteredContacts.slice(0, 4).map((c) => (
-                            <button
-                                key={c.address}
-                                className="token-row"
-                                style={{ cursor: "pointer", textAlign: "left", width: "100%" }}
-                                onClick={() => setTo(c.address)}
-                            >
-                                <div className="token-meta" style={{ minWidth: 0 }}>
-                                    <Identicon address={c.address} size={28} />
-                                    <div style={{ minWidth: 0 }}>
-                                        <div style={{ fontWeight: 500 }}>{c.label}</div>
-                                        <div
-                                            className="muted"
-                                            style={{ fontFamily: "ui-monospace, monospace" }}
-                                        >
-                                            {shortAddress(c.address, 8, 6)}
-                                        </div>
+                        <button
+                            className="btn btn-ghost"
+                            style={{ padding: "4px 10px", fontSize: 11 }}
+                            onClick={onAddContact}
+                        >
+                            + New contact
+                        </button>
+                    </div>
+                    {filteredContacts.slice(0, 4).map((c) => (
+                        <button
+                            key={c.address}
+                            className="token-row"
+                            style={{ cursor: "pointer", textAlign: "left", width: "100%" }}
+                            onClick={() => setTo(c.address)}
+                        >
+                            <div className="token-meta" style={{ minWidth: 0 }}>
+                                <Identicon address={c.address} size={28} />
+                                <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontWeight: 500 }}>{c.label}</div>
+                                    <div
+                                        className="muted"
+                                        style={{ fontFamily: "ui-monospace, monospace" }}
+                                    >
+                                        {shortAddress(c.address, 8, 6)}
                                     </div>
                                 </div>
-                            </button>
-                        ))}
-                    </div>
-                )}
+                            </div>
+                        </button>
+                    ))}
+                    {filteredContacts.length === 0 && (
+                        <div className="muted" style={{ fontSize: 12 }}>
+                            {to.trim() ? "No contacts match." : "No saved contacts yet."} Paste an
+                            address above, or add a contact.
+                        </div>
+                    )}
+                </div>
 
                 <div className="field">
                     <label>Amount</label>

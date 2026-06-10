@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Header, shortAddress } from "../components/Header";
 import { Identicon } from "../components/Identicon";
 import { DeployRecovery } from "../components/DeployRecovery";
@@ -9,6 +9,7 @@ import {
     KeyIcon,
     LinkIcon,
     LockIcon,
+    MenuIcon,
     PeopleIcon,
     TrashIcon,
 } from "../components/icons";
@@ -116,44 +117,7 @@ export function Home({
 
     return (
         <>
-            <Header
-                right={
-                    <>
-                        <button
-                            className="icon-btn"
-                            onClick={() => onNavigate("contacts")}
-                            title="Contacts"
-                            aria-label="Contacts"
-                        >
-                            <PeopleIcon />
-                        </button>
-                        <button
-                            className="icon-btn"
-                            onClick={() => onNavigate("connections")}
-                            title="Connected sites"
-                            aria-label="Connected sites"
-                        >
-                            <LinkIcon />
-                        </button>
-                        <button
-                            className="icon-btn"
-                            onClick={() => onNavigate("reveal")}
-                            title="Recovery phrase"
-                            aria-label="Recovery phrase"
-                        >
-                            <KeyIcon />
-                        </button>
-                        <button
-                            className="icon-btn"
-                            onClick={lock}
-                            title="Lock"
-                            aria-label="Lock wallet"
-                        >
-                            <LockIcon />
-                        </button>
-                    </>
-                }
-            />
+            <Header right={<HeaderMenu onNavigate={onNavigate} onLock={lock} />} />
             <div className="content">
                 {/* Surfaces (and recovers) a deploy interrupted by the popup closing. */}
                 <DeployRecovery onRecovered={refresh} />
@@ -304,6 +268,65 @@ export function Home({
                 </a>
             </div>
         </>
+    );
+}
+
+/** Header hamburger → Contacts, Connected sites, Recovery phrase, Lock. */
+function HeaderMenu({ onNavigate, onLock }: { onNavigate: (r: Route) => void; onLock: () => void }) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const onDoc = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setOpen(false);
+        };
+        document.addEventListener("mousedown", onDoc);
+        document.addEventListener("keydown", onKey);
+        return () => {
+            document.removeEventListener("mousedown", onDoc);
+            document.removeEventListener("keydown", onKey);
+        };
+    }, [open]);
+
+    const item = (label: string, icon: React.ReactNode, fn: () => void) => (
+        <button
+            className="menu-item"
+            role="menuitem"
+            onClick={() => {
+                setOpen(false);
+                fn();
+            }}
+        >
+            {icon}
+            {label}
+        </button>
+    );
+
+    return (
+        <div className="header-menu" ref={ref}>
+            <button
+                className="icon-btn"
+                onClick={() => setOpen((o) => !o)}
+                title="Menu"
+                aria-label="Menu"
+                aria-haspopup="menu"
+                aria-expanded={open}
+            >
+                <MenuIcon />
+            </button>
+            {open && (
+                <div className="menu-dropdown" role="menu">
+                    {item("Contacts", <PeopleIcon size={16} />, () => onNavigate("contacts"))}
+                    {item("Connected sites", <LinkIcon size={16} />, () => onNavigate("connections"))}
+                    {item("Recovery phrase", <KeyIcon size={16} />, () => onNavigate("reveal"))}
+                    {item("Lock", <LockIcon size={16} />, onLock)}
+                </div>
+            )}
+        </div>
     );
 }
 

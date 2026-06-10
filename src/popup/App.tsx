@@ -111,6 +111,11 @@ function Shell() {
     // The token + direction for the Convert screen (set when a token row's
     // convert icon is tapped).
     const [convertTarget, setConvertTarget] = useState<ConvertTarget | null>(null);
+    // Where a sub-page's Back returns. Recorded when entering contacts/import so
+    // e.g. Receive → Add a contact → Back returns to Receive (not Home).
+    const [returnTo, setReturnTo] = useState<Route>("home");
+    // Auto-open the Add-contact dialog (set when arriving from Send's "new contact").
+    const [contactsOpenAdd, setContactsOpenAdd] = useState(false);
     // Live hash navigation too: changing the hash on an already-open wallet
     // page routes without a reload (used by deep links into a running session).
     useEffect(() => {
@@ -118,6 +123,24 @@ function Shell() {
         window.addEventListener("hashchange", onHash);
         return () => window.removeEventListener("hashchange", onHash);
     }, []);
+
+    // Navigate, remembering the origin for contacts/import so their Back returns
+    // there (from Receive/Send/Home); defaults to Home elsewhere.
+    const go = (to: Route) => {
+        if (to === "contacts" || to === "import") setReturnTo(route);
+        if (to !== "contacts") setContactsOpenAdd(false);
+        setRoute(to);
+    };
+    // Send → add a brand-new contact, then come back to Send.
+    const goAddContact = () => {
+        setReturnTo("send");
+        setContactsOpenAdd(true);
+        setRoute("contacts");
+    };
+    const leaveContacts = () => {
+        setContactsOpenAdd(false);
+        setRoute(returnTo);
+    };
 
     const openConvert = (target: ConvertTarget) => {
         setConvertTarget(target);
@@ -140,9 +163,9 @@ function Shell() {
 
     return (
         <div className="app fade-in">
-            {route === "home" && <Home onNavigate={setRoute} onConvert={openConvert} />}
-            {route === "send" && <Send onBack={() => setRoute("home")} />}
-            {route === "receive" && <Receive onNavigate={setRoute} />}
+            {route === "home" && <Home onNavigate={go} onConvert={openConvert} />}
+            {route === "send" && <Send onBack={() => setRoute("home")} onAddContact={goAddContact} />}
+            {route === "receive" && <Receive onNavigate={go} />}
             {route === "bridge" && <Bridge onBack={() => setRoute("home")} />}
             {/* No onDeployed navigation: Deploy renders its own "Token deployed"
                 result screen; navigating here on success unmounted it before the
@@ -152,11 +175,11 @@ function Shell() {
             {route === "create" && (
                 <CreateTokens onBack={() => setRoute("home")} onMintMore={() => setRoute("mint")} />
             )}
-            {route === "import" && <ImportToken onBack={() => setRoute("home")} />}
+            {route === "import" && <ImportToken onBack={() => setRoute(returnTo)} />}
             {route === "convert" && convertTarget && (
                 <Convert target={convertTarget} onBack={() => setRoute("home")} />
             )}
-            {route === "contacts" && <Contacts onBack={() => setRoute("home")} />}
+            {route === "contacts" && <Contacts onBack={leaveContacts} openAdd={contactsOpenAdd} />}
             {/* #connect is opened by the background after a page sends
                 "fizz:connect"; the user approves the origin here. */}
             {route === "connect" && <Connect onDone={() => setRoute("home")} />}

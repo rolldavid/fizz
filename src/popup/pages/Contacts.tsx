@@ -10,10 +10,11 @@ import {
     type Contact,
 } from "../../lib/aztec/contacts";
 
-export function Contacts({ onBack }: { onBack: () => void }) {
+export function Contacts({ onBack, openAdd = false }: { onBack: () => void; openAdd?: boolean }) {
     const { wallet, network } = useWallet();
     const [contacts, setContacts] = useState<Contact[]>([]);
-    const [showAdd, setShowAdd] = useState(false);
+    // openAdd: arrived from Send's "new contact" — show the dialog immediately.
+    const [showAdd, setShowAdd] = useState(openAdd);
     const [loading, setLoading] = useState(true);
 
     const refresh = useCallback(async () => {
@@ -31,6 +32,9 @@ export function Contacts({ onBack }: { onBack: () => void }) {
 
     async function handleAdd(label: string, address: string) {
         await addContact(network.id, { label, address, source: "manual" }, wallet);
+        // Arrived here to add a contact for a Send: hand control back so Send
+        // reloads with the new contact in its picker.
+        if (openAdd) return onBack();
         await refresh();
     }
 
@@ -121,7 +125,13 @@ export function Contacts({ onBack }: { onBack: () => void }) {
             </div>
 
             {showAdd && (
-                <AddContactDialog onClose={() => setShowAdd(false)} onAdd={handleAdd} />
+                <AddContactDialog
+                    onClose={() => {
+                        setShowAdd(false);
+                        if (openAdd) onBack(); // cancelled a from-Send add → return to Send
+                    }}
+                    onAdd={handleAdd}
+                />
             )}
         </>
     );

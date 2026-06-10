@@ -157,6 +157,15 @@ export const KeyIcon = (p: Props) => (
     </Svg>
 );
 
+/** Hamburger menu. */
+export const MenuIcon = (p: Props) => (
+    <Svg {...p}>
+        <line x1="3" y1="6" x2="21" y2="6" />
+        <line x1="3" y1="12" x2="21" y2="12" />
+        <line x1="3" y1="18" x2="21" y2="18" />
+    </Svg>
+);
+
 /** Chain link — connected sites / dApp connections. */
 export const LinkIcon = (p: Props) => (
     <Svg {...p}>
