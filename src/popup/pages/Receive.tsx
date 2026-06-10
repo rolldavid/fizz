@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Header, shortAddress } from "../components/Header";
 import { Identicon } from "../components/Identicon";
 import {
@@ -12,8 +11,6 @@ import {
 } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
 import { useTheme } from "../../lib/state/themeContext";
-import { addContact, findContact } from "../../lib/aztec/contacts";
-import type { AztecNetwork } from "../../lib/aztec/networks";
 
 /**
  * Build a payment URI that other wallets / QR scanners can parse.
@@ -31,7 +28,7 @@ function buildPaymentUri(address: string, amount: string, token: string, memo: s
 }
 
 export function Receive({ onBack }: { onBack: () => void }) {
-    const { account, network } = useWallet();
+    const { account } = useWallet();
     const { resolved } = useTheme();
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const [copied, setCopied] = useState(false);
@@ -195,151 +192,13 @@ export function Receive({ onBack }: { onBack: () => void }) {
                     </div>
                 )}
 
-                <ExpectingPrivateCard networkId={network.id} onViewBalance={onBack} />
-
                 <div className="hint" style={{ textAlign: "center", fontSize: 12 }}>
-                    Public payments always arrive automatically — no setup needed.
+                    Public payments arrive automatically. To SEE a private payment, add the sender
+                    in <strong>Contacts</strong> first — your wallet only discovers private notes
+                    from senders you've added.
                 </div>
             </div>
         </>
     );
 }
 
-/**
- * The one Aztec-specific step a retail user must understand: to SEE a private
- * payment, your wallet needs the sender's address. We frame it as "add who's
- * paying you" — no notes/tags/registration jargon — and reassure that a payment
- * already sent will still appear once they're added.
- */
-function ExpectingPrivateCard({
-    networkId,
-    onViewBalance,
-}: {
-    networkId: AztecNetwork["id"];
-    onViewBalance: () => void;
-}) {
-    const { wallet } = useWallet();
-    const [open, setOpen] = useState(false);
-    const [addr, setAddr] = useState("");
-    const [name, setName] = useState("");
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [added, setAdded] = useState<string | null>(null);
-
-    async function add() {
-        setError(null);
-        let canon: string;
-        try {
-            canon = AztecAddress.fromString(addr.trim()).toString();
-        } catch {
-            setError("That doesn't look like a valid Aztec address.");
-            return;
-        }
-        setBusy(true);
-        try {
-            const existing = await findContact(networkId, canon);
-            if (existing) {
-                setAdded(existing.label);
-                return;
-            }
-            const label = name.trim() || shortAddress(canon, 6, 4);
-            await addContact(networkId, { address: canon, label, source: "manual" }, wallet);
-            setAdded(label);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
-        } finally {
-            setBusy(false);
-        }
-    }
-
-    if (added) {
-        return (
-            <div className="card card-accent fade-in">
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--success)", fontWeight: 500 }}>
-                    <CheckIcon size={16} /> You'll now see private payments from {added}.
-                </div>
-                <div className="hint" style={{ marginTop: 6 }}>
-                    If they already sent one, it'll appear on your balance shortly.
-                </div>
-                <button
-                    className="btn btn-primary btn-block"
-                    style={{ marginTop: 10 }}
-                    onClick={onViewBalance}
-                >
-                    View my balance
-                </button>
-            </div>
-        );
-    }
-
-    if (!open) {
-        return (
-            <button
-                className="card card-accent"
-                style={{ width: "100%", textAlign: "left", cursor: "pointer", display: "block" }}
-                onClick={() => setOpen(true)}
-            >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                    <div>
-                        <div style={{ fontWeight: 600 }}>🔒 Expecting a private payment?</div>
-                        <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                            Add who's sending so it shows up
-                        </div>
-                    </div>
-                    <span className="muted" style={{ fontSize: 18 }}>
-                        ›
-                    </span>
-                </div>
-            </button>
-        );
-    }
-
-    return (
-        <div className="card card-accent fade-in" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ fontWeight: 600 }}>Expecting a private payment?</div>
-            <div className="hint">
-                Private payments stay hidden until your wallet knows who's sending. Add the
-                sender's address and their payment appears automatically — even one they've
-                already sent.
-            </div>
-            <div className="field">
-                <label>Sender's address</label>
-                <input
-                    value={addr}
-                    onChange={(e) => setAddr(e.target.value)}
-                    placeholder="0x… (ask them to share it)"
-                    style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }}
-                    autoFocus
-                />
-            </div>
-            <div className="field">
-                <label>Name (optional)</label>
-                <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Alice"
-                    maxLength={32}
-                />
-            </div>
-            {error && <div className="error">{error}</div>}
-            <div style={{ display: "flex", gap: 8 }}>
-                <button
-                    className="btn btn-ghost btn-block"
-                    onClick={() => {
-                        setOpen(false);
-                        setError(null);
-                    }}
-                >
-                    Cancel
-                </button>
-                <button
-                    className="btn btn-primary btn-block"
-                    disabled={busy || !addr.trim()}
-                    onClick={add}
-                >
-                    {busy ? "Adding…" : "Add sender"}
-                </button>
-            </div>
-        </div>
-    );
-}

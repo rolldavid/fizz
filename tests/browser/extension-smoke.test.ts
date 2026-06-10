@@ -232,7 +232,7 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
             await popup.waitForFunction(
                 () => {
                     const t = document.body.innerText;
-                    return t.includes("Your account") || t.includes("Fee juice");
+                    return t.includes("Your account") || t.includes("Need gas?") || t.includes("Sponsored");
                 },
                 { timeout: 300_000, polling: 2_000 },
             );
@@ -243,7 +243,8 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
             throw err;
         }
         const body = await popup.evaluate(() => document.body.innerText);
-        expect(body).toContain("Fee juice");
+        // The fee-juice (gas) line + Send/Receive nav prove Home rendered.
+        expect(body).toMatch(/Need gas\?|Sponsored/);
         expect(body).toMatch(/Send/);
         expect(body).toMatch(/Receive/);
         // Build stamp — lets testers confirm the loaded build matches the code.
@@ -263,7 +264,7 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
     });
 
     it("fee-juice screen: web-bridge link-out + ticket import render (wallet stays a wallet)", async () => {
-        await clickByText(popup, "Need fee juice?");
+        await clickByText(popup, "Need gas?");
         // Acquisition lives on fizzwallet.com/bridge now — the wallet screen
         // shows the link-out card, the claim-ticket import fallback, and any
         // pending claims. A visible error is acceptable; a dead screen is not.
@@ -274,10 +275,10 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         const body = await popup.evaluate(() => document.body.innerText);
         expect(body).toContain("claim ticket");
         await clickByText(popup, "← Back");
-        await popup.waitForFunction(() => document.body.innerText.includes("Fee juice"), {
-            timeout: 15_000,
-            polling: 500,
-        });
+        await popup.waitForFunction(
+            () => /Need gas\?|Sponsored/.test(document.body.innerText),
+            { timeout: 15_000, polling: 500 },
+        );
     }, 60_000);
 
     it("deploys a token end-to-end from the UI", async () => {

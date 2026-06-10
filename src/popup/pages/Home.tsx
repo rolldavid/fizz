@@ -28,7 +28,16 @@ import {
 } from "../../lib/aztec/tokens";
 import { isSponsoredFPCAvailable } from "../../lib/aztec/fee";
 
-type Route = "home" | "send" | "receive" | "bridge" | "deploy" | "mint" | "contacts" | "reveal";
+type Route =
+    | "home"
+    | "send"
+    | "receive"
+    | "bridge"
+    | "deploy"
+    | "mint"
+    | "create"
+    | "contacts"
+    | "reveal";
 type Tab = "private" | "public";
 
 type RowState = {
@@ -222,7 +231,7 @@ export function Home({
                 <FeeJuiceLine
                     row={feeJuiceRow}
                     onBridge={() => onNavigate("bridge")}
-                    unit={network.id === "alpha" ? "AZTEC" : "JUICE"}
+                    unit="AZTEC"
                     sponsored={sponsored === true}
                 />
 
@@ -263,16 +272,15 @@ export function Home({
                             {tab === "private" ? "Private balances" : "Public balances"}
                         </div>
                         <div style={{ display: "flex", gap: 6 }}>
+                            {/* Token creation lives on /launch; this opens the
+                                in-wallet pointer screen (CreateTokens). */}
                             <button
                                 className="btn btn-ghost"
                                 style={{ padding: "4px 10px", fontSize: 11 }}
-                                onClick={() => onNavigate("mint")}
+                                onClick={() => onNavigate("create")}
                             >
                                 Mint
                             </button>
-                            {/* Token deployment moved to fizzwallet.com/launch — the
-                                wallet stays a wallet. The Deploy page itself remains:
-                                /launch opens it (pre-filled) in a standalone window. */}
                             <button
                                 className="btn btn-ghost"
                                 style={{ padding: "4px 10px", fontSize: 11 }}
@@ -331,8 +339,8 @@ export function Home({
                     you've registered, so a private payment can sit invisible until
                     you add the sender. Pinned to the bottom so it's always in reach. */}
                 <div className="private-note-bar">
-                    <span>🔒 Expecting a private payment but don't see it?</span>
-                    <button className="link" onClick={() => onNavigate("receive")}>
+                    <span>Expecting a private payment?</span>
+                    <button className="link" onClick={() => onNavigate("contacts")}>
                         Add the sender →
                     </button>
                 </div>
@@ -438,9 +446,9 @@ function FeeJuiceLine({
         <button
             className="fee-line"
             onClick={onBridge}
-            title={sponsored ? "Fees are sponsored here — bridging is optional" : "Get fee juice"}
+            title={sponsored ? "Fees are sponsored here — bridging is optional" : "Get gas"}
         >
-            <span className="muted">⛽ Fee juice</span>
+            <span className="muted">Gas</span>
             <span className="fee-line-amount">
                 {row?.loading ? (
                     <span className="spinner" />
@@ -451,7 +459,7 @@ function FeeJuiceLine({
                     </>
                 )}
             </span>
-            <span className="fee-line-cta">{sponsored ? "Sponsored · bridge →" : "Need fee juice? →"}</span>
+            <span className="fee-line-cta">{sponsored ? "Sponsored · bridge →" : "Need gas? →"}</span>
         </button>
     );
 }

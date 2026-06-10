@@ -9,6 +9,7 @@ import { Receive } from "./pages/Receive";
 import { Bridge } from "./pages/Bridge";
 import { Deploy } from "./pages/Deploy";
 import { Mint } from "./pages/Mint";
+import { CreateTokens } from "./pages/CreateTokens";
 import { Convert, type ConvertTarget } from "./pages/Convert";
 import { Contacts } from "./pages/Contacts";
 import { RevealPhrase } from "./pages/RevealPhrase";
@@ -22,6 +23,7 @@ type Route =
     | "bridge"
     | "deploy"
     | "mint"
+    | "create"
     | "convert"
     | "contacts"
     | "reveal";
@@ -140,7 +142,10 @@ function Shell() {
                 result screen; navigating here on success unmounted it before the
                 user ever saw it ("deploy did nothing" in live testing). */}
             {route === "deploy" && <Deploy onBack={() => setRoute("home")} />}
-            {route === "mint" && <Mint onBack={() => setRoute("home")} />}
+            {route === "mint" && <Mint onBack={() => setRoute("create")} />}
+            {route === "create" && (
+                <CreateTokens onBack={() => setRoute("home")} onMintMore={() => setRoute("mint")} />
+            )}
             {route === "convert" && convertTarget && (
                 <Convert target={convertTarget} onBack={() => setRoute("home")} />
             )}
