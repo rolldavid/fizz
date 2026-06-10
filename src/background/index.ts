@@ -11,20 +11,32 @@
  */
 
 import { readLastLaunch, saveDeployDraft, type DeployDraft } from "../lib/state/opJournal";
+import {
+    isConnected,
+    removeConnection,
+    savePendingConnect,
+} from "../lib/state/connections";
 
-/** Minimum gap between launch windows — anti-spam for fizz:launch-token. */
+/** Minimum gap between wallet windows — anti-spam for connect / launch. */
 const LAUNCH_WINDOW_COOLDOWN_MS = 8000;
 
 chrome.runtime.onInstalled.addListener(() => {
     // Reserved for future setup (badge text, default action icon, etc.).
 });
 
-// fizzwallet.com/launch is the ONLY external caller: it hands over a token
-// draft ("fizz:launch-token"); the wallet opens its own window where the USER
-// reviews and deploys (the page never sees keys or even the user's address),
-// then polls "fizz:launch-status" for the public result. "fizz:ping" lets the
-// page detect the extension. These three messages carry no secrets and trigger
-// nothing the user doesn't explicitly confirm in-wallet.
+// fizzwallet.com/launch is the ONLY external caller. The handshake:
+//   1. "fizz:ping"              — detect the extension is installed.
+//   2. "fizz:connect"           — open the wallet's #connect window so the USER
+//                                 approves this origin (address-blind: the page
+//                                 never learns who they are).
+//   3. "fizz:connection-status" — poll whether this origin is connected.
+//   4. "fizz:launch-token"      — hand over a token draft (REQUIRES a live
+//                                 connection); the wallet opens its own window
+//                                 where the USER reviews and deploys.
+//   5. "fizz:launch-status"     — poll for the public result (address + tx).
+//   6. "fizz:disconnect"        — drop this origin's connection.
+// None of these carry secrets, none reveal the user's address, and nothing
+// deploys without an explicit in-wallet confirmation.
 //
 // Fee-juice claims from /bridge are NOT delivered over this channel — the user
 // copies the claim ticket and pastes it into the wallet (Need fee juice? →
@@ -41,6 +53,21 @@ const ALLOWED_ORIGINS = new Set<string>([
     // production builds so a published wallet never trusts a localhost page.
     ...(import.meta.env.PROD ? [] : ["http://localhost"]),
 ]);
+
+/**
+ * Per-action cooldown for opening wallet windows. Returns true if a window was
+ * opened under `key` within LAUNCH_WINDOW_COOLDOWN_MS (i.e. the caller should
+ * refuse); otherwise stamps `now` and returns false. Stored in storage.session
+ * so it survives service-worker restarts within a browser session.
+ */
+async function openWindowRateLimited(key: string): Promise<boolean> {
+    const now = Date.now();
+    const got = await chrome.storage.session.get(key);
+    const last = typeof got?.[key] === "number" ? got[key] : 0;
+    if (now - last < LAUNCH_WINDOW_COOLDOWN_MS) return true;
+    await chrome.storage.session.set({ [key]: now });
+    return false;
+}
 
 function sanitizeDraft(raw: any): DeployDraft {
     const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
@@ -69,22 +96,50 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
                     sendResponse({ ok: true, wallet: "fizz" });
                     return;
                 }
+                case "fizz:connection-status": {
+                    sendResponse({ ok: true, connected: await isConnected(origin) });
+                    return;
+                }
+                case "fizz:connect": {
+                    // Rate-limit connect windows the same way as launch windows.
+                    if (await openWindowRateLimited("fizz.lastConnectWindowAt")) {
+                        sendResponse({
+                            ok: false,
+                            error: "A Fizz window was just opened — finish or close it first.",
+                        });
+                        return;
+                    }
+                    await savePendingConnect(origin);
+                    await chrome.windows.create({
+                        url: chrome.runtime.getURL("src/popup/index.html#connect"),
+                        type: "popup",
+                        width: 420,
+                        height: 820,
+                    });
+                    sendResponse({ ok: true });
+                    return;
+                }
+                case "fizz:disconnect": {
+                    await removeConnection(origin);
+                    sendResponse({ ok: true });
+                    return;
+                }
                 case "fizz:launch-token": {
+                    // The origin must have an approved, live connection — an
+                    // un-connected (or revoked) site can't open launch windows.
+                    if (!(await isConnected(origin))) {
+                        sendResponse({ ok: false, error: "Connect your Fizz wallet first." });
+                        return;
+                    }
                     // Rate-limit: one launch window per LAUNCH_WINDOW_COOLDOWN_MS
                     // so a hostile/XSS'd allowed origin can't spam wallet popups.
-                    // Tracked in storage.session (survives SW restarts this run).
-                    const KEY = "fizz.lastLaunchWindowAt";
-                    const now = Date.now();
-                    const got = await chrome.storage.session.get(KEY);
-                    const last = typeof got?.[KEY] === "number" ? got[KEY] : 0;
-                    if (now - last < LAUNCH_WINDOW_COOLDOWN_MS) {
+                    if (await openWindowRateLimited("fizz.lastLaunchWindowAt")) {
                         sendResponse({
                             ok: false,
                             error: "A Fizz launch window was just opened — finish or close it first.",
                         });
                         return;
                     }
-                    await chrome.storage.session.set({ [KEY]: now });
                     await saveDeployDraft(sanitizeDraft(message.draft));
                     await chrome.windows.create({
                         url: chrome.runtime.getURL("src/popup/index.html#deploy"),

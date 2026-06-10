@@ -10,8 +10,11 @@ import { Bridge } from "./pages/Bridge";
 import { Deploy } from "./pages/Deploy";
 import { Mint } from "./pages/Mint";
 import { CreateTokens } from "./pages/CreateTokens";
+import { ImportToken } from "./pages/ImportToken";
 import { Convert, type ConvertTarget } from "./pages/Convert";
 import { Contacts } from "./pages/Contacts";
+import { Connect } from "./pages/Connect";
+import { Connections } from "./pages/Connections";
 import { RevealPhrase } from "./pages/RevealPhrase";
 import { vaultStore } from "../lib/vault/store";
 import { routeFromHash } from "../lib/runtime/standalone";
@@ -24,8 +27,11 @@ type Route =
     | "deploy"
     | "mint"
     | "create"
+    | "import"
     | "convert"
     | "contacts"
+    | "connect"
+    | "connections"
     | "reveal";
 
 function LoadingScreen() {
@@ -136,7 +142,7 @@ function Shell() {
         <div className="app fade-in">
             {route === "home" && <Home onNavigate={setRoute} onConvert={openConvert} />}
             {route === "send" && <Send onBack={() => setRoute("home")} />}
-            {route === "receive" && <Receive onBack={() => setRoute("home")} />}
+            {route === "receive" && <Receive onNavigate={setRoute} />}
             {route === "bridge" && <Bridge onBack={() => setRoute("home")} />}
             {/* No onDeployed navigation: Deploy renders its own "Token deployed"
                 result screen; navigating here on success unmounted it before the
@@ -146,10 +152,15 @@ function Shell() {
             {route === "create" && (
                 <CreateTokens onBack={() => setRoute("home")} onMintMore={() => setRoute("mint")} />
             )}
+            {route === "import" && <ImportToken onBack={() => setRoute("home")} />}
             {route === "convert" && convertTarget && (
                 <Convert target={convertTarget} onBack={() => setRoute("home")} />
             )}
             {route === "contacts" && <Contacts onBack={() => setRoute("home")} />}
+            {/* #connect is opened by the background after a page sends
+                "fizz:connect"; the user approves the origin here. */}
+            {route === "connect" && <Connect onDone={() => setRoute("home")} />}
+            {route === "connections" && <Connections onBack={() => setRoute("home")} />}
             {route === "reveal" && <RevealPhrase onBack={() => setRoute("home")} />}
         </div>
     );

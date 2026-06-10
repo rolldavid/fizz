@@ -89,3 +89,43 @@ export async function pingFizz(): Promise<boolean> {
         return false;
     }
 }
+
+export type ConnectionStatus = { installed: boolean; connected: boolean };
+
+/**
+ * Whether Fizz is installed and whether THIS origin is currently connected.
+ * `installed:false` is a normal state (install CTA), so a failed round-trip is
+ * reported as "not installed", not thrown — same rationale as pingFizz.
+ *
+ * Address-blind: the wallet returns only a boolean. It never reveals the user's
+ * address, account, or balances over this channel.
+ */
+export async function getConnectionStatus(): Promise<ConnectionStatus> {
+    if (!fizzMessagingAvailable()) return { installed: false, connected: false };
+    try {
+        const res = await sendToFizz<FizzOk & { connected?: boolean }>(
+            { type: "fizz:connection-status" },
+            2500,
+        );
+        return { installed: true, connected: res.connected === true };
+    } catch {
+        return { installed: false, connected: false };
+    }
+}
+
+/**
+ * Ask the wallet to open its approval window for this origin. Resolves once the
+ * window has been opened — the actual approval is the user's, observed by
+ * polling getConnectionStatus afterwards. Throws if Fizz refuses (e.g. a window
+ * is already open).
+ */
+export async function connectFizz(): Promise<void> {
+    const res = await sendToFizz<{ ok: boolean; error?: string }>({ type: "fizz:connect" });
+    if (!res.ok) throw new Error(res.error ?? "Fizz refused the connection request.");
+}
+
+/** Revoke this origin's connection. Throws if the wallet reports a failure. */
+export async function disconnectFizz(): Promise<void> {
+    const res = await sendToFizz<{ ok: boolean; error?: string }>({ type: "fizz:disconnect" });
+    if (!res.ok) throw new Error(res.error ?? "Fizz could not disconnect.");
+}

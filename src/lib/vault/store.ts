@@ -56,6 +56,35 @@ export type RevealedSecret = {
  */
 const RETIRED_VAULT_VERSIONS = new Set<number>([1]);
 
+/**
+ * In-memory unlock cache (chrome.storage.session). Lets the popup re-open
+ * WITHOUT re-entering the passphrase/passkey within a browser session, expiring
+ * after 30 days. A deliberate convenience/security tradeoff:
+ *   - session storage is MEMORY-backed: wiped on browser restart, never on disk;
+ *   - only the 32-byte SEED is cached (never the mnemonic), so revealing the
+ *     recovery phrase still re-authenticates against the vault;
+ *   - the egress CSP still blocks exfiltration of the cached seed.
+ * The residual risk this accepts: physical access to a running, recently-used
+ * browser opens the wallet without the password (bounded by the 30-day cap and
+ * browser-restart wipe). The idle auto-lock still clears the live in-memory seed.
+ */
+const SESSION_KEY = "fizz.unlock.session.v1";
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function sessionArea(): { get: Function; set: Function; remove: Function } | null {
+    return (globalThis as any).chrome?.storage?.session ?? null;
+}
+function seedToHex(seed: Uint8Array): string {
+    let s = "";
+    for (const b of seed) s += b.toString(16).padStart(2, "0");
+    return s;
+}
+function hexToSeed(hex: string): Uint8Array {
+    const out = new Uint8Array(hex.length >> 1);
+    for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    return out;
+}
+
 function decryptFailure(err: unknown): Error {
     // WebCrypto reports GCM auth failure as an opaque OperationError, which is
     // also what a wrong passphrase produces. Surface something actionable
@@ -73,6 +102,37 @@ class VaultStore {
 
     async init(): Promise<void> {
         this.envelope = await storage.get<VaultEnvelope>(KEYS.vault);
+        await this.restoreSession();
+    }
+
+    /** Cache the unlocked seed in session memory so re-opening skips the prompt. */
+    private async persistSession(): Promise<void> {
+        const area = sessionArea();
+        if (!area || !this.unlocked) return;
+        await area.set({ [SESSION_KEY]: { seed: seedToHex(this.unlocked.seed), at: Date.now() } });
+    }
+
+    /** Restore a still-valid (< 30 days, same browser session) cached unlock. */
+    private async restoreSession(): Promise<void> {
+        const area = sessionArea();
+        if (!area || this.unlocked || !this.envelope) return;
+        const got = await area.get(SESSION_KEY);
+        const blob = got?.[SESSION_KEY];
+        if (!blob || typeof blob.seed !== "string" || typeof blob.at !== "number") return;
+        if (Date.now() - blob.at > SESSION_TTL_MS) {
+            await area.remove(SESSION_KEY);
+            return;
+        }
+        const seed = hexToSeed(blob.seed);
+        if (seed.length !== 32) {
+            await area.remove(SESSION_KEY);
+            return;
+        }
+        this.unlocked = { seed };
+    }
+
+    private clearSession(): void {
+        void sessionArea()?.remove(SESSION_KEY);
     }
 
     isInitialized(): boolean {
@@ -100,10 +160,12 @@ class VaultStore {
     }
 
     lock(): void {
-        // Zero the seed bytes before dropping the reference.
+        // Zero the seed bytes before dropping the reference, and drop the
+        // cached session unlock — an explicit lock requires the password again.
         if (this.unlocked) this.unlocked.seed.fill(0);
         this.unlocked = null;
         this.metaKeyPromise = null;
+        this.clearSession();
     }
 
     private assertSupportedVersion(env: VaultEnvelope): void {
@@ -149,6 +211,7 @@ class VaultStore {
             ptBytes.fill(0);
         }
         this.unlocked = { seed: mnemonicToSeed(mnemonic) };
+        void this.persistSession();
     }
 
     async createWithPassphrase(mnemonic: string, passphrase: string): Promise<void> {
@@ -182,6 +245,7 @@ class VaultStore {
             ptBytes.fill(0);
         }
         this.unlocked = { seed: mnemonicToSeed(mnemonic) };
+        void this.persistSession();
     }
 
     async unlockWithPasskey(): Promise<RevealedSecret> {
@@ -207,6 +271,7 @@ class VaultStore {
             const mnemonic = new TextDecoder().decode(pt);
             pt.fill(0); // wipe the decrypted plaintext bytes (the string is all that's left)
             this.unlocked = { seed: mnemonicToSeed(mnemonic) };
+        void this.persistSession();
             return { mnemonic, seed: this.unlocked.seed };
         } finally {
             // Always wipe the raw AES key, including on decrypt failure.
@@ -240,6 +305,7 @@ class VaultStore {
         const mnemonic = new TextDecoder().decode(pt);
         pt.fill(0); // wipe the decrypted plaintext bytes
         this.unlocked = { seed: mnemonicToSeed(mnemonic) };
+        void this.persistSession();
         return { mnemonic, seed: this.unlocked.seed };
     }
 
@@ -254,6 +320,7 @@ class VaultStore {
         if (this.unlocked) this.unlocked.seed.fill(0);
         this.unlocked = null;
         this.metaKeyPromise = null;
+        this.clearSession();
     }
 }
 

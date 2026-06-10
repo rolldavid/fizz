@@ -104,10 +104,6 @@ type Ctx = {
 
 const WalletCtx = createContext<Ctx | null>(null);
 
-async function initialStatus(): Promise<Status> {
-    return vaultStore.isInitialized() ? "locked" : "uninitialized";
-}
-
 async function loadNetwork(): Promise<AztecNetwork> {
     const id = (await storage.get<AztecNetwork["id"]>(KEYS.network)) ?? DEFAULT_NETWORK_ID;
     try {
@@ -219,13 +215,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         await prev.stop().catch((e) => console.warn("PXE stop failed:", e));
     }, []);
 
-    useEffect(() => {
-        Promise.all([initialStatus(), loadNetwork()]).then(([s, n]) => {
-            setStatus(s);
-            setNetworkState(n);
-        });
-    }, []);
-
     const handleUnlocked = useCallback(async (net: AztecNetwork, secret: UnlockedSecret) => {
         setStatus("loading");
         setBootError(null);
@@ -264,6 +253,23 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             // Stay in "loading" so the LoadingScreen renders the error/retry UI.
         }
     }, [stopCurrentWallet]);
+
+    // On mount: load the saved network, then either boot straight in from a
+    // cached session unlock (vaultStore.init restored the seed from session
+    // memory — same browser session, < 30 days), or land on locked/onboarding.
+    useEffect(() => {
+        loadNetwork().then(async (n) => {
+            networkRef.current = n;
+            setNetworkState(n);
+            const restored = vaultStore.getUnlocked();
+            if (restored) {
+                await handleUnlocked(n, restored);
+            } else {
+                setStatus(vaultStore.isInitialized() ? "locked" : "uninitialized");
+            }
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const retryBoot = useCallback(async () => {
         const secret = vaultStore.getUnlocked();

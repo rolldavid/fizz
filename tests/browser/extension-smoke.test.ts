@@ -247,8 +247,6 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         expect(body).toMatch(/Need gas\?|Sponsored/);
         expect(body).toMatch(/Send/);
         expect(body).toMatch(/Receive/);
-        // Build stamp — lets testers confirm the loaded build matches the code.
-        expect(body).toMatch(/build /);
 
         // CSP/wasm sanity: no console errors accumulated during boot.
         const fatal = consoleErrors.filter(
@@ -372,26 +370,31 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         expect(body).toContain("Token deployed");
     }, 700_000);
 
-    it("deep link: a fresh window boots LOCKED with the route preserved", async () => {
-        // Mirrors "Open in a window" / the /launch + connect windows: a fresh
-        // page at index.html#bridge must boot to the UNLOCK screen (vault keys
-        // are per-page memory — anything else would be a security bug) with
-        // the hash route intact for after the user unlocks. The unlock click
-        // itself is a human step the automation input pipeline can't deliver
-        // here (see the deploy test's entry comment); unlocking is covered
-        // implicitly by every real session.
+    it("deep link: a fresh window restores the session unlock and lands on the route", async () => {
+        // Session persistence: the wallet was unlocked earlier this run, so a
+        // brand-new page in the SAME browser session restores the cached unlock
+        // (no re-login — the seed is in chrome.storage.session memory) AND honors
+        // the #bridge hash route. This is exactly what /launch + the bridge
+        // link-out rely on. (Browser restart wipes session storage → re-login.)
         const page2 = await browser.newPage();
         await page2.goto(`chrome-extension://${extensionId}/src/popup/index.html#bridge`, {
             waitUntil: "domcontentloaded",
             timeout: 30_000,
         });
-        await page2.waitForSelector("input[type=password]", { timeout: 30_000 });
-        const state = await page2.evaluate(() => ({
-            hash: window.location.hash,
-            text: document.body.innerText.slice(0, 120),
-        }));
-        expect(state.hash).toBe("#bridge");
-        expect(state.text).toContain("Locked tight");
+        try {
+            await page2.waitForFunction(
+                () =>
+                    document.body.innerText.includes("fizzwallet.com/bridge") &&
+                    !document.body.innerText.includes("Locked tight"),
+                { timeout: 300_000, polling: 2_000 },
+            );
+        } catch (err) {
+            const body = await page2.evaluate(() => document.body.innerText).catch(() => "(dead)");
+            console.log(`[smoke] DEEP-LINK/SESSION FAILED — screen:\n${body.slice(0, 400)}`);
+            throw err;
+        }
+        const hash = await page2.evaluate(() => window.location.hash);
+        expect(hash).toBe("#bridge");
         await page2.close();
-    }, 60_000);
+    }, 360_000);
 });

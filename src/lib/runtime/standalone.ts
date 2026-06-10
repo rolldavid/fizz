@@ -13,7 +13,7 @@
  * Tab in tabs and app windows, and to undefined inside a toolbar popup.
  */
 
-const ROUTES = ["home", "send", "receive", "bridge", "deploy", "mint", "contacts", "reveal"] as const;
+const ROUTES = ["home", "send", "receive", "bridge", "deploy", "mint", "connect", "contacts", "reveal"] as const;
 export type AppRoute = (typeof ROUTES)[number];
 
 /** Parse a deep-link hash ("#deploy") to a known route; anything else → home. */

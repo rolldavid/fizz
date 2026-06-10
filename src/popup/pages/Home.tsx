@@ -7,9 +7,9 @@ import {
     ConvertIcon,
     CopyIcon,
     KeyIcon,
+    LinkIcon,
     LockIcon,
     PeopleIcon,
-    QrIcon,
     TrashIcon,
 } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
@@ -19,13 +19,7 @@ import {
     ZERO_BALANCE,
     type TokenBalance,
 } from "../../lib/aztec/balances";
-import {
-    FEE_JUICE_ENTRY,
-    addToken,
-    loadTokens,
-    removeToken,
-    type TokenEntry,
-} from "../../lib/aztec/tokens";
+import { FEE_JUICE_ENTRY, loadTokens, removeToken, type TokenEntry } from "../../lib/aztec/tokens";
 import { isSponsoredFPCAvailable } from "../../lib/aztec/fee";
 
 type Route =
@@ -36,7 +30,9 @@ type Route =
     | "deploy"
     | "mint"
     | "create"
+    | "import"
     | "contacts"
+    | "connections"
     | "reveal";
 type Tab = "private" | "public";
 
@@ -57,7 +53,6 @@ export function Home({
     const { wallet, account, accounts, switchAccount, addAccount, lock, network } = useWallet();
     const [rows, setRows] = useState<RowState[]>([]);
     const [tab, setTab] = useState<Tab>("private");
-    const [showAdd, setShowAdd] = useState(false);
     const [showAccounts, setShowAccounts] = useState(false);
     const [copied, setCopied] = useState(false);
     const [sponsored, setSponsored] = useState<boolean | null>(null);
@@ -134,6 +129,14 @@ export function Home({
                         </button>
                         <button
                             className="icon-btn"
+                            onClick={() => onNavigate("connections")}
+                            title="Connected sites"
+                            aria-label="Connected sites"
+                        >
+                            <LinkIcon />
+                        </button>
+                        <button
+                            className="icon-btn"
                             onClick={() => onNavigate("reveal")}
                             title="Recovery phrase"
                             aria-label="Recovery phrase"
@@ -172,8 +175,12 @@ export function Home({
                         title="Switch account"
                         aria-label="Switch account"
                     >
-                        <div className="muted" style={{ fontSize: 11 }}>
-                            {account.label} ▾
+                        <div
+                            className="muted"
+                            style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}
+                        >
+                            {account.label}{" "}
+                            <span style={{ fontSize: 16, lineHeight: 1, color: "var(--text-dim)" }}>▾</span>
                         </div>
                         <div
                             style={{
@@ -186,11 +193,6 @@ export function Home({
                         >
                             {shortAddress(addrStr, 10, 8)}
                         </div>
-                        {!account.isDeployed && (
-                            <div className="muted" style={{ marginTop: 4, color: "var(--accent)" }}>
-                                Activates on your first transaction
-                            </div>
-                        )}
                     </button>
                     <button
                         className="icon-btn"
@@ -199,14 +201,6 @@ export function Home({
                         aria-label="Copy address"
                     >
                         {copied ? <CheckIcon /> : <CopyIcon />}
-                    </button>
-                    <button
-                        className="icon-btn"
-                        onClick={() => onNavigate("receive")}
-                        title="Show QR"
-                        aria-label="Receive"
-                    >
-                        <QrIcon />
                     </button>
                 </div>
 
@@ -244,52 +238,31 @@ export function Home({
                     </button>
                 </div>
 
-                <div className="tabs">
+                {/* Text-tab headings over the list (not pill buttons — those
+                    clashed with the big Send/Receive pills). */}
+                <div className="text-tabs">
                     <button
-                        className={`tab private ${tab === "private" ? "active" : ""}`}
+                        className={`text-tab ${tab === "private" ? "active" : ""}`}
                         onClick={() => setTab("private")}
                     >
-                        <span className="tab-dot" /> Private
+                        Private Tokens
                     </button>
                     <button
-                        className={`tab ${tab === "public" ? "active" : ""}`}
+                        className={`text-tab ${tab === "public" ? "active" : ""}`}
                         onClick={() => setTab("public")}
                     >
-                        <span className="tab-dot" /> Public
+                        Public Tokens
+                    </button>
+                    <button
+                        className="btn btn-ghost"
+                        style={{ marginLeft: "auto", padding: "4px 10px", fontSize: 11 }}
+                        onClick={() => onNavigate("import")}
+                    >
+                        + Import
                     </button>
                 </div>
 
                 <div>
-                    <div
-                        style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            marginBottom: 8,
-                        }}
-                    >
-                        <div className="muted">
-                            {tab === "private" ? "Private balances" : "Public balances"}
-                        </div>
-                        <div style={{ display: "flex", gap: 6 }}>
-                            {/* Token creation lives on /launch; this opens the
-                                in-wallet pointer screen (CreateTokens). */}
-                            <button
-                                className="btn btn-ghost"
-                                style={{ padding: "4px 10px", fontSize: 11 }}
-                                onClick={() => onNavigate("create")}
-                            >
-                                Mint
-                            </button>
-                            <button
-                                className="btn btn-ghost"
-                                style={{ padding: "4px 10px", fontSize: 11 }}
-                                onClick={() => setShowAdd(true)}
-                            >
-                                + Import
-                            </button>
-                        </div>
-                    </div>
 
                     {tokenRows.length === 0 && (
                         <div className="card hint">
@@ -318,32 +291,12 @@ export function Home({
                     ))}
                 </div>
 
-                {showAdd && (
-                    <AddTokenDialog
-                        networkId={network.id}
-                        onClose={() => setShowAdd(false)}
-                        onAdded={refresh}
-                    />
-                )}
-
-                {/* Build stamp: lets a tester confirm at a glance that the
-                    loaded extension matches the code they just pulled. */}
-                <div
-                    className="muted"
-                    style={{ textAlign: "center", fontSize: 10, opacity: 0.6, marginTop: 4 }}
-                >
-                    build {new Date(__BUILD_TIME__).toLocaleString()}
-                </div>
-
-                {/* Sticky reminder: private notes are only discovered for senders
-                    you've registered, so a private payment can sit invisible until
-                    you add the sender. Pinned to the bottom so it's always in reach. */}
-                <div className="private-note-bar">
-                    <span>Expecting a private payment?</span>
-                    <button className="link" onClick={() => onNavigate("contacts")}>
-                        Add the sender →
-                    </button>
-                </div>
+                {/* Sticky CTA: token creation lives on fizzwallet.com/launch — this
+                    opens the in-wallet pointer (CreateTokens) with that link. */}
+                <button className="sticky-cta" onClick={() => onNavigate("create")}>
+                    <span>Launch a token on Aztec</span>
+                    <span className="link">Create →</span>
+                </button>
             </div>
         </>
     );
@@ -532,84 +485,3 @@ function TokenRow({
     );
 }
 
-function AddTokenDialog({
-    networkId,
-    onClose,
-    onAdded,
-}: {
-    networkId: import("../../lib/aztec/networks").AztecNetwork["id"];
-    onClose: () => void;
-    onAdded: () => void;
-}) {
-    const [address, setAddress] = useState("");
-    const [symbol, setSymbol] = useState("");
-    const [name, setName] = useState("");
-    const [decimals, setDecimals] = useState("18");
-    const [error, setError] = useState<string | null>(null);
-    const [busy, setBusy] = useState(false);
-
-    async function submit() {
-        setError(null);
-        setBusy(true);
-        try {
-            const d = Number(decimals);
-            if (!Number.isInteger(d) || d < 0 || d > 30) {
-                throw new Error("Decimals must be an integer 0-30.");
-            }
-            await addToken(networkId, {
-                address: address.trim(),
-                symbol: symbol.trim(),
-                name: name.trim(),
-                decimals: d,
-            });
-            onAdded();
-            onClose();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
-        } finally {
-            setBusy(false);
-        }
-    }
-
-    return (
-        <div className="modal-backdrop">
-            <div
-                className="card fade-in"
-                style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}
-            >
-                <div style={{ fontWeight: 600 }}>Import token</div>
-                <div className="field">
-                    <label>Contract address</label>
-                    <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="0x…" />
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                    <div className="field" style={{ flex: 1 }}>
-                        <label>Symbol</label>
-                        <input value={symbol} onChange={(e) => setSymbol(e.target.value)} />
-                    </div>
-                    <div className="field" style={{ width: 90 }}>
-                        <label>Decimals</label>
-                        <input value={decimals} onChange={(e) => setDecimals(e.target.value)} />
-                    </div>
-                </div>
-                <div className="field">
-                    <label>Name</label>
-                    <input value={name} onChange={(e) => setName(e.target.value)} />
-                </div>
-                {error && <div className="error">{error}</div>}
-                <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn btn-ghost btn-block" onClick={onClose}>
-                        Cancel
-                    </button>
-                    <button
-                        className="btn btn-primary btn-block"
-                        disabled={busy || !address || !symbol}
-                        onClick={submit}
-                    >
-                        {busy ? "Adding…" : "Add"}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}

@@ -115,7 +115,8 @@ input[type="radio"] {
 /* Sticky note-discovery prompt pinned to the bottom of the wallet window —
    private notes are only discovered for registered senders, so this stays
    visible (highlighted) as a standing reminder. */
-.private-note-bar {
+/* A highlighted call-to-action pinned to the bottom of the wallet window. */
+.sticky-cta {
     position: sticky;
     bottom: 0;
     z-index: 5;
@@ -123,24 +124,24 @@ input[type="radio"] {
        when the page is short (no empty gap below); negative side/bottom margins
        cancel .content's 16px padding so it spans edge-to-edge and sits flush. */
     margin: auto -16px -16px;
-    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    padding: 11px 16px calc(11px + env(safe-area-inset-bottom, 0px));
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 600;
     background: var(--accent-soft);
     border-top: 1px solid var(--accent);
     backdrop-filter: blur(6px);
+    cursor: pointer;
+    width: calc(100% + 32px);
+    text-align: left;
 }
-.private-note-bar .link {
+.sticky-cta .link {
     color: var(--accent);
     font-weight: 700;
     white-space: nowrap;
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
 }
 
 /* Fee juice — one compact tappable line (not a loud card). */
@@ -170,6 +171,27 @@ input[type="radio"] {
     font-weight: 600;
     white-space: nowrap;
     font-size: 12px;
+}
+
+/* Numbered step headers (Receive flow). */
+.step-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    align-self: flex-start;
+}
+.step-num {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 700;
+    flex: none;
 }
 
 /* Buttons — round like bubbles. */
@@ -420,6 +442,37 @@ input[type="radio"] {
     background: var(--accent);
     opacity: 1;
     box-shadow: 0 0 6px var(--accent);
+}
+
+/* Text-tab headings over the token list (replaces the pill toggle) */
+.text-tabs {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    border-bottom: 1px solid var(--surface-2);
+    margin-bottom: 2px;
+}
+
+.text-tab {
+    padding: 6px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-dim);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    cursor: pointer;
+    transition: color var(--transition), border-color var(--transition);
+}
+
+.text-tab:hover {
+    color: var(--text);
+}
+
+.text-tab.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
 }
 
 .field {

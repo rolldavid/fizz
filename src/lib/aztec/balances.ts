@@ -12,6 +12,7 @@
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { FeeJuiceContract } from "@aztec/aztec.js/protocol";
+import { readFieldCompressedString } from "@aztec/aztec.js/utils";
 import type { AztecWallet } from "./wallet";
 import type { TokenEntry } from "./tokens";
 import { getTokenContract } from "./tokenContract";
@@ -89,6 +90,39 @@ export async function getTokenBalance(
         public: BigInt(unwrap<bigint>(pub)),
         private: BigInt(unwrap<bigint>(priv)),
     };
+}
+
+export type TokenMetadata = { name: string; symbol: string; decimals: number };
+
+/**
+ * Read a token's name/symbol/decimals straight from its on-chain contract, so
+ * importing a token needs only its address. Uses the standard Token's
+ * `public_get_*` view functions (no transaction). Registering the instance with
+ * the bundled Token artifact also validates that the address really is a
+ * standard Aztec token — a non-token (or a differently-compiled token) fails
+ * here loudly rather than getting saved with junk metadata.
+ */
+export async function fetchTokenMetadata(
+    wallet: AztecWallet,
+    address: AztecAddress,
+    from: AztecAddress,
+): Promise<TokenMetadata> {
+    await ensureTokenRegistered(wallet, address);
+    const Token = await getTokenContract();
+    const contract = await Contract.at(address, Token.artifact, wallet as any);
+    const [nameRaw, symbolRaw, decimalsRaw] = await Promise.all([
+        contract.methods.public_get_name().simulate({ from }),
+        contract.methods.public_get_symbol().simulate({ from }),
+        contract.methods.public_get_decimals().simulate({ from }),
+    ]);
+    const name = readFieldCompressedString(unwrap(nameRaw)).trim();
+    const symbol = readFieldCompressedString(unwrap(symbolRaw)).trim();
+    const decimals = Number(unwrap<bigint | number>(decimalsRaw));
+    if (!symbol) throw new Error("Contract returned an empty symbol — is this an Aztec token?");
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+        throw new Error(`Contract returned invalid decimals (${decimals}).`);
+    }
+    return { name: name || symbol, symbol, decimals };
 }
 
 export { ZERO as ZERO_BALANCE };

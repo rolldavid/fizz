@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { Shell, ErrorBox, CopyButton, shortHex } from "../components";
 import { CHROME_STORE_URL, GITHUB_URL } from "../config";
-import { pingFizz, sendToFizz, type LastLaunch } from "../extension";
+import {
+    connectFizz,
+    disconnectFizz,
+    getConnectionStatus,
+    sendToFizz,
+    type LastLaunch,
+} from "../extension";
 
 /** Launches recorded before this moment belong to earlier sessions. */
 const PAGE_LOAD_AT = Date.now();
 const POLL_MS = 5000;
 
-type Detect = "checking" | "present" | "absent";
+// Connection state, not mere presence: "absent" = not installed; "disconnected"
+// = installed but this origin isn't authorized; "connected" = the user has
+// approved this origin in-wallet (address-blind — we never learn who they are).
+type Conn = "checking" | "absent" | "disconnected" | "connected";
 type Phase = "idle" | "submitting" | "waiting" | "done";
 
 type Draft = {
@@ -59,7 +68,10 @@ function errMessage(err: unknown): string {
 }
 
 export function LaunchPage() {
-    const [detect, setDetect] = useState<Detect>("checking");
+    const [conn, setConn] = useState<Conn>("checking");
+    const [connecting, setConnecting] = useState(false);
+    const [connectNote, setConnectNote] = useState<string | null>(null);
+    const connectTimer = useRef<number | null>(null);
     const [draft, setDraft] = useState<Draft>(INITIAL_DRAFT);
     const [phase, setPhase] = useState<Phase>("idle");
     const [formErrors, setFormErrors] = useState<string[]>([]);
@@ -72,15 +84,73 @@ export function LaunchPage() {
 
     const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
+    function stopConnectPoll() {
+        if (connectTimer.current !== null) {
+            window.clearInterval(connectTimer.current);
+            connectTimer.current = null;
+        }
+    }
+
+    // Connection state, re-checked on mount and whenever the page regains focus
+    // — the user approves in the wallet's OWN window, then tabs back here.
     useEffect(() => {
         let cancelled = false;
-        void pingFizz().then((present) => {
-            if (!cancelled) setDetect(present ? "present" : "absent");
-        });
+        const refresh = () =>
+            void getConnectionStatus().then((s) => {
+                if (cancelled) return;
+                setConn(!s.installed ? "absent" : s.connected ? "connected" : "disconnected");
+                if (s.connected) {
+                    setConnecting(false);
+                    stopConnectPoll();
+                }
+            });
+        refresh();
+        window.addEventListener("focus", refresh);
         return () => {
             cancelled = true;
+            window.removeEventListener("focus", refresh);
+            stopConnectPoll();
         };
     }, []);
+
+    async function connect() {
+        setConnectNote(null);
+        try {
+            await connectFizz();
+        } catch (err) {
+            setConnectNote(errMessage(err));
+            return;
+        }
+        // The wallet's approval window is open now; poll until the user approves.
+        // (The focus listener also catches it when they tab back.)
+        setConnecting(true);
+        stopConnectPoll();
+        let waited = 0;
+        connectTimer.current = window.setInterval(() => {
+            void getConnectionStatus().then((s) => {
+                waited += 2;
+                if (s.connected) {
+                    setConn("connected");
+                    setConnecting(false);
+                    stopConnectPoll();
+                } else if (waited >= 120) {
+                    setConnecting(false);
+                    stopConnectPoll();
+                    setConnectNote("Still waiting — approve the connection in the Fizz window.");
+                }
+            });
+        }, 2000);
+    }
+
+    async function disconnect() {
+        setConnectNote(null);
+        try {
+            await disconnectFizz();
+            setConn("disconnected");
+        } catch (err) {
+            setConnectNote(errMessage(err));
+        }
+    }
 
     // Elapsed-time ticker while waiting (proving takes minutes; show signs of life).
     useEffect(() => {
@@ -160,7 +230,7 @@ export function LaunchPage() {
         }
     }
 
-    const formDisabled = detect !== "present" || phase === "submitting" || phase === "waiting";
+    const formDisabled = conn !== "connected" || phase === "submitting" || phase === "waiting";
 
     return (
         <Shell page="launch">
@@ -178,12 +248,23 @@ export function LaunchPage() {
             <section className="card">
                 <div className="card-head">
                     <h2>Your token</h2>
-                    {detect === "checking" && <span className="muted small">Looking for Fizz…</span>}
-                    {detect === "present" && <span className="small" style={{ color: "var(--ok)" }}>✓ Fizz wallet detected</span>}
-                    {detect === "absent" && <span className="small" style={{ color: "var(--warn)" }}>Fizz not detected</span>}
+                    {conn === "checking" && <span className="muted small">Looking for Fizz…</span>}
+                    {conn === "absent" && <span className="small" style={{ color: "var(--warn)" }}>Fizz not installed</span>}
+                    {conn === "disconnected" && <span className="muted small">Not connected</span>}
+                    {conn === "connected" && (
+                        <span
+                            className="small"
+                            style={{ display: "inline-flex", gap: 10, alignItems: "center", color: "var(--ok)" }}
+                        >
+                            ✓ Connected
+                            <button type="button" className="btn btn-ghost btn-small" onClick={() => void disconnect()}>
+                                Disconnect
+                            </button>
+                        </span>
+                    )}
                 </div>
 
-                {detect === "absent" && (
+                {conn === "absent" && (
                     <div className="note-box">
                         <strong>Install Fizz to launch.</strong> This launcher hands your draft to the Fizz
                         extension, which deploys it from YOUR wallet.{" "}
@@ -195,6 +276,30 @@ export function LaunchPage() {
                             github.com/rolldavid/fizz
                         </a>
                         , then reload this page.
+                    </div>
+                )}
+
+                {conn === "disconnected" && (
+                    <div className="note-box">
+                        <strong>Connect your wallet to launch.</strong> Fizz is installed — connect it so
+                        you can deploy a public or private token from your own account. Fizz never sees
+                        your address, balances, or keys, and you confirm every deploy in the wallet.
+                        <div className="row-actions">
+                            <button
+                                type="button"
+                                className="btn btn-primary btn-small"
+                                disabled={connecting}
+                                onClick={() => void connect()}
+                            >
+                                {connecting ? <span className="spin">Waiting for approval…</span> : "Connect Fizz"}
+                            </button>
+                            {connecting && (
+                                <span className="muted small">A Fizz window opened — approve it there.</span>
+                            )}
+                        </div>
+                        {connectNote !== null && (
+                            <div className="muted small" style={{ marginTop: 8 }}>{connectNote}</div>
+                        )}
                     </div>
                 )}
 
