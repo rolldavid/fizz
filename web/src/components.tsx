@@ -7,7 +7,6 @@ import { Link, NavLink, Outlet } from "react-router-dom";
 import logoUrl from "./assets/fizzlogo.svg";
 import { CHROME_STORE_URL, GITHUB_URL } from "./config";
 import { useConnection } from "./connection";
-import { EthConnect } from "./eth/EthConnect";
 
 /**
  * Context-aware Aztec-wallet button: Install Wallet (no extension / mobile /
@@ -82,7 +81,6 @@ function NavWalletButton() {
  *  active route rendered through <Outlet/>. Connection state lives above this in
  *  the providers, so it persists across client-side navigation. */
 export function Layout() {
-    const { platform } = useConnection();
     return (
         <>
             <div className="bubbles" aria-hidden="true">
@@ -96,8 +94,7 @@ export function Layout() {
                     <nav className="site-nav">
                         <NavLink to="/bridge">Get Gas</NavLink>
                         <NavLink to="/launch">Launch a Token</NavLink>
-                        {/* Ethereum wallet only where it can run (desktop Chromium). */}
-                        {platform.canUseExtension && <EthConnect />}
+                        {/* Aztec wallet only — the Ethereum connect lives on /bridge. */}
                         <NavWalletButton />
                     </nav>
                 </header>

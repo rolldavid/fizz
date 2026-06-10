@@ -12,6 +12,7 @@ import { formatUnits, parseUnits, type Hex } from "viem";
 import { ErrorBox, DesktopRequiredNotice } from "../components";
 import { useConnection } from "../connection";
 import { useEth } from "../eth/EthProvider";
+import { EthConnect } from "../eth/EthConnect";
 import { detectPlatform } from "../platform";
 import { AZTEC_TOKEN_URL } from "../config";
 import { fetchNodeInfo, type AztecNodeInfo } from "../nodeInfo";
@@ -300,16 +301,15 @@ export function BridgePage() {
                                         <div className="bridge-col-head">
                                             <span className="bridge-num">2</span> Your Ethereum wallet
                                         </div>
-                                        {isConnected ? (
-                                            <p className="hint" style={{ color: "var(--ok)", margin: 0 }}>
-                                                ✓ Ethereum wallet connected. It holds the AZTEC and pays the L1 gas.
-                                            </p>
-                                        ) : (
-                                            <p className="hint" style={{ margin: 0 }}>
-                                                Connect your <strong>Ethereum wallet</strong> with{" "}
-                                                <strong>Connect Ethereum</strong> (top right) — MetaMask or Rabby.
-                                            </p>
-                                        )}
+                                        <EthConnect />
+                                        <p
+                                            className="hint"
+                                            style={{ margin: 0, color: isConnected ? "var(--ok)" : undefined }}
+                                        >
+                                            {isConnected
+                                                ? "✓ Connected — it holds the AZTEC and pays the L1 gas."
+                                                : "Connect MetaMask or Rabby — it holds the AZTEC and pays the L1 gas."}
+                                        </p>
                                         {isConnected && balance.status === "ready" && balance.value === 0n && (
                                             <div className="note-box" style={{ marginTop: 12 }}>
                                                 <strong>You have no {symbol} on Ethereum mainnet.</strong> Fee juice
