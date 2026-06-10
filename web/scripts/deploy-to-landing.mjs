@@ -1,6 +1,6 @@
 /**
- * Copies the vite build output into ../landing so Netlify (which serves
- * landing/ with NO build step) can host the app:
+ * Copies the vite build output into ../landing so the static host can serve
+ * the app (the Railway Dockerfile runs this build, then serves landing/):
  *
  *   dist/bridge/index.html → landing/bridge/index.html
  *   dist/launch/index.html → landing/launch/index.html

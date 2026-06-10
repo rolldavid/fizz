@@ -25,10 +25,9 @@ const nodePolyfillsFix = (options?: PolyfillOptions): Plugin => {
  * bb.js ships TWO copies of the barretenberg WASM as ~3.5 MB base64 data-url
  * modules: `barretenberg.js` (plain memory) and `barretenberg-threads.js`
  * (shared memory). The threaded one is only ever loaded when the page is
- * crossOriginIsolated — which fizzwallet.com never is (Netlify serves
- * landing/ with no COOP/COEP headers, and netlify.toml must stay
- * build-free). Aliasing threads → plain keeps a dead 3.5 MB chunk out of the
- * committed landing/webassets output.
+ * crossOriginIsolated — which fizzwallet.com never is (the host serves
+ * landing/ with no COOP/COEP headers; see serve.json). Aliasing threads →
+ * plain keeps a dead 3.5 MB chunk out of the landing/webassets output.
  *
  * Safety: the only bb.js entry this app touches is BarretenbergSync (via
  * @aztec/aztec.js → computeSecretHash → poseidon2), which always requests

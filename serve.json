@@ -1,0 +1,22 @@
+{
+    "directoryListing": false,
+    "headers": [
+        {
+            "source": "**",
+            "headers": [
+                { "key": "X-Frame-Options", "value": "DENY" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "Referrer-Policy", "value": "no-referrer" },
+                {
+                    "key": "Permissions-Policy",
+                    "value": "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+                },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                {
+                    "key": "Content-Security-Policy",
+                    "value": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' data: https://aztec-mainnet.drpc.org https://ethereum-rpc.publicnode.com https://*.walletconnect.org https://*.walletconnect.com wss://relay.walletconnect.org; frame-src https://verify.walletconnect.org https://verify.walletconnect.com"
+                }
+            ]
+        }
+    ]
+}

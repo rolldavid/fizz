@@ -61,7 +61,7 @@ It ships with two companion pages on [fizzwallet.com](https://fizzwallet.com):
 | `src/`      | The browser extension: popup UI (`src/popup`), background worker (`src/background`), libs (`src/lib`: vault, aztec, state). |
 | `public/`   | Extension static assets (logos served at `/`). |
 | `web/`      | The fizzwallet.com web app (Vite + React): `/launch` and `/bridge`. `/launch` ships zero wallet/L1 code. |
-| `landing/`  | The static home page and the Netlify publish directory. |
+| `landing/`  | The static home page; the web build writes `/bridge`, `/launch`, and `webassets/` here and the whole dir is served. |
 | `tests/`    | Unit + property tests, plus live-network e2e and a real-Chrome smoke gate. |
 
 ## Develop

@@ -1,0 +1,14 @@
+# Keep the build context small + reproducible. The image builds only the web
+# app and serves landing/, so the extension build, deps, and generated output
+# are all excluded (the web build regenerates landing/bridge|launch|webassets).
+**/node_modules
+dist
+web/dist
+.git
+*.log
+chrome
+docs
+LOOP_STATE.md
+landing/bridge
+landing/launch
+landing/webassets

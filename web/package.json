@@ -1,7 +1,7 @@
 {
   "name": "fizz-web",
   "version": "0.1.0",
-  "description": "fizzwallet.com web app — /bridge (fee juice L1→L2) and /launch (token launcher). Builds into ../landing/{bridge,launch,webassets} so Netlify can serve it with NO build step.",
+  "description": "fizzwallet.com web app — /bridge (fee juice L1→L2) and /launch (token launcher). Builds into ../landing/{bridge,launch,webassets}, which the static host serves alongside the committed landing home.",
   "private": true,
   "type": "module",
   "scripts": {

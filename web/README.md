@@ -32,7 +32,7 @@ yarn build
 ```
 
 `yarn build` = `tsc` → `vite build` → `scripts/deploy-to-landing.mjs`, which
-copies the output into the **static, no-build** Netlify site:
+copies the output into the static `landing/` site next to the committed home:
 
 ```
 landing/bridge/index.html      ← built page
@@ -40,8 +40,8 @@ landing/launch/index.html      ← built page
 landing/webassets/…            ← all hashed js/css + favicon (shared /webassets/ base)
 ```
 
-Netlify serves `landing/` with an empty build command (see /netlify.toml — do
-not change it), so these generated files must be **committed**. The deploy
+These three generated dirs are gitignored; the repo-root `Dockerfile` runs this
+same build on deploy (Railway) and serves the combined `landing/`. The deploy
 script sanity-checks titles, that every referenced `/webassets/` URL exists,
 and that `/launch` ships no wallet code; it exits non-zero on any failure.
 

@@ -39,13 +39,10 @@ const buildManifest = (env: ConfigEnv): any => {
 
     // fizzwallet.com/launch is the only external caller (token-draft hand-off).
     // localhost is allowed ONLY in dev so a local web build can drive the
-    // wallet; a published wallet never trusts a localhost page. (The Netlify
-    // origin is the owner's active staging host; remove it once fizzwallet.com
-    // is the sole domain.)
+    // wallet; a published wallet never trusts a localhost page.
     const externallyConnectableMatches = [
         "https://fizzwallet.com/*",
         "https://www.fizzwallet.com/*",
-        "https://fizzwallet.netlify.app/*",
         ...(isProd ? [] : ["http://localhost/*"]),
     ];
 

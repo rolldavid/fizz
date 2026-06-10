@@ -2,9 +2,9 @@ node_modules
 dist
 web/node_modules
 web/dist
-# Netlify builds the web app from web/ on deploy and writes these into landing/,
-# so the build output is no longer committed. The static home (landing/index.html,
-# _headers, images, privacy.html) IS committed.
+# Railway builds the web app from web/ on deploy (Dockerfile) and writes these
+# into landing/, so the build output is not committed. The static home
+# (landing/index.html, images, privacy.html) IS committed.
 landing/bridge/
 landing/launch/
 landing/webassets/

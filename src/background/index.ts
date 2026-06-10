@@ -55,7 +55,6 @@ chrome.runtime.onInstalled.addListener(() => {
 const ALLOWED_ORIGINS = new Set<string>([
     "https://fizzwallet.com",
     "https://www.fizzwallet.com",
-    "https://fizzwallet.netlify.app",
     // Local web-app development talks to an unpacked build. Stripped from
     // production builds so a published wallet never trusts a localhost page.
     ...(import.meta.env.PROD ? [] : ["http://localhost"]),

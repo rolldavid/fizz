@@ -2,25 +2,17 @@
 
 Self-contained static page — **no build step**. Plain HTML + assets.
 
-## Deploy on Netlify (current)
+## Deploy on Railway
 
-`netlify.toml` at the repo root handles everything (base `landing`, publish
-`.`, empty build command) and **overrides UI settings** — so a failed
-`yarn run build` configured in the dashboard is ignored once this file is on
-`main`. Just connect the repo and deploy; no dashboard build settings needed.
-
-If you'd rather fix it in the UI instead: Site configuration → Build &
-deploy → set **Build command** to *(empty)* and **Publish directory** to
-`landing` (with Base directory `landing`, publish is `.`).
-
-Custom domain: Domain management → add `fizzwallet.com` → follow the DNS
-instructions (apex A/ALIAS + `www` CNAME). HTTPS is automatic.
-
-## Deploy on Railway (alternative)
+The repo-root `Dockerfile` builds the web app (`web/`) and serves the combined
+`landing/` (this home + the generated `/bridge`, `/launch`, `webassets/`) on
+`$PORT` with the security headers in `/serve.json`.
 
 1. railway.app → New Project → **Deploy from GitHub repo** → `rolldavid/fizz`.
-2. Root Directory `landing`; no build command; static output `.`.
-3. Networking → attach the domain.
+   `railway.json` pins the Dockerfile builder, so no build settings are needed.
+2. Variables → set `VITE_WALLETCONNECT_PROJECT_ID` (read at build time; enables
+   the WalletConnect connector on `/bridge`).
+3. Networking → attach the custom domain.
 
 ## Domain
 
