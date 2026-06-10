@@ -12,8 +12,9 @@ import {
 } from "wagmi/actions";
 import { formatUnits, parseEventLogs, parseUnits } from "viem";
 import { Shell, ErrorBox, CopyButton, DesktopRequiredNotice, shortHex } from "../components";
+import { useConnection } from "../connection";
 import { detectPlatform } from "../platform";
-import { AZTEC_NETWORK_ID, AZTEC_NODE_URL, AZTEC_TOKEN_URL } from "../config";
+import { AZTEC_NETWORK_ID, AZTEC_TOKEN_URL } from "../config";
 import { fetchNodeInfo, type AztecNodeInfo, type Hex } from "../nodeInfo";
 import { encodeClaimTicket, type ClaimTicket } from "../claimTicket";
 import { feeAssetAbi, feeJuicePortalAbi } from "./abi";
@@ -107,6 +108,8 @@ function ticketFromRecord(r: PendingRecord): string {
 export function BridgePage() {
     const config = useConfig();
     const { address: account, isConnected } = useAccount();
+    // Aztec (Fizz) connection — shown on the left; the Eth wallet is on the right.
+    const { status: aztecStatus } = useConnection();
 
     const [node, setNode] = useState<NodeState>({ status: "loading" });
     const [asset, setAsset] = useState<AssetState>({ status: "loading" });
@@ -396,7 +399,6 @@ export function BridgePage() {
             <section className="card">
                 <div className="card-head">
                     <h2>Bridge</h2>
-                    {!PLATFORM.isMobile && <ConnectButton showBalance={false} />}
                 </div>
 
                 {/* Mobile can't run Fizz (a desktop extension), and bridging only
@@ -418,93 +420,105 @@ export function BridgePage() {
 
                 {node.status === "ready" && asset.status === "ready" && (
                     <>
-                        {/* Step 1 — connect the L1 wallet that holds AZTEC + pays gas. */}
-                        {!isConnected && (
-                            <p className="hint">
-                                <strong>Step 1 — connect an Ethereum wallet</strong> on mainnet (top-right). It holds
-                                the {symbol} you'll bridge and pays the L1 gas; the fee juice lands on the Aztec
-                                address you enter below.
-                            </p>
-                        )}
-
-                        {/* Step 2 — the recipient Aztec address. */}
-                        <div className="field">
-                            <label htmlFor="recipient">
-                                {isConnected ? "Step 2 — " : ""}Aztec address to receive the fee juice
-                            </label>
-                            <input
-                                id="recipient"
-                                type="text"
-                                placeholder="0x… (your Fizz address — the Receive screen)"
-                                value={recipientInput}
-                                onChange={(e) => setRecipientInput(e.target.value)}
-                                disabled={flowLocked || running}
-                                spellCheck={false}
-                                autoComplete="off"
-                                autoCorrect="off"
-                                autoCapitalize="off"
-                            />
-                            {recipientTrimmed !== "" && !recipientValid && (
-                                <p className="sub-label" style={{ color: "var(--warn)" }}>
-                                    That isn't a valid Aztec address — it should be 0x followed by 64 hex characters.
-                                </p>
-                            )}
-                            {recipientValid && (
-                                <p className="sub-label">
-                                    Fee juice will be claimable by this address only — it's baked into the L1→L2
-                                    message and can't be redirected.
-                                </p>
-                            )}
-                        </div>
-
-                        {/* No AZTEC yet → point at where to get it (no faucet on mainnet). */}
-                        {isConnected && balance.status === "ready" && balance.value === 0n && (
-                            <div className="note-box">
-                                <strong>You have no {symbol} on Ethereum mainnet.</strong> Fee juice is bridged from
-                                the AZTEC token — there's no faucet on mainnet. Get {symbol} at{" "}
-                                <a href={AZTEC_TOKEN_URL} target="_blank" rel="noopener noreferrer">
-                                    {AZTEC_TOKEN_URL.replace("https://", "")}
-                                </a>
-                                , then come back.
-                            </div>
-                        )}
-
-                        {/* Step 3 — amount of AZTEC to bridge. */}
-                        <div className="field">
-                            <label htmlFor="amount">
-                                {isConnected ? "Step 3 — " : ""}Amount of {symbol} to bridge
-                                {balance.status === "ready" && ` (balance: ${fmt(balance.value)})`}
-                            </label>
-                            <input
-                                id="amount"
-                                type="text"
-                                inputMode="decimal"
-                                placeholder={balance.status === "ready" ? fmt(balance.value) : "0"}
-                                value={amountInput}
-                                onChange={(e) => setAmountInput(e.target.value)}
-                                disabled={flowLocked || running || !hasBalance}
-                                spellCheck={false}
-                                autoComplete="off"
-                            />
-                            {balance.status === "loading" && <p className="sub-label">Loading your balance…</p>}
-                            {balance.status === "error" && (
-                                <p className="sub-label" style={{ color: "var(--warn)" }}>
-                                    Balance lookup failed: {balance.message}
-                                </p>
-                            )}
-                            {hasBalance && (
-                                <p className="sub-label">
-                                    <button
-                                        type="button"
-                                        className="btn btn-ghost btn-small"
+                        <div className="bridge-cols">
+                            {/* LEFT — your Aztec (Fizz) wallet: where the fee juice lands. */}
+                            <div className="bridge-col">
+                                <div className="bridge-col-head">
+                                    <span className="bridge-num">1</span> Your Aztec wallet
+                                </div>
+                                {aztecStatus === "connected" ? (
+                                    <p className="hint" style={{ color: "var(--ok)", margin: 0 }}>
+                                        ✓ Aztec wallet connected (Fizz)
+                                    </p>
+                                ) : (
+                                    <p className="hint" style={{ margin: 0 }}>
+                                        Connect your <strong>Aztec wallet</strong> with{" "}
+                                        <strong>Connect Wallet</strong> (top right). The fee juice lands on the
+                                        Aztec address below.
+                                    </p>
+                                )}
+                                <div className="field">
+                                    <label htmlFor="recipient">Aztec address to receive the fee juice</label>
+                                    <input
+                                        id="recipient"
+                                        type="text"
+                                        placeholder="0x… (your Fizz Receive address)"
+                                        value={recipientInput}
+                                        onChange={(e) => setRecipientInput(e.target.value)}
                                         disabled={flowLocked || running}
-                                        onClick={() => setAmountInput(fmt(balance.value))}
-                                    >
-                                        Use full balance
-                                    </button>{" "}
-                                    Roughly ~2.3 fee juice ≈ one Aztec transaction.
-                                </p>
-                            )}
+                                        spellCheck={false}
+                                        autoComplete="off"
+                                        autoCorrect="off"
+                                        autoCapitalize="off"
+                                    />
+                                    {recipientTrimmed !== "" && !recipientValid && (
+                                        <p className="sub-label" style={{ color: "var(--warn)" }}>
+                                            That isn't a valid Aztec address. It should be 0x followed by 64 hex
+                                            characters.
+                                        </p>
+                                    )}
+                                    {recipientValid && (
+                                        <p className="sub-label">
+                                            Fee juice will be claimable by this address only. It's baked into the
+                                            L1→L2 message and can't be redirected.
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* RIGHT — your Ethereum wallet: holds the AZTEC and pays L1 gas. */}
+                            <div className="bridge-col">
+                                <div className="bridge-col-head">
+                                    <span className="bridge-num">2</span> Your Ethereum wallet
+                                </div>
+                                <ConnectButton showBalance={false} />
+                                {isConnected && balance.status === "ready" && balance.value === 0n && (
+                                    <div className="note-box" style={{ marginTop: 12 }}>
+                                        <strong>You have no {symbol} on Ethereum mainnet.</strong> Fee juice is
+                                        bridged from the AZTEC token (no faucet on mainnet). Get {symbol} at{" "}
+                                        <a href={AZTEC_TOKEN_URL} target="_blank" rel="noopener noreferrer">
+                                            {AZTEC_TOKEN_URL.replace("https://", "")}
+                                        </a>
+                                        , then come back.
+                                    </div>
+                                )}
+                                <div className="field">
+                                    <label htmlFor="amount">
+                                        Amount of {symbol} to bridge
+                                        {balance.status === "ready" && ` (balance: ${fmt(balance.value)})`}
+                                    </label>
+                                    <input
+                                        id="amount"
+                                        type="text"
+                                        inputMode="decimal"
+                                        placeholder={balance.status === "ready" ? fmt(balance.value) : "0"}
+                                        value={amountInput}
+                                        onChange={(e) => setAmountInput(e.target.value)}
+                                        disabled={flowLocked || running || !hasBalance}
+                                        spellCheck={false}
+                                        autoComplete="off"
+                                    />
+                                    {balance.status === "loading" && <p className="sub-label">Loading your balance…</p>}
+                                    {balance.status === "error" && (
+                                        <p className="sub-label" style={{ color: "var(--warn)" }}>
+                                            Balance lookup failed: {balance.message}
+                                        </p>
+                                    )}
+                                    {hasBalance && (
+                                        <p className="sub-label">
+                                            <button
+                                                type="button"
+                                                className="btn btn-ghost btn-small"
+                                                disabled={flowLocked || running}
+                                                onClick={() => setAmountInput(fmt(balance.value))}
+                                            >
+                                                Use full balance
+                                            </button>{" "}
+                                            Roughly ~2.3 fee juice ≈ one Aztec transaction.
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
                         {outcome === null && (
@@ -581,23 +595,6 @@ export function BridgePage() {
                             </>
                         )}
 
-                        <div className="note-box">
-                            <span className="live-dot" /> <strong>Canonical addresses</strong> — fetched live from the Aztec
-                            mainnet node ({AZTEC_NODE_URL.replace("https://", "")}, v{node.info.nodeVersion}) and verified
-                            against Fizz's pinned values:
-                            <table className="addr-table">
-                                <tbody>
-                                    <tr>
-                                        <td>FeeJuicePortal</td>
-                                        <td><code>{node.info.feeJuicePortalAddress}</code></td>
-                                    </tr>
-                                    <tr>
-                                        <td>Fee asset ({symbol})</td>
-                                        <td><code>{node.info.feeJuiceAddress}</code></td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
                     </>
                 )}
                   </>
@@ -686,6 +683,18 @@ export function BridgePage() {
                             {AZTEC_TOKEN_URL.replace("https://", "")}
                         </a>
                         .
+                        {node.status === "ready" && (
+                            <>
+                                {" "}
+                                <a
+                                    href={`https://etherscan.io/address/${node.info.feeJuiceAddress}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    AZTEC token on Etherscan ↗
+                                </a>
+                            </>
+                        )}
                     </p>
                 </div>
                 <div className="explainer">
@@ -702,7 +711,19 @@ export function BridgePage() {
                     <h3>One-way by design</h3>
                     <p>
                         The protocol only mints fee juice from L1 deposits through this portal. There is no exit:
-                        bridge what you'll use. Fee juice only — this portal moves nothing else.
+                        bridge what you'll use. Fee juice only; this portal moves nothing else.
+                        {node.status === "ready" && (
+                            <>
+                                {" "}
+                                <a
+                                    href={`https://etherscan.io/address/${node.info.feeJuicePortalAddress}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    FeeJuicePortal on Etherscan ↗
+                                </a>
+                            </>
+                        )}
                     </p>
                 </div>
                 <div className="explainer">

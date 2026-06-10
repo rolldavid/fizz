@@ -271,6 +271,19 @@ input::placeholder { color: #594d85; }
 .desktop-required h3 { font-size: 17px; margin: 8px 0 6px; }
 .desktop-required p { color: var(--dim); font-size: 14px; max-width: 460px; margin: 0 auto 12px; }
 
+/* Bridge: two columns — Aztec (left) and Ethereum (right). */
+.bridge-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 4px 0 10px; }
+.bridge-col {
+    background: var(--bg); border: 1px solid var(--surface-2); border-radius: 14px;
+    padding: 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.bridge-col-head { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
+.bridge-num {
+    display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--surface-2); color: var(--accent); font-size: 13px; flex-shrink: 0;
+}
+.bridge-col .field { margin: 0; }
+
 @media (max-width: 560px) {
     .card { padding: 18px; }
     .site-header { padding: 12px 0; }
@@ -280,4 +293,5 @@ input::placeholder { color: #594d85; }
     .install-btn { padding: 8px 13px; font-size: 13px; min-width: 0; }
     .page-hero { padding-top: 24px; }
     .field-row { gap: 8px; }
+    .bridge-cols { grid-template-columns: 1fr; }
 }
