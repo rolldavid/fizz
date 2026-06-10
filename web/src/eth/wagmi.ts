@@ -13,7 +13,7 @@
  * because the config is a singleton; a hard reload starts disconnected.
  */
 import { createConfig, http } from "wagmi";
-import { mainnet } from "wagmi/chains";
+import { mainnet, sepolia } from "wagmi/chains";
 import {
     connect,
     disconnect,
@@ -23,11 +23,17 @@ import {
     watchConnectors,
 } from "wagmi/actions";
 import type { Address } from "viem";
-import { L1_RPC_URL } from "../config";
+import { BRIDGE_NETWORKS } from "../networks";
 
+// Both L1 chains the bridge can target: Ethereum mainnet (real) and Sepolia
+// (testnet practice). The /bridge toggle switches the connected wallet between
+// them; the config carries a transport for each.
 export const config = createConfig({
-    chains: [mainnet],
-    transports: { [mainnet.id]: http(L1_RPC_URL) },
+    chains: [mainnet, sepolia],
+    transports: {
+        [mainnet.id]: http(BRIDGE_NETWORKS.mainnet.l1RpcUrl),
+        [sepolia.id]: http(BRIDGE_NETWORKS.testnet.l1RpcUrl),
+    },
     // EIP-6963 discovery is on by default; we surface only MetaMask + Rabby.
     multiInjectedProviderDiscovery: true,
 });

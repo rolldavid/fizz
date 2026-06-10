@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { mainnet } from "wagmi/chains";
 import {
     getAccount,
     readContract,
@@ -15,9 +14,10 @@ import { useEth } from "../eth/EthProvider";
 import { EthConnect } from "../eth/EthConnect";
 import { detectPlatform } from "../platform";
 import { AZTEC_TOKEN_URL } from "../config";
+import { BRIDGE_NETWORKS, type NetId } from "../networks";
 import { fetchNodeInfo, type AztecNodeInfo } from "../nodeInfo";
 import { getBridgeParams, notifyBridgeDeposited, prepareBridge } from "../extension";
-import { feeAssetAbi, feeJuicePortalAbi } from "./abi";
+import { feeAssetAbi, feeAssetHandlerAbi, feeJuicePortalAbi } from "./abi";
 
 /** Bridging serves a Fizz (desktop-Chromium) address; disable connecting on mobile. */
 const PLATFORM = detectPlatform();
@@ -70,6 +70,11 @@ export function BridgePage() {
         document.title = "Bridge fee juice to Aztec — Fizz";
     }, []);
 
+    // Network toggle — default mainnet (the real bridge). Testnet (Sepolia) is a
+    // free practice mode: same FeeJuicePortal deposit + a free FEE minter.
+    const [netId, setNetId] = useState<NetId>("mainnet");
+    const net = BRIDGE_NETWORKS[netId];
+
     const [node, setNode] = useState<NodeState>({ status: "loading" });
     const [asset, setAsset] = useState<AssetState>({ status: "loading" });
     const [balance, setBalance] = useState<BalanceState>({ status: "idle" });
@@ -78,15 +83,19 @@ export function BridgePage() {
     const [phase, setPhase] = useState<Phase>("idle");
     const [error, setError] = useState<string | null>(null);
     const [depositTx, setDepositTx] = useState<string | null>(null);
+    const [minting, setMinting] = useState(false);
+    const [balanceNonce, setBalanceNonce] = useState(0);
 
     // ── data loading ─────────────────────────────────────────────────────────
     const loadNode = () => {
         setNode({ status: "loading" });
-        fetchNodeInfo()
+        fetchNodeInfo(net.aztecNodeUrl, net.pin)
             .then((info) => setNode({ status: "ready", info }))
             .catch((err) => setNode({ status: "error", message: errMessage(err) }));
     };
-    useEffect(loadNode, []);
+    // Re-fetch the node + its L1 contracts whenever the network toggles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(loadNode, [netId]);
 
     useEffect(() => {
         if (node.status !== "ready" || !config) return;
@@ -95,8 +104,8 @@ export function BridgePage() {
         setAsset({ status: "loading" });
         (async () => {
             const [symbol, decimals] = await Promise.all([
-                readContract(config, { abi: feeAssetAbi, address: feeJuiceAddress, functionName: "symbol", chainId: mainnet.id }),
-                readContract(config, { abi: feeAssetAbi, address: feeJuiceAddress, functionName: "decimals", chainId: mainnet.id }),
+                readContract(config, { abi: feeAssetAbi, address: feeJuiceAddress, functionName: "symbol", chainId: net.l1.id }),
+                readContract(config, { abi: feeAssetAbi, address: feeJuiceAddress, functionName: "decimals", chainId: net.l1.id }),
             ]);
             if (!cancelled) setAsset({ status: "ready", symbol, decimals });
         })().catch((err) => {
@@ -105,7 +114,7 @@ export function BridgePage() {
         return () => {
             cancelled = true;
         };
-    }, [config, node]);
+    }, [config, node, net.l1.id]);
 
     useEffect(() => {
         if (node.status !== "ready" || !account || !config) {
@@ -119,7 +128,7 @@ export function BridgePage() {
             address: node.info.feeJuiceAddress,
             functionName: "balanceOf",
             args: [account],
-            chainId: mainnet.id,
+            chainId: net.l1.id,
         })
             .then((value) => {
                 if (!cancelled) setBalance({ status: "ready", value });
@@ -130,7 +139,7 @@ export function BridgePage() {
         return () => {
             cancelled = true;
         };
-    }, [config, node, account, depositTx]);
+    }, [config, node, account, depositTx, net.l1.id, balanceNonce]);
 
     const decimals = asset.status === "ready" ? asset.decimals : 18;
     const symbol = asset.status === "ready" ? asset.symbol : "AZTEC";
@@ -155,7 +164,7 @@ export function BridgePage() {
         setError(null);
         if (!config) return setError("Ethereum wallet isn't ready yet — give it a moment and try again.");
         if (aztecStatus !== "connected") return setError("Connect your Aztec wallet with Connect Wallet (top right).");
-        if (!isConnected) return setError("Connect your Ethereum wallet with Connect Ethereum (top right).");
+        if (!isConnected) return setError("Connect your Ethereum wallet (MetaMask or Rabby) in step 2.");
 
         let amountWei: bigint;
         try {
@@ -167,8 +176,10 @@ export function BridgePage() {
         if (balance.status === "ready" && amountWei > balance.value) {
             return setError(`Amount exceeds your balance of ${fmt(balance.value)} ${symbol}.`);
         }
-        if (info.l1ChainId !== mainnet.id) {
-            return setError(`The Aztec node reports L1 chain ${info.l1ChainId}, but this page only supports Ethereum mainnet.`);
+        if (info.l1ChainId !== net.l1.id) {
+            return setError(
+                `The Aztec node reports L1 chain ${info.l1ChainId}, which doesn't match ${net.label} (${net.l1.name}, chain ${net.l1.id}).`,
+            );
         }
 
         try {
@@ -186,16 +197,16 @@ export function BridgePage() {
             setPhase("depositing");
             const acct = getAccount(config);
             if (!acct.address) throw new Error("Connect an Ethereum wallet first.");
-            if (acct.chainId !== mainnet.id) await switchChain(config, { chainId: mainnet.id });
+            if (acct.chainId !== net.l1.id) await switchChain(config, { chainId: net.l1.id });
 
             const approveHash = await writeContract(config, {
                 abi: feeAssetAbi,
                 address: info.feeJuiceAddress,
                 functionName: "approve",
                 args: [info.feeJuicePortalAddress, amountWei],
-                chainId: mainnet.id,
+                chainId: net.l1.id,
             });
-            const approveReceipt = await waitForTransactionReceipt(config, { hash: approveHash, chainId: mainnet.id });
+            const approveReceipt = await waitForTransactionReceipt(config, { hash: approveHash, chainId: net.l1.id });
             if (approveReceipt.status !== "success") throw new Error(`Approve transaction reverted (${approveHash}).`);
 
             const sim = await simulateContract(config, {
@@ -204,10 +215,10 @@ export function BridgePage() {
                 functionName: "depositToAztecPublic",
                 args: [params.recipient as Hex, amountWei, params.secretHash as Hex],
                 account: acct.address,
-                chainId: mainnet.id,
+                chainId: net.l1.id,
             });
             const depositHash = await writeContract(config, sim.request);
-            const receipt = await waitForTransactionReceipt(config, { hash: depositHash, chainId: mainnet.id });
+            const receipt = await waitForTransactionReceipt(config, { hash: depositHash, chainId: net.l1.id });
             if (receipt.status !== "success") {
                 throw new Error(`Deposit transaction reverted (${depositHash}). Nothing was bridged; retry is safe.`);
             }
@@ -230,6 +241,43 @@ export function BridgePage() {
         setAmountInput("");
     }
 
+    // Toggle networks — reset the per-network flow + force a node/balance refetch.
+    function switchNet(id: NetId) {
+        if (id === netId || running) return;
+        setNetId(id);
+        setPhase("idle");
+        setError(null);
+        setDepositTx(null);
+        setAmountInput("");
+        setAsset({ status: "loading" });
+        setBalance({ status: "idle" });
+    }
+
+    // Testnet faucet: free-mint a batch of the FEE asset to the connected L1
+    // account, then refresh the balance. Mainnet has no minter (node returns null).
+    async function mintTestFee() {
+        if (node.status !== "ready" || !config || !account || !node.info.feeAssetHandlerAddress) return;
+        setError(null);
+        setMinting(true);
+        try {
+            if (getAccount(config).chainId !== net.l1.id) await switchChain(config, { chainId: net.l1.id });
+            const hash = await writeContract(config, {
+                abi: feeAssetHandlerAbi,
+                address: node.info.feeAssetHandlerAddress,
+                functionName: "mint",
+                args: [account],
+                chainId: net.l1.id,
+            });
+            const receipt = await waitForTransactionReceipt(config, { hash, chainId: net.l1.id });
+            if (receipt.status !== "success") throw new Error(`Mint reverted (${hash}).`);
+            setBalanceNonce((n) => n + 1);
+        } catch (err) {
+            setError(errMessage(err));
+        } finally {
+            setMinting(false);
+        }
+    }
+
     const phaseLabel: Record<Phase, string> = {
         idle: "Bridge to my Aztec wallet",
         preparing: "Opening Fizz…",
@@ -242,7 +290,7 @@ export function BridgePage() {
     return (
         <>
             <section className="page-hero">
-                <span className="pill">Mainnet · Ethereum → Aztec</span>
+                <span className="pill">{net.label} · {net.l1.name} → Aztec</span>
                 <h1>
                     Get <em>gas</em> on Aztec
                 </h1>
@@ -250,23 +298,49 @@ export function BridgePage() {
                     Bridge the AZTEC token from Ethereum mainnet to the Aztec Network to use as gas. Gas on Aztec is known as fee juice, 
                     and can be used to pay for txns, token deployments, and other contract interactions. 
                     
-                    Sending AZTEC to your wallet to use for gas is a 1-way transaction, and your fee juice is not transferable out of your Fizz wallet.
+                    <br/><br/>Sending AZTEC to your wallet to use for gas is a 1-way transaction, and your fee juice is not transferable out of your Fizz wallet.
                 </p>
             </section>
 
             <section className="card">
                 <div className="card-head">
                     <h2>Bridge</h2>
+                    <div className="toggle-row" role="group" aria-label="Network">
+                        <button
+                            type="button"
+                            className={netId === "mainnet" ? "active" : ""}
+                            onClick={() => switchNet("mainnet")}
+                            disabled={running}
+                        >
+                            Mainnet
+                        </button>
+                        <button
+                            type="button"
+                            className={netId === "testnet" ? "active" : ""}
+                            onClick={() => switchNet("testnet")}
+                            disabled={running}
+                        >
+                            Testnet
+                        </button>
+                    </div>
                 </div>
+
+                {netId === "testnet" && (
+                    <div className="note-box" style={{ marginTop: 0 }}>
+                        <strong>Testnet practice (Sepolia)</strong> — free FEE, no real funds. Switch your Fizz
+                        wallet to <strong>Aztec Testnet</strong> too (the network selector, top-left of the wallet),
+                        so the fee juice lands on your testnet account.
+                    </div>
+                )}
 
                 {PLATFORM.isMobile && <DesktopRequiredNotice reason="mobile" />}
 
                 {!PLATFORM.isMobile && (
                     <>
-                        {node.status === "loading" && <p className="hint">Reaching the Aztec mainnet node…</p>}
+                        {node.status === "loading" && <p className="hint">Reaching the Aztec {net.label} node…</p>}
                         {node.status === "error" && (
                             <>
-                                <ErrorBox title="Could not reach the Aztec mainnet node">{node.message}</ErrorBox>
+                                <ErrorBox title={`Could not reach the Aztec ${net.label} node`}>{node.message}</ErrorBox>
                                 <button type="button" className="btn btn-ghost btn-small" onClick={loadNode}>
                                     Retry
                                 </button>
@@ -311,13 +385,35 @@ export function BridgePage() {
                                         </p>
                                         {isConnected && balance.status === "ready" && balance.value === 0n && (
                                             <div className="note-box" style={{ marginTop: 12 }}>
-                                                <strong>You have no {symbol} on Ethereum mainnet.</strong>. Get {symbol}{" "}
-                                                at{" "}
-                                                <a href={AZTEC_TOKEN_URL} target="_blank" rel="noopener noreferrer">
-                                                    {AZTEC_TOKEN_URL.replace("https://", "")}
-                                                </a>
-                                                , then come back.
+                                                <strong>
+                                                    You have no {symbol} on {net.l1.name}.
+                                                </strong>{" "}
+                                                {netId === "testnet" ? (
+                                                    "Mint some free test FEE below, then bridge it."
+                                                ) : (
+                                                    <>
+                                                        Get {symbol} at{" "}
+                                                        <a href={AZTEC_TOKEN_URL} target="_blank" rel="noopener noreferrer">
+                                                            {AZTEC_TOKEN_URL.replace("https://", "")}
+                                                        </a>
+                                                        , then come back.
+                                                    </>
+                                                )}
                                             </div>
+                                        )}
+                                        {netId === "testnet" && isConnected && node.info.feeAssetHandlerAddress && (
+                                            <button
+                                                type="button"
+                                                className="btn btn-ghost btn-small"
+                                                disabled={minting || running}
+                                                onClick={() => void mintTestFee()}
+                                            >
+                                                {minting ? (
+                                                    <span className="spin">Minting test {symbol}…</span>
+                                                ) : (
+                                                    `Get test ${symbol}`
+                                                )}
+                                            </button>
                                         )}
                                         <div className="field">
                                             <label htmlFor="amount">
@@ -388,7 +484,7 @@ export function BridgePage() {
                                     {depositTx && (
                                         <a
                                             className="btn btn-ghost btn-small"
-                                            href={`https://etherscan.io/tx/${depositTx}`}
+                                            href={`${net.l1.blockExplorers?.default.url ?? "https://etherscan.io"}/tx/${depositTx}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                         >
@@ -429,11 +525,11 @@ export function BridgePage() {
                             <>
                                 {" "}
                                 <a
-                                    href={`https://etherscan.io/address/${node.info.feeJuiceAddress}`}
+                                    href={`${net.l1.blockExplorers?.default.url ?? "https://etherscan.io"}/address/${node.info.feeJuiceAddress}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                 >
-                                    AZTEC token on Etherscan ↗
+                                    {symbol} token on Etherscan ↗
                                 </a>
                             </>
                         )}
@@ -457,7 +553,7 @@ export function BridgePage() {
                             <>
                                 {" "}
                                 <a
-                                    href={`https://etherscan.io/address/${node.info.feeJuicePortalAddress}`}
+                                    href={`${net.l1.blockExplorers?.default.url ?? "https://etherscan.io"}/address/${node.info.feeJuicePortalAddress}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                 >
