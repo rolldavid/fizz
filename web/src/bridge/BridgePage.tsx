@@ -244,7 +244,7 @@ export function BridgePage() {
             <section className="page-hero">
                 <span className="pill">Mainnet · Ethereum → Aztec</span>
                 <h1>
-                    Get <em>gas</em> (gas) on Aztec
+                    Get <em>gas</em> on Aztec
                 </h1>
                 <p className="sub">
                     Bridge the AZTEC token from Ethereum mainnet to the Aztec Network to use as gas. Gas on Aztec is known as fee juice, 
