@@ -42,7 +42,7 @@ function LoadingScreen() {
             <div className="app">
                 <div className="header">
                     <div className="brand">
-                        <img src="/fizzmark.png" alt="" className="brand-mark-img" /> Fizz
+                        <img src="/fizz.png" alt="" className="brand-mark-img" /> Fizz
                     </div>
                 </div>
                 <div className="content">
@@ -84,7 +84,7 @@ function LoadingScreen() {
                 <span /><span /><span /><span /><span /><span />
             </div>
             <div className="center">
-                <img src="/fizzmark.png" alt="" width={48} height={48} />
+                <img src="/fizz.png" alt="" width={48} height={48} />
                 <div className="spinner" />
                 <div style={{ fontWeight: 500 }}>Connecting to {network.name}</div>
                 <div className="muted" style={{ maxWidth: 260 }}>

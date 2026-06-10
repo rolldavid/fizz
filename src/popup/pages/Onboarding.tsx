@@ -95,7 +95,7 @@ export function Onboarding() {
             {step !== "intro" && (
                 <div className="header">
                     <div className="brand">
-                        <img src="/fizzmark.png" alt="" className="brand-mark-img" /> Fizz
+                        <img src="/fizz.png" alt="" className="brand-mark-img" /> Fizz
                     </div>
                 </div>
             )}
