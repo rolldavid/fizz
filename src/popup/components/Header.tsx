@@ -20,7 +20,7 @@ export function Header({ right }: { right?: React.ReactNode }) {
     return (
         <div className="header">
             <div className="brand">
-                <img src="/fizzlogo.svg" alt="Fizz" className="brand-logo-header" />
+                <img src="/fizz_plain.svg" alt="Fizz" className="brand-logo-header" />
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <select
