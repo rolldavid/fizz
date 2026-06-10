@@ -44,7 +44,7 @@ export const NETWORKS: AztecNetwork[] = [
     },
     {
         id: "alpha",
-        name: "Aztec Alpha (Mainnet)",
+        name: "Aztec Mainnet",
         description: "Production · Ethereum L1",
         nodeUrl: "https://aztec-mainnet.drpc.org",
         l1ChainId: 1, // Ethereum mainnet
@@ -99,6 +99,14 @@ export function getNetwork(id: AztecNetwork["id"]): AztecNetwork {
     if (!n) throw new Error(`Unknown network: ${id}`);
     return n;
 }
+
+/**
+ * Networks offered in the wallet's picker, in order — Mainnet first (the
+ * default). The local `sandbox` stays in NETWORKS (tests/e2e use it) but is
+ * hidden here, and custom-node selection was removed: only these three show.
+ */
+export const SELECTABLE_NETWORK_IDS: AztecNetwork["id"][] = ["alpha", "testnet", "devnet"];
+export const SELECTABLE_NETWORKS: AztecNetwork[] = SELECTABLE_NETWORK_IDS.map(getNetwork);
 
 // ── Custom node ──────────────────────────────────────────────────────────────
 // Privacy escape hatch: the configured node sees your address + IP + query

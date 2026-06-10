@@ -13,7 +13,8 @@ import { ContractInitializationStatus } from "@aztec/aztec.js/wallet";
 import { vaultStore, type UnlockedSecret } from "../vault/store";
 import {
     DEFAULT_NETWORK_ID,
-    NETWORKS,
+    SELECTABLE_NETWORK_IDS,
+    SELECTABLE_NETWORKS,
     getNetwork,
     resolveNetwork,
     type AztecNetwork,
@@ -105,12 +106,13 @@ type Ctx = {
 const WalletCtx = createContext<Ctx | null>(null);
 
 async function loadNetwork(): Promise<AztecNetwork> {
-    const id = (await storage.get<AztecNetwork["id"]>(KEYS.network)) ?? DEFAULT_NETWORK_ID;
+    const stored = await storage.get<AztecNetwork["id"]>(KEYS.network);
+    // Only the picker's networks are valid selections now; a stale sandbox/custom
+    // selection from an older build falls back to the default (Mainnet).
+    const id = stored && SELECTABLE_NETWORK_IDS.includes(stored) ? stored : DEFAULT_NETWORK_ID;
     try {
         return await resolveNetwork(id);
     } catch {
-        // A stored "custom" selection whose URL was wiped — fall back to default
-        // explicitly rather than booting nothing.
         return getNetwork(DEFAULT_NETWORK_ID);
     }
 }
@@ -515,7 +517,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         () => ({
             status,
             network,
-            networks: NETWORKS,
+            networks: SELECTABLE_NETWORKS,
             setNetwork,
             account,
             accounts,
