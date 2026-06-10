@@ -22,3 +22,5 @@ LOOP_STATE.md
 # crxjs build artifacts — dist.pem is a signing PRIVATE KEY, never commit
 dist.crx
 dist.pem
+
+docs
