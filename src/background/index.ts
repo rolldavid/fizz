@@ -16,6 +16,13 @@ import {
     removeConnection,
     savePendingConnect,
 } from "../lib/state/connections";
+import {
+    clearBridgeDeposit,
+    clearBridgeParams,
+    readBridgeParams,
+    saveBridgeDeposit,
+    savePrepare,
+} from "../lib/state/bridgeHandoff";
 
 /** Minimum gap between wallet windows — anti-spam for connect / launch. */
 const LAUNCH_WINDOW_COOLDOWN_MS = 8000;
@@ -147,6 +154,77 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
                         width: 420,
                         height: 820,
                     });
+                    sendResponse({ ok: true });
+                    return;
+                }
+                case "fizz:bridge-prepare": {
+                    // Auto-send fee juice to the connected account. Requires a
+                    // live connection; opens the wallet, which (unlocked)
+                    // generates the claim secret + recipient. No address or
+                    // secret crosses here — only a "please prepare" signal.
+                    if (!(await isConnected(origin))) {
+                        sendResponse({ ok: false, error: "Connect your Fizz wallet first." });
+                        return;
+                    }
+                    // The amount is the wei value the page will deposit (decimal
+                    // digits only). The popup re-derives everything else; the
+                    // claim amount is re-verified from the on-chain event anyway.
+                    const amount = typeof message.amount === "string" ? message.amount : "";
+                    if (!/^[0-9]{1,40}$/.test(amount) || amount === "0") {
+                        sendResponse({ ok: false, error: "Invalid bridge amount." });
+                        return;
+                    }
+                    if (await openWindowRateLimited("fizz.lastBridgeWindowAt")) {
+                        sendResponse({
+                            ok: false,
+                            error: "A Fizz window was just opened — finish or close it first.",
+                        });
+                        return;
+                    }
+                    // Clear any stale params/deposit from an abandoned earlier
+                    // flow so the page can't poll and deposit against a previous
+                    // secretHash (cross-flow contamination).
+                    await clearBridgeParams();
+                    await clearBridgeDeposit();
+                    await savePrepare(origin, amount);
+                    await chrome.windows.create({
+                        url: chrome.runtime.getURL("src/popup/index.html#bridge"),
+                        type: "popup",
+                        width: 420,
+                        height: 820,
+                    });
+                    sendResponse({ ok: true });
+                    return;
+                }
+                case "fizz:bridge-params": {
+                    // The page polls for the {recipient, secretHash} the popup
+                    // produced (both public). Relayed, never persisted by us.
+                    if (!(await isConnected(origin))) {
+                        sendResponse({ ok: false, error: "Connect your Fizz wallet first." });
+                        return;
+                    }
+                    const params = await readBridgeParams();
+                    sendResponse({
+                        ok: true,
+                        params: params ? { recipient: params.recipient, secretHash: params.secretHash } : null,
+                    });
+                    return;
+                }
+                case "fizz:bridge-deposited": {
+                    // The page reports its L1 deposit landed. We stash only the
+                    // (public) secretHash + tx hash for the popup to verify on
+                    // L1 and complete; a bogus report never verifies.
+                    if (!(await isConnected(origin))) {
+                        sendResponse({ ok: false, error: "Connect your Fizz wallet first." });
+                        return;
+                    }
+                    const secretHash = typeof message.secretHash === "string" ? message.secretHash : "";
+                    const l1TxHash = typeof message.l1TxHash === "string" ? message.l1TxHash : "";
+                    if (!/^0x[0-9a-fA-F]{64}$/.test(secretHash) || !/^0x[0-9a-fA-F]{64}$/.test(l1TxHash)) {
+                        sendResponse({ ok: false, error: "Malformed deposit report." });
+                        return;
+                    }
+                    await saveBridgeDeposit(secretHash, l1TxHash);
                     sendResponse({ ok: true });
                     return;
                 }

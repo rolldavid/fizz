@@ -180,17 +180,33 @@ async function completeFromReceipt(
     const match = events.find(
         (log) =>
             log.address.toLowerCase() === portalAddress.toLowerCase() &&
-            normalizeHex(log.args.secretHash) === normalizeHex(claimSecretHash),
+            normalizeHex(log.args.secretHash) === normalizeHex(claimSecretHash) &&
+            // Bind the recipient too: the L1→L2 message encodes (to, amount,
+            // secretHash), and the claim circuit recomputes the key from the
+            // SENDER. A deposit made to a different recipient with this secret
+            // hash (a connected page could do that) would record a "pending"
+            // claim that can never be spent — wedging every fee-paid tx. Refuse
+            // to record any event whose recipient isn't ours.
+            normalizeHex(log.args.to) === normalizeHex(entry.recipient),
     );
     if (!match) {
-        throw new Error(
-            "Deposit transaction mined but its DepositToAztecPublic event was not found — " +
-                "refusing to record an unverifiable claim.",
+        // A mined SUCCESS receipt always carries its deposit event, so a missing
+        // match is terminal (wrong recipient/secret hash, or not a deposit) —
+        // tagged so recovery marks it failed rather than retrying forever, while
+        // transient errors (chunk load, RPC/parse hiccup) stay retryable.
+        const err = new Error(
+            "Deposit transaction mined but no matching DepositToAztecPublic event (recipient + " +
+                "secret hash) was found. Refusing to record an unverifiable claim.",
         );
+        (err as Error & { unverifiable?: boolean }).unverifiable = true;
+        throw err;
     }
     return {
         ...entry,
         status: "pending",
+        // Trust the on-chain event for the amount, not any caller-supplied value:
+        // a claim built with the wrong amount would never become spendable.
+        claimAmount: (match.args.amount as bigint).toString(),
         messageHash: match.args.key as string,
         messageLeafIndex: (match.args.index as bigint).toString(),
     };
@@ -288,6 +304,66 @@ export async function bridgeFeeJuice(args: {
 }
 
 /**
+ * Auto-claim, step 1 (popup, unlocked): generate the claim secret for the
+ * CONNECTED account and persist a "depositing" record BEFORE any L1 tx — the
+ * secret is the only way to redeem the deposit, and it must never leave the
+ * wallet. The web page (which holds the L1 wallet) then does the deposit with
+ * the returned {recipient, secretHash}; only those two PUBLIC values cross the
+ * connected channel (secretHash is written on-chain by the deposit anyway).
+ */
+export async function prepareBridgeClaim(args: {
+    network: AztecNetwork;
+    recipient: AztecAddress;
+    amount: bigint;
+}): Promise<{ id: string; recipient: string; secretHash: string }> {
+    const { network, recipient, amount } = args;
+    if (amount <= 0n) throw new Error("Bridge amount must be greater than zero.");
+    const { generateClaimSecret } = await lazyEthereum();
+    const [claimSecret, claimSecretHash] = await generateClaimSecret();
+    const entry: PendingBridge = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        network: network.id,
+        recipient: recipient.toString(),
+        claimAmount: amount.toString(),
+        claimSecret: claimSecret.toString(),
+        status: "depositing",
+        createdAt: Date.now(),
+    };
+    await upsertBridge(entry);
+    return { id: entry.id, recipient: entry.recipient, secretHash: claimSecretHash.toString() };
+}
+
+/**
+ * Auto-claim, step 2 (popup): the web reports its L1 deposit landed. Locate the
+ * matching "depositing" record by re-deriving its secret hash (NOT by trusting
+ * a page-supplied id), then mark it "sent" with the tx hash. The existing
+ * recoverInFlightBridges path then fetches the receipt, verifies the
+ * DepositToAztecPublic event against this record (recipient + amount +
+ * secretHash), and completes it — a fabricated tx hash simply never verifies,
+ * and listReadyClaims is the final on-chain gate before anything is spendable.
+ * Returns the record set to "sent", or null if no prepared record matches.
+ */
+export async function recordBridgeDeposit(args: {
+    networkId: AztecNetwork["id"];
+    secretHash: string;
+    l1TxHash: string;
+}): Promise<PendingBridge | null> {
+    const { networkId, secretHash, l1TxHash } = args;
+    if (!/^0x[0-9a-fA-F]{64}$/.test(l1TxHash)) throw new Error("Invalid L1 transaction hash.");
+    const { computeSecretHash } = await lazyHash();
+    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+    for (const b of all) {
+        if (b.network !== networkId || (b.status ?? "pending") !== "depositing") continue;
+        const h = (await computeSecretHash(Fr.fromHexString(b.claimSecret))).toString();
+        if (normalizeHex(h) !== normalizeHex(secretHash)) continue;
+        const sent: PendingBridge = { ...b, status: "sent", l1TxHash };
+        await upsertBridge(sent);
+        return sent;
+    }
+    return null;
+}
+
+/**
  * Finish bookkeeping for deposits whose page died between broadcast and
  * receipt ("sent"): fetch the receipt from L1 and complete or fail the entry.
  * Read-only on L1 — safe to call on every Bridge visit.
@@ -305,19 +381,36 @@ export async function recoverInFlightBridges(
 
     const client = createPublicClient({ transport: http(l1RpcUrl) });
     for (const b of stuck) {
+        // Per-entry isolation: a single un-completable entry (e.g. a tx that
+        // mined but carries no matching deposit event) must not abort recovery
+        // for every other in-flight bridge.
         let receipt;
         try {
             receipt = await client.getTransactionReceipt({ hash: b.l1TxHash as `0x${string}` });
         } catch {
             continue; // not mined yet (or RPC hiccup) — try again next visit
         }
-        if (receipt.status !== "success") {
-            await upsertBridge({ ...b, status: "failed" });
-            continue;
+        try {
+            if (receipt.status !== "success") {
+                await upsertBridge({ ...b, status: "failed" });
+                continue;
+            }
+            const { computeSecretHash } = await lazyHash();
+            const secretHash = await computeSecretHash(Fr.fromHexString(b.claimSecret));
+            await upsertBridge(await completeFromReceipt(b, receipt, portalAddress, secretHash.toString()));
+        } catch (err) {
+            if ((err as { unverifiable?: boolean })?.unverifiable) {
+                // Terminal: a mined success receipt with no matching deposit
+                // event is never spendable. Mark failed (dismissable) so it
+                // stops being retried.
+                console.error("Bridge recovery: unverifiable deposit, marking failed", b.id, err);
+                await upsertBridge({ ...b, status: "failed" });
+            } else {
+                // Transient (chunk load, RPC/parse hiccup): leave "sent" so the
+                // next visit retries — never strand a real, funded deposit.
+                console.error("Bridge recovery: transient error, will retry", b.id, err);
+            }
         }
-        const { computeSecretHash } = await lazyHash();
-        const secretHash = await computeSecretHash(Fr.fromHexString(b.claimSecret));
-        await upsertBridge(await completeFromReceipt(b, receipt, portalAddress, secretHash.toString()));
     }
 }
 

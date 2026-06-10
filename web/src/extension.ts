@@ -129,3 +129,35 @@ export async function disconnectFizz(): Promise<void> {
     const res = await sendToFizz<{ ok: boolean; error?: string }>({ type: "fizz:disconnect" });
     if (!res.ok) throw new Error(res.error ?? "Fizz could not disconnect.");
 }
+
+// ── Auto-send bridge handshake ───────────────────────────────────────────────
+// The wallet generates the claim secret + recipient; this page only does the L1
+// deposit and reports its tx hash. The secret never crosses this channel.
+
+/** Ask Fizz to open its prepare window for a deposit of `amountWei` (decimal string). */
+export async function prepareBridge(amountWei: string): Promise<void> {
+    const res = await sendToFizz<{ ok: boolean; error?: string }>({
+        type: "fizz:bridge-prepare",
+        amount: amountWei,
+    });
+    if (!res.ok) throw new Error(res.error ?? "Fizz refused the bridge request.");
+}
+
+/** Poll for the {recipient, secretHash} the wallet produced once the user approves. */
+export async function getBridgeParams(): Promise<{ recipient: string; secretHash: string } | null> {
+    const res = await sendToFizz<{
+        ok: boolean;
+        params?: { recipient: string; secretHash: string } | null;
+    }>({ type: "fizz:bridge-params" });
+    return res.ok && res.params ? res.params : null;
+}
+
+/** Report the L1 deposit tx so the wallet can verify it on-chain and complete the claim. */
+export async function notifyBridgeDeposited(secretHash: string, l1TxHash: string): Promise<void> {
+    const res = await sendToFizz<{ ok: boolean; error?: string }>({
+        type: "fizz:bridge-deposited",
+        secretHash,
+        l1TxHash,
+    });
+    if (!res.ok) throw new Error(res.error ?? "Fizz did not record the deposit.");
+}
