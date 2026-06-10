@@ -13,23 +13,21 @@ export function Shell({ page, children }: { page: "bridge" | "launch"; children:
             </div>
             <div className="wrap">
                 <header className="site-header">
-                    <div className="site-header-left">
-                        <a className="logo-link" href="/" title="Fizz — home">
-                            <img className="logo" src={logoUrl} alt="Fizz" />
-                        </a>
-                        <nav className="site-nav">
-                            <a href="/bridge/" aria-current={page === "bridge" ? "page" : undefined}>Bridge</a>
-                            <a href="/launch/" aria-current={page === "launch" ? "page" : undefined}>Launch</a>
-                        </nav>
-                    </div>
-                    <a
-                        className="install-btn"
-                        href={CHROME_STORE_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                    >
-                        Install Wallet
+                    <a className="logo-link" href="/" title="Fizz — home">
+                        <img className="logo" src={logoUrl} alt="Fizz" />
                     </a>
+                    <nav className="site-nav">
+                        <a href="/bridge/" aria-current={page === "bridge" ? "page" : undefined}>Bridge</a>
+                        <a href="/launch/" aria-current={page === "launch" ? "page" : undefined}>Launch</a>
+                        <a
+                            className="install-btn"
+                            href={CHROME_STORE_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            Install Wallet
+                        </a>
+                    </nav>
                 </header>
                 <main>{children}</main>
                 <footer className="site-footer">
@@ -86,4 +84,42 @@ export function CopyButton({ text, label }: { text: string; label?: string }) {
 
 export function shortHex(value: string, head = 10, tail = 6): string {
     return value.length <= head + tail + 1 ? value : `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
+
+/**
+ * Shown in place of wallet-connect UI when the extension can't run here:
+ * mobile (no extension support) or a non-Chromium desktop browser (Firefox
+ * build is planned). Best-practice dead-end avoidance — explain why and what
+ * to do, and on mobile offer a copy-link so they can reopen on desktop.
+ */
+export function DesktopRequiredNotice({ reason }: { reason: "mobile" | "non-chromium" }) {
+    const url = typeof window !== "undefined" ? window.location.href : "https://fizzwallet.com/";
+    return (
+        <div className="desktop-required" role="status">
+            <div className="dr-emoji" aria-hidden="true">
+                🖥️
+            </div>
+            {reason === "mobile" ? (
+                <>
+                    <h3>Open Fizz on desktop</h3>
+                    <p>
+                        Fizz is a browser-extension wallet, so it runs in a{" "}
+                        <strong>desktop Chromium browser</strong> — Chrome, Brave, Edge, or Arc. Mobile
+                        browsers can't add extensions, so connecting a wallet is disabled here. Open this
+                        page on your computer to install and use Fizz.
+                    </p>
+                    <CopyButton text={url} label="Copy this link" />
+                </>
+            ) : (
+                <>
+                    <h3>Use a Chromium browser</h3>
+                    <p>
+                        Fizz currently supports <strong>Chromium browsers</strong> — Chrome, Brave, Edge,
+                        or Arc. A Firefox build is on the way. Switch to a Chromium browser to install and
+                        connect Fizz.
+                    </p>
+                </>
+            )}
+        </div>
+    );
 }

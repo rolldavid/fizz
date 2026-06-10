@@ -61,9 +61,8 @@ a:hover { color: var(--accent); }
     -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--surface-2);
 }
-.site-header-left { display: flex; align-items: center; gap: 20px; min-width: 0; }
 .site-header .logo-link { display: inline-flex; align-items: center; }
-.site-header img.logo { height: 44px; display: block; }
+.site-header img.logo { height: 40px; display: block; }
 .install-btn {
     display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
     font-weight: 700; font-size: 14px; padding: 9px 18px; border-radius: 999px;
@@ -74,13 +73,14 @@ a:hover { color: var(--accent); }
 }
 .install-btn:hover { color: #fff; box-shadow: 0 0 28px rgba(255, 92, 148, .55); }
 .install-btn:active { transform: scale(.98); }
-.site-nav { display: flex; gap: 6px; }
-.site-nav a {
+/* Right-bunched nav: Bridge, Launch, then the Install Wallet button. */
+.site-nav { display: flex; align-items: center; gap: 6px; }
+.site-nav a:not(.install-btn) {
     color: var(--dim); text-decoration: none; font-size: 14px; font-weight: 600;
-    padding: 6px 14px; border-radius: 999px; border: 1px solid transparent;
+    padding: 6px 12px; border-radius: 999px;
 }
-.site-nav a:hover { color: var(--text); border-color: var(--border-strong); }
-.site-nav a[aria-current="page"] { color: var(--text); background: var(--surface); border-color: var(--border-strong); }
+/* Plain links — no active "bubble" highlight, just a subtle hover tint. */
+.site-nav a:not(.install-btn):hover { color: var(--text); }
 
 footer.site-footer { border-top: 1px solid var(--surface-2); margin-top: 56px; padding: 24px 0 8px; color: var(--dim); font-size: 13px; text-align: center; }
 footer.site-footer a { color: var(--dim); text-decoration: underline; }
@@ -225,11 +225,23 @@ input::placeholder { color: #594d85; }
 .small { font-size: 12.5px; }
 .spin { display: inline-block; animation: pulse 1.2s ease-in-out infinite; }
 
+/* Shown when the extension can't run here (mobile / non-Chromium desktop). */
+.desktop-required {
+    text-align: center;
+    background: var(--bg); border: 1px solid var(--border-strong); border-radius: 16px;
+    padding: 22px; margin: 14px 0;
+}
+.desktop-required .dr-emoji { font-size: 30px; line-height: 1; }
+.desktop-required h3 { font-size: 17px; margin: 8px 0 6px; }
+.desktop-required p { color: var(--dim); font-size: 14px; max-width: 460px; margin: 0 auto 12px; }
+
 @media (max-width: 560px) {
     .card { padding: 18px; }
-    .site-header img.logo { height: 36px; }
-    .site-header-left { gap: 12px; }
-    .site-nav a { padding: 6px 10px; }
-    .install-btn { padding: 8px 14px; font-size: 13px; }
+    .site-header { padding: 12px 0; }
+    .site-header img.logo { height: 32px; }
+    .site-nav { gap: 4px; }
+    .site-nav a:not(.install-btn) { padding: 6px 8px; font-size: 13px; }
+    .install-btn { padding: 8px 13px; font-size: 13px; }
     .page-hero { padding-top: 24px; }
+    .field-row { gap: 8px; }
 }

@@ -88,7 +88,7 @@
             -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
             border-bottom: 1px solid var(--surface-2);
         }
-        .topnav-left { display: flex; align-items: center; gap: 22px; min-width: 0; }
+        .topnav-right { display: flex; align-items: center; gap: 10px; }
         .topnav-logo { display: inline-flex; align-items: center; }
         .topnav-logo img { height: 30px; display: block; }
         .topnav a:not(.topnav-logo):not(.install-btn) {
@@ -96,6 +96,14 @@
             padding: 6px 12px; border-radius: 999px;
         }
         .topnav a:not(.topnav-logo):not(.install-btn):hover { color: var(--text); }
+        .desktop-required {
+            text-align: center; background: var(--surface);
+            border: 1px solid var(--border-strong); border-radius: 16px;
+            padding: 22px; margin: 8px 0 24px;
+        }
+        .desktop-required .dr-emoji { font-size: 30px; line-height: 1; }
+        .desktop-required h3 { font-size: 17px; margin: 8px 0 6px; }
+        .desktop-required p { color: var(--dim); font-size: 14px; max-width: 460px; margin: 0 auto; }
         .install-btn {
             display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
             font-weight: 700; font-size: 14px; padding: 9px 18px; border-radius: 999px;
@@ -107,10 +115,14 @@
         .install-btn:hover { box-shadow: 0 0 28px rgba(255, 92, 148, .55); }
         .install-btn:active { transform: scale(.98); }
         @media (max-width: 560px) {
-            .topnav-left { gap: 10px; }
-            .topnav a:not(.topnav-logo):not(.install-btn) { padding: 6px 8px; }
+            .topnav { padding: 12px 0; }
+            .topnav-right { gap: 4px; }
+            .topnav a:not(.topnav-logo):not(.install-btn) { padding: 6px 8px; font-size: 13px; }
             .topnav-logo img { height: 26px; }
             .install-btn { padding: 8px 13px; font-size: 13px; }
+            header.hero { padding-top: 28px; }
+            .hero h1 { font-size: clamp(22px, 6vw, 32px); }
+            .cta-row .btn { padding: 12px 20px; font-size: 14px; }
         }
 
         header.hero { text-align: center; padding: 44px 0 56px; }
@@ -177,14 +189,14 @@
 
     <div class="wrap">
         <nav class="topnav">
-            <div class="topnav-left">
-                <a class="topnav-logo" href="/" aria-label="Fizz — home">
-                    <img src="./fizzlogo.svg" alt="Fizz" />
-                </a>
+            <a class="topnav-logo" href="/" aria-label="Fizz — home">
+                <img src="./fizzlogo.svg" alt="Fizz" />
+            </a>
+            <div class="topnav-right">
                 <a href="./bridge/">Bridge</a>
                 <a href="./launch/">Launch</a>
+                <a class="install-btn" href="https://chromewebstore.google.com/detail/bapbaajfnjockbcdhjpgpllflnhgogol" target="_blank" rel="noopener noreferrer">Install Wallet</a>
             </div>
-            <a class="install-btn" href="https://chromewebstore.google.com/detail/bapbaajfnjockbcdhjpgpllflnhgogol" target="_blank" rel="noopener noreferrer">Install Wallet</a>
         </nav>
         <header class="hero">
             <h1>Private tokens, <em>with sparkle</em>.</h1>
@@ -196,10 +208,17 @@
             <p class="lightweight">🫧 Built for quick, low-value transactions — pocket change, not vaults</p>
             <div class="cta-row">
                 <!-- Swap for the Chrome Web Store URL at publish time. -->
-                <a class="btn btn-primary" href="#install">Add Fizz to Chrome</a>
+                <a class="btn btn-primary" id="install-cta" href="#install">Add Fizz to Chrome</a>
                 <a class="btn btn-ghost" href="https://docs.aztec.network" target="_blank" rel="noopener noreferrer">What's Aztec?</a>
             </div>
         </header>
+
+        <!-- Revealed by the script below on mobile / non-Chromium browsers. -->
+        <div id="desktop-note" class="desktop-required" hidden>
+            <div class="dr-emoji" aria-hidden="true">🖥️</div>
+            <h3>Best on desktop</h3>
+            <p class="dr-msg"></p>
+        </div>
 
         <section class="benefits">
             <div class="benefit">
@@ -283,5 +302,37 @@
             </p>
         </footer>
     </div>
+
+    <!-- Fizz is a desktop Chromium extension. On mobile or a non-Chromium
+         browser, surface a clear notice and relabel the install CTA so people
+         don't hit a dead end. Mirrors web/src/platform.ts. -->
+    <script>
+        (function () {
+            var ua = navigator.userAgent;
+            var uaData = navigator.userAgentData;
+            var iPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+            var isMobile = (uaData && uaData.mobile === true) ||
+                /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua) || iPadOS;
+            var brandChromium = uaData && uaData.brands && uaData.brands.some(function (b) {
+                return /Chromium|Google Chrome|Microsoft Edge/i.test(b.brand);
+            });
+            var isChromium = brandChromium || (/Chrome\//.test(ua) && !/Firefox|FxiOS|CriOS|EdgiOS/i.test(ua));
+            if (isMobile || !isChromium) {
+                var note = document.getElementById("desktop-note");
+                var msg = isMobile
+                    ? "Fizz is a browser-extension wallet — it runs in a desktop Chromium browser (Chrome, Brave, Edge, or Arc). Mobile browsers can't add extensions, so open this page on your computer to install Fizz."
+                    : "Fizz currently supports Chromium browsers — Chrome, Brave, Edge, or Arc. A Firefox build is on the way.";
+                if (note) {
+                    note.querySelector(".dr-msg").textContent = msg;
+                    note.hidden = false;
+                }
+                var cta = document.getElementById("install-cta");
+                if (cta) {
+                    cta.textContent = isMobile ? "Open on desktop to install" : "Use a Chromium browser";
+                    cta.setAttribute("href", "#desktop-note");
+                }
+            }
+        })();
+    </script>
 </body>
 </html>

@@ -11,13 +11,17 @@ import {
     writeContract,
 } from "wagmi/actions";
 import { formatUnits, parseEventLogs, parseUnits } from "viem";
-import { Shell, ErrorBox, CopyButton, shortHex } from "../components";
+import { Shell, ErrorBox, CopyButton, DesktopRequiredNotice, shortHex } from "../components";
+import { detectPlatform } from "../platform";
 import { AZTEC_NETWORK_ID, AZTEC_NODE_URL, AZTEC_TOKEN_URL } from "../config";
 import { fetchNodeInfo, type AztecNodeInfo, type Hex } from "../nodeInfo";
 import { encodeClaimTicket, type ClaimTicket } from "../claimTicket";
 import { feeAssetAbi, feeJuicePortalAbi } from "./abi";
 import { generateClaimSecretPair, type ClaimSecretPair } from "./secret";
 import { clearRecords, createRecord, listRecords, removeRecord, updateRecord, type PendingRecord } from "./pending";
+
+/** Bridging serves a Fizz (desktop-Chromium) address; disable connecting on mobile. */
+const PLATFORM = detectPlatform();
 
 /** An Aztec address: 0x + 32 bytes. The recipient the user types — the only fund destination. */
 const AZTEC_ADDRESS_RE = /^0x[0-9a-fA-F]{64}$/;
@@ -392,9 +396,15 @@ export function BridgePage() {
             <section className="card">
                 <div className="card-head">
                     <h2>Bridge</h2>
-                    <ConnectButton showBalance={false} />
+                    {!PLATFORM.isMobile && <ConnectButton showBalance={false} />}
                 </div>
 
+                {/* Mobile can't run Fizz (a desktop extension), and bridging only
+                    serves a Fizz address — so disable connecting a wallet here. */}
+                {PLATFORM.isMobile && <DesktopRequiredNotice reason="mobile" />}
+
+                {!PLATFORM.isMobile && (
+                  <>
                 {node.status === "loading" && <p className="hint">Fetching canonical addresses from the Aztec mainnet node…</p>}
                 {node.status === "error" && (
                     <>
@@ -589,6 +599,8 @@ export function BridgePage() {
                             </table>
                         </div>
                     </>
+                )}
+                  </>
                 )}
             </section>
 

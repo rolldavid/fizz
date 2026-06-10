@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Shell, ErrorBox, CopyButton, shortHex } from "../components";
+import { Shell, ErrorBox, CopyButton, DesktopRequiredNotice, shortHex } from "../components";
 import { CHROME_STORE_URL, GITHUB_URL } from "../config";
+import { detectPlatform } from "../platform";
 import {
     connectFizz,
     disconnectFizz,
@@ -8,6 +9,9 @@ import {
     sendToFizz,
     type LastLaunch,
 } from "../extension";
+
+/** Desktop + Chromium only — the extension can't be added/connected elsewhere. */
+const PLATFORM = detectPlatform();
 
 /** Launches recorded before this moment belong to earlier sessions. */
 const PAGE_LOAD_AT = Date.now();
@@ -93,7 +97,10 @@ export function LaunchPage() {
 
     // Connection state, re-checked on mount and whenever the page regains focus
     // — the user approves in the wallet's OWN window, then tabs back here.
+    // Skipped entirely where the extension can't run (mobile / non-Chromium):
+    // probing would just report "absent" and dangle a dead Connect button.
     useEffect(() => {
+        if (!PLATFORM.canUseExtension) return;
         let cancelled = false;
         const refresh = () =>
             void getConnectionStatus().then((s) => {
@@ -230,7 +237,8 @@ export function LaunchPage() {
         }
     }
 
-    const formDisabled = conn !== "connected" || phase === "submitting" || phase === "waiting";
+    const formDisabled =
+        !PLATFORM.canUseExtension || conn !== "connected" || phase === "submitting" || phase === "waiting";
 
     return (
         <Shell page="launch">
@@ -248,10 +256,11 @@ export function LaunchPage() {
             <section className="card">
                 <div className="card-head">
                     <h2>Your token</h2>
-                    {conn === "checking" && <span className="muted small">Looking for Fizz…</span>}
-                    {conn === "absent" && <span className="small" style={{ color: "var(--warn)" }}>Fizz not installed</span>}
-                    {conn === "disconnected" && <span className="muted small">Not connected</span>}
-                    {conn === "connected" && (
+                    {!PLATFORM.canUseExtension && <span className="muted small">Desktop only</span>}
+                    {PLATFORM.canUseExtension && conn === "checking" && <span className="muted small">Looking for Fizz…</span>}
+                    {PLATFORM.canUseExtension && conn === "absent" && <span className="small" style={{ color: "var(--warn)" }}>Fizz not installed</span>}
+                    {PLATFORM.canUseExtension && conn === "disconnected" && <span className="muted small">Not connected</span>}
+                    {PLATFORM.canUseExtension && conn === "connected" && (
                         <span
                             className="small"
                             style={{ display: "inline-flex", gap: 10, alignItems: "center", color: "var(--ok)" }}
@@ -264,7 +273,12 @@ export function LaunchPage() {
                     )}
                 </div>
 
-                {conn === "absent" && (
+                {/* Mobile / non-Chromium: explain + stop here (no dead Connect button). */}
+                {!PLATFORM.canUseExtension && (
+                    <DesktopRequiredNotice reason={PLATFORM.reason === "mobile" ? "mobile" : "non-chromium"} />
+                )}
+
+                {PLATFORM.canUseExtension && conn === "absent" && (
                     <div className="note-box">
                         <strong>Install Fizz to launch.</strong> This launcher hands your draft to the Fizz
                         extension, which deploys it from YOUR wallet.{" "}
@@ -279,7 +293,7 @@ export function LaunchPage() {
                     </div>
                 )}
 
-                {conn === "disconnected" && (
+                {PLATFORM.canUseExtension && conn === "disconnected" && (
                     <div className="note-box">
                         <strong>Connect your wallet to launch.</strong> Fizz is installed — connect it so
                         you can deploy a public or private token from your own account. Fizz never sees
