@@ -3,16 +3,19 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Launch a token on Aztec — Fizz</title>
-    <meta name="description" content="Design a token here and deploy it from your Fizz wallet on the Aztec network — private + public balances built in. Keys never touch the page." />
+    <title>Fizz — the lightweight private wallet for Aztec</title>
+    <meta name="description" content="Tokens with sparkle. Fizz is a lightweight browser-extension wallet for quick, low-value private transactions on the Aztec network." />
 
-    <link rel="canonical" href="https://fizzwallet.com/launch/" />
-    <meta property="og:url" content="https://fizzwallet.com/launch/" />
+    <!-- Default (home) share metadata. The build emits per-route copies of this
+         file (/bridge/, /launch/) with route-specific title/description/OG so
+         link unfurls stay correct; all of them boot the same SPA bundle. -->
+    <link rel="canonical" href="https://fizzwallet.com/" />
+    <meta property="og:url" content="https://fizzwallet.com/" />
     <meta property="og:site_name" content="Fizz" />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="en_US" />
-    <meta property="og:title" content="Launch a token on Aztec — Fizz" />
-    <meta property="og:description" content="Name it, pick a supply, launch it. A standard AIP-20 Aztec token with private + public balances, deployed and proven locally by your Fizz wallet." />
+    <meta property="og:title" content="Fizz — the lightweight private wallet for Aztec" />
+    <meta property="og:description" content="Quick, private, low-stakes. Send and receive private tokens on Aztec straight from your browser. Keys and proofs never leave your device." />
     <meta property="og:image" content="https://fizzwallet.com/ogfizz.png" />
     <meta property="og:image:secure_url" content="https://fizzwallet.com/ogfizz.png" />
     <meta property="og:image:type" content="image/png" />
@@ -21,8 +24,8 @@
     <meta property="og:image:alt" content="Fizz — tokens with sparkle. A lightweight private wallet for the Aztec network." />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Launch a token on Aztec — Fizz" />
-    <meta name="twitter:description" content="Name it, pick a supply, launch it. A standard AIP-20 Aztec token, deployed and proven locally by your Fizz wallet." />
+    <meta name="twitter:title" content="Fizz — the lightweight private wallet for Aztec" />
+    <meta name="twitter:description" content="Quick, private, low-stakes. Private tokens on Aztec straight from your browser. Keys never leave your device." />
     <meta name="twitter:image" content="https://fizzwallet.com/ogfizz.png" />
     <meta name="twitter:image:alt" content="Fizz — tokens with sparkle. A lightweight private wallet for the Aztec network." />
 
@@ -32,6 +35,6 @@
 </head>
 <body>
     <div id="root"></div>
-    <script type="module" src="/src/launch/main.tsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

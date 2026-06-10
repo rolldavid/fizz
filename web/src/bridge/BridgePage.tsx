@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useAccount, useConfig } from "wagmi";
 import { mainnet } from "wagmi/chains";
 import {
     getAccount,
@@ -11,8 +9,9 @@ import {
     writeContract,
 } from "wagmi/actions";
 import { formatUnits, parseUnits, type Hex } from "viem";
-import { Shell, ErrorBox, DesktopRequiredNotice } from "../components";
+import { ErrorBox, DesktopRequiredNotice } from "../components";
 import { useConnection } from "../connection";
+import { useEth } from "../eth/EthProvider";
 import { detectPlatform } from "../platform";
 import { AZTEC_TOKEN_URL } from "../config";
 import { fetchNodeInfo, type AztecNodeInfo } from "../nodeInfo";
@@ -59,10 +58,16 @@ async function waitForParams(timeoutMs = 180_000): Promise<{ recipient: string; 
 }
 
 export function BridgePage() {
-    const config = useConfig();
-    const { address: account, isConnected } = useAccount();
+    // Ethereum (MetaMask/Rabby) connection — site-wide, lazy wagmi config. The
+    // address only exists here after the user connects via the nav (no autoconnect).
+    const { config, address: account, status: ethStatus } = useEth();
+    const isConnected = ethStatus === "connected";
     // Aztec (Fizz) connection — required to bridge; the wallet provides the recipient.
     const { status: aztecStatus } = useConnection();
+
+    useEffect(() => {
+        document.title = "Bridge fee juice to Aztec — Fizz";
+    }, []);
 
     const [node, setNode] = useState<NodeState>({ status: "loading" });
     const [asset, setAsset] = useState<AssetState>({ status: "loading" });
@@ -83,7 +88,7 @@ export function BridgePage() {
     useEffect(loadNode, []);
 
     useEffect(() => {
-        if (node.status !== "ready") return;
+        if (node.status !== "ready" || !config) return;
         const { feeJuiceAddress } = node.info;
         let cancelled = false;
         setAsset({ status: "loading" });
@@ -102,7 +107,7 @@ export function BridgePage() {
     }, [config, node]);
 
     useEffect(() => {
-        if (node.status !== "ready" || !account) {
+        if (node.status !== "ready" || !account || !config) {
             setBalance({ status: "idle" });
             return;
         }
@@ -147,8 +152,9 @@ export function BridgePage() {
         if (node.status !== "ready" || asset.status !== "ready") return;
         const info = node.info;
         setError(null);
+        if (!config) return setError("Ethereum wallet isn't ready yet — give it a moment and try again.");
         if (aztecStatus !== "connected") return setError("Connect your Aztec wallet with Connect Wallet (top right).");
-        if (!isConnected) return setError("Connect your Ethereum wallet on the right.");
+        if (!isConnected) return setError("Connect your Ethereum wallet with Connect Ethereum (top right).");
 
         let amountWei: bigint;
         try {
@@ -233,7 +239,7 @@ export function BridgePage() {
 
     // ── render ─────────────────────────────────────────────────────────────
     return (
-        <Shell page="bridge">
+        <>
             <section className="page-hero">
                 <span className="pill">Mainnet · Ethereum → Aztec</span>
                 <h1>
@@ -294,7 +300,16 @@ export function BridgePage() {
                                         <div className="bridge-col-head">
                                             <span className="bridge-num">2</span> Your Ethereum wallet
                                         </div>
-                                        <ConnectButton showBalance={false} />
+                                        {isConnected ? (
+                                            <p className="hint" style={{ color: "var(--ok)", margin: 0 }}>
+                                                ✓ Ethereum wallet connected. It holds the AZTEC and pays the L1 gas.
+                                            </p>
+                                        ) : (
+                                            <p className="hint" style={{ margin: 0 }}>
+                                                Connect your <strong>Ethereum wallet</strong> with{" "}
+                                                <strong>Connect Ethereum</strong> (top right) — MetaMask or Rabby.
+                                            </p>
+                                        )}
                                         {isConnected && balance.status === "ready" && balance.value === 0n && (
                                             <div className="note-box" style={{ marginTop: 12 }}>
                                                 <strong>You have no {symbol} on Ethereum mainnet.</strong> Fee juice
@@ -461,11 +476,11 @@ export function BridgePage() {
                         Bridging is a <strong>public L1 action</strong>: it visibly links your Ethereum address to
                         the funded Aztec address. For privacy, fund the L1 side from an exchange or a fresh address,
                         not a wallet that's publicly you. This page contacts the Aztec node and a public mainnet
-                        RPC (which see your IP); WalletConnect also uses its relay, while an injected wallet
-                        (MetaMask, Rabby) avoids that.
+                        RPC (which see your IP). It connects MetaMask or Rabby directly — there's no WalletConnect
+                        relay.
                     </p>
                 </div>
             </section>
-        </Shell>
+        </>
     );
 }

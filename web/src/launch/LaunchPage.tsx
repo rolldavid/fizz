@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Shell, ErrorBox, CopyButton, DesktopRequiredNotice, shortHex } from "../components";
+import { ErrorBox, CopyButton, DesktopRequiredNotice, shortHex } from "../components";
 import { useConnection } from "../connection";
 import { sendToFizz, type LastLaunch } from "../extension";
 
@@ -72,6 +72,10 @@ export function LaunchPage() {
     const pollTimer = useRef<number | null>(null);
 
     const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
+
+    useEffect(() => {
+        document.title = "Launch a token on Aztec — Fizz";
+    }, []);
 
     // Elapsed-time ticker while waiting (proving takes minutes; show signs of life).
     useEffect(() => {
@@ -155,7 +159,7 @@ export function LaunchPage() {
         !platform.canUseExtension || status !== "connected" || phase === "submitting" || phase === "waiting";
 
     return (
-        <Shell page="launch">
+        <>
             <section className="page-hero">
                 <span className="pill">Testnet</span>
                 <h1>
@@ -391,6 +395,6 @@ export function LaunchPage() {
                     </p>
                 </div>
             </section>
-        </Shell>
+        </>
     );
 }

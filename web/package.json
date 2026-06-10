@@ -1,26 +1,26 @@
 {
   "name": "fizz-web",
   "version": "0.1.0",
-  "description": "fizzwallet.com web app — /bridge (fee juice L1→L2) and /launch (token launcher). Builds into ../landing/{bridge,launch,webassets}, which the static host serves alongside the committed landing home.",
+  "description": "fizzwallet.com — a single-page Vite + React app (home, /bridge, /launch). Builds into web/dist (with per-route SEO shells); served on Railway.",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc",
-    "build": "tsc && vite build && node ./scripts/deploy-to-landing.mjs",
+    "build": "tsc && vite build && node ./scripts/postbuild.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@aztec/aztec.js": "4.3.0",
-    "@rainbow-me/rainbowkit": "^2.2.0",
     "@tanstack/react-query": "^5.59.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "react-router-dom": "^6.28.0",
     "viem": "2.51.3",
     "wagmi": "^2.14.0"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.279",
+    "@types/node": "^22.10.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react-swc": "^3.7.2",

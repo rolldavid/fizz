@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="landing/fizzlogo.svg" alt="Fizz" height="72" />
+  <img src="web/src/assets/fizzlogo.svg" alt="Fizz" height="72" />
 </p>
 
 <p align="center"><b>A lightweight, private browser-extension wallet for the Aztec network.</b></p>
@@ -60,8 +60,7 @@ It ships with two companion pages on [fizzwallet.com](https://fizzwallet.com):
 |-------------|------|
 | `src/`      | The browser extension: popup UI (`src/popup`), background worker (`src/background`), libs (`src/lib`: vault, aztec, state). |
 | `public/`   | Extension static assets (logos served at `/`). |
-| `web/`      | The fizzwallet.com web app (Vite + React): `/launch` and `/bridge`. `/launch` ships zero wallet/L1 code. |
-| `landing/`  | The static home page; the web build writes `/bridge`, `/launch`, and `webassets/` here and the whole dir is served. |
+| `web/`      | The fizzwallet.com web app: a single-page Vite + React SPA — the home, `/bridge`, and `/launch`. The build emits per-route SEO shells into `web/dist`. |
 | `tests/`    | Unit + property tests, plus live-network e2e and a real-Chrome smoke gate. |
 
 ## Develop
@@ -106,11 +105,14 @@ The browser smoke test needs Chrome for Testing once:
 ```sh
 cd web
 yarn install
-yarn build            # writes the /bridge + /launch pages into ../landing
+yarn build            # SPA into web/dist (+ per-route SEO shells), served on Railway
+yarn dev              # local dev server
 ```
 
-Set `VITE_WALLETCONNECT_PROJECT_ID` in the build environment to enable the
-WalletConnect option on `/bridge` (injected wallets like MetaMask work without it).
+The `/bridge` page connects an Ethereum wallet — **MetaMask or Rabby only**
+(injected / EIP-6963). There is no WalletConnect, so no project id or env var is
+needed. Deployment is the repo-root `Dockerfile` (builds `web/`, serves
+`web/dist` with the security headers in `web/public/serve.json`).
 
 ## Security
 

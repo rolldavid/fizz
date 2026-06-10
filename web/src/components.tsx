@@ -1,17 +1,20 @@
-/** Shared chrome (header/footer/shell) + small UI atoms. NO wagmi in here —
- * this module is imported by /launch, which must ship zero L1 code. */
+/** Shared chrome (Layout: nav + footer + <Outlet/>) and small UI atoms for the
+ *  fizzwallet.com SPA. The nav carries BOTH wallet connections, site-wide:
+ *  the Aztec (Fizz) chip and the Ethereum (MetaMask/Rabby) chip. */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import logoUrl from "./assets/fizzlogo.svg";
 import { CHROME_STORE_URL, GITHUB_URL } from "./config";
 import { useConnection } from "./connection";
+import { EthConnect } from "./eth/EthConnect";
 
 /**
- * Context-aware nav button: Install Wallet (no extension / mobile / non-Chromium)
- * → Connect Wallet (installed, not connected) → "Aztec Wallet" chip with a
- * disconnect dropdown (connected). The connect handshake lives here in the nav,
- * site-wide. Address-blind: the chip never shows an address — we don't learn it.
- * Labelled "Aztec Wallet" so it's clearly distinct from the Eth wallet on /bridge.
+ * Context-aware Aztec-wallet button: Install Wallet (no extension / mobile /
+ * non-Chromium) → Connect Wallet (installed, not connected) → "Aztec Wallet"
+ * chip with a disconnect dropdown (connected). Address-blind: the chip never
+ * shows an address — we don't learn it. Labelled "Aztec Wallet" so it's clearly
+ * distinct from the Ethereum wallet.
  */
 function NavWalletButton() {
     const { platform, status, connecting, connect, disconnect } = useConnection();
@@ -42,7 +45,14 @@ function NavWalletButton() {
                 </button>
                 {menuOpen && (
                     <div className="wallet-menu" role="menu">
-                        <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); void disconnect(); }}>
+                        <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                                setMenuOpen(false);
+                                void disconnect();
+                            }}
+                        >
                             Disconnect
                         </button>
                     </div>
@@ -68,7 +78,11 @@ function NavWalletButton() {
     );
 }
 
-export function Shell({ page, children }: { page: "bridge" | "launch"; children: ReactNode }) {
+/** App shell: sticky nav (logo + links + both wallet chips) and footer, with the
+ *  active route rendered through <Outlet/>. Connection state lives above this in
+ *  the providers, so it persists across client-side navigation. */
+export function Layout() {
+    const { platform } = useConnection();
     return (
         <>
             <div className="bubbles" aria-hidden="true">
@@ -76,27 +90,33 @@ export function Shell({ page, children }: { page: "bridge" | "launch"; children:
             </div>
             <div className="wrap">
                 <header className="site-header">
-                    <a className="logo-link" href="/" title="Fizz — home">
+                    <Link className="logo-link" to="/" aria-label="Fizz — home">
                         <img className="logo" src={logoUrl} alt="Fizz" />
-                    </a>
+                    </Link>
                     <nav className="site-nav">
-                        <a href="/bridge/" aria-current={page === "bridge" ? "page" : undefined}>Get Gas</a>
-                        <a href="/launch/" aria-current={page === "launch" ? "page" : undefined}>Launch a Token</a>
+                        <NavLink to="/bridge">Get Gas</NavLink>
+                        <NavLink to="/launch">Launch a Token</NavLink>
+                        {/* Ethereum wallet only where it can run (desktop Chromium). */}
+                        {platform.canUseExtension && <EthConnect />}
                         <NavWalletButton />
                     </nav>
                 </header>
-                <main>{children}</main>
+                <main>
+                    <Outlet />
+                </main>
                 <footer className="site-footer">
                     <p>
-                        <a href="/">fizzwallet.com</a>
+                        <Link to="/">fizzwallet.com</Link>
                         <span className="sep">·</span>
-                        <a href="/bridge/">Bridge fee juice</a>
+                        <Link to="/bridge">Bridge fee juice</Link>
                         <span className="sep">·</span>
-                        <a href="/launch/">Launch a token</a>
+                        <Link to="/launch">Launch a token</Link>
                         <span className="sep">·</span>
-                        <a href="/privacy.html">Privacy</a>
+                        <a href="/privacy">Privacy</a>
                         <span className="sep">·</span>
-                        <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">GitHub</a>
+                        <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
+                            GitHub
+                        </a>
                     </p>
                     <p className="small" style={{ marginTop: 8 }}>
                         Fizz runs no servers and no analytics of its own. Each page lists exactly which networks

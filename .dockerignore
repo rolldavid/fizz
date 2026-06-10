@@ -1,6 +1,6 @@
-# Keep the build context small + reproducible. The image builds only the web
-# app and serves landing/, so the extension build, deps, and generated output
-# are all excluded (the web build regenerates landing/bridge|launch|webassets).
+# Keep the build context small. The image builds only the web SPA (web/) and
+# serves web/dist, so the extension build, deps, and generated output are all
+# excluded (the web build regenerates web/dist).
 **/node_modules
 dist
 web/dist
@@ -9,6 +9,3 @@ web/dist
 chrome
 docs
 LOOP_STATE.md
-landing/bridge
-landing/launch
-landing/webassets
