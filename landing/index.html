@@ -75,7 +75,45 @@
         }
         @media (prefers-reduced-motion: reduce) { .bubbles { display: none; } }
 
-        header.hero { text-align: center; padding: 88px 0 56px; }
+        /* sticky top nav */
+        .topnav {
+            position: sticky; top: 0; z-index: 20;
+            display: flex; align-items: center; justify-content: space-between; gap: 14px;
+            padding: 14px 0;
+        }
+        .topnav::before {
+            content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+            width: 100vw; height: 100%; z-index: -1;
+            background: rgba(20, 14, 36, .82);
+            -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--surface-2);
+        }
+        .topnav-left { display: flex; align-items: center; gap: 22px; min-width: 0; }
+        .topnav-logo { display: inline-flex; align-items: center; }
+        .topnav-logo img { height: 30px; display: block; }
+        .topnav a:not(.topnav-logo):not(.install-btn) {
+            color: var(--dim); text-decoration: none; font-size: 14px; font-weight: 600;
+            padding: 6px 12px; border-radius: 999px;
+        }
+        .topnav a:not(.topnav-logo):not(.install-btn):hover { color: var(--text); }
+        .install-btn {
+            display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+            font-weight: 700; font-size: 14px; padding: 9px 18px; border-radius: 999px;
+            text-decoration: none; color: #fff;
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            box-shadow: 0 0 18px rgba(255, 92, 148, .3);
+            transition: box-shadow .15s ease, transform .15s ease;
+        }
+        .install-btn:hover { box-shadow: 0 0 28px rgba(255, 92, 148, .55); }
+        .install-btn:active { transform: scale(.98); }
+        @media (max-width: 560px) {
+            .topnav-left { gap: 10px; }
+            .topnav a:not(.topnav-logo):not(.install-btn) { padding: 6px 8px; }
+            .topnav-logo img { height: 26px; }
+            .install-btn { padding: 8px 13px; font-size: 13px; }
+        }
+
+        header.hero { text-align: center; padding: 44px 0 56px; }
         .hero img.logo { height: 110px; margin-bottom: 18px; }
         .hero h1 { font-size: clamp(26px, 5vw, 40px); font-weight: 800; letter-spacing: -0.02em; }
         .hero h1 em { font-style: normal; background: linear-gradient(135deg, var(--accent), var(--purple)); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -138,8 +176,17 @@
     <div class="bubbles" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
 
     <div class="wrap">
+        <nav class="topnav">
+            <div class="topnav-left">
+                <a class="topnav-logo" href="/" aria-label="Fizz — home">
+                    <img src="./fizzlogo.svg" alt="Fizz" />
+                </a>
+                <a href="./bridge/">Bridge</a>
+                <a href="./launch/">Launch</a>
+            </div>
+            <a class="install-btn" href="https://chromewebstore.google.com/detail/bapbaajfnjockbcdhjpgpllflnhgogol" target="_blank" rel="noopener noreferrer">Install Wallet</a>
+        </nav>
         <header class="hero">
-            <img class="logo" src="./fizzlogo.svg" alt="Fizz" />
             <h1>Private tokens, <em>with sparkle</em>.</h1>
             <p class="sub">
                 Fizz is a lightweight wallet for the Aztec network that lives in your browser.

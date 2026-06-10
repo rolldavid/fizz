@@ -3,7 +3,7 @@
 
 import { useState, type ReactNode } from "react";
 import logoUrl from "./assets/fizzlogo.svg";
-import { GITHUB_URL } from "./config";
+import { CHROME_STORE_URL, GITHUB_URL } from "./config";
 
 export function Shell({ page, children }: { page: "bridge" | "launch"; children: ReactNode }) {
     return (
@@ -13,13 +13,23 @@ export function Shell({ page, children }: { page: "bridge" | "launch"; children:
             </div>
             <div className="wrap">
                 <header className="site-header">
-                    <a className="logo-link" href="/" title="Fizz — home">
-                        <img className="logo" src={logoUrl} alt="Fizz" />
+                    <div className="site-header-left">
+                        <a className="logo-link" href="/" title="Fizz — home">
+                            <img className="logo" src={logoUrl} alt="Fizz" />
+                        </a>
+                        <nav className="site-nav">
+                            <a href="/bridge/" aria-current={page === "bridge" ? "page" : undefined}>Bridge</a>
+                            <a href="/launch/" aria-current={page === "launch" ? "page" : undefined}>Launch</a>
+                        </nav>
+                    </div>
+                    <a
+                        className="install-btn"
+                        href={CHROME_STORE_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        Install Wallet
                     </a>
-                    <nav className="site-nav">
-                        <a href="/bridge/" aria-current={page === "bridge" ? "page" : undefined}>Bridge</a>
-                        <a href="/launch/" aria-current={page === "launch" ? "page" : undefined}>Launch</a>
-                    </nav>
                 </header>
                 <main>{children}</main>
                 <footer className="site-footer">
