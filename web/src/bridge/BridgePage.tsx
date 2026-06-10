@@ -244,12 +244,13 @@ export function BridgePage() {
             <section className="page-hero">
                 <span className="pill">Mainnet · Ethereum → Aztec</span>
                 <h1>
-                    Get <em>fee juice</em> (gas) on Aztec
+                    Get <em>gas</em> (gas) on Aztec
                 </h1>
                 <p className="sub">
-                    Bridge the AZTEC token from Ethereum mainnet into fee juice on your connected Fizz wallet,
-                    from your own Ethereum wallet. Fee juice only, one-way only: both are Aztec protocol rules,
-                    not ours. This moves real AZTEC; double-check the amount.
+                    Bridge the AZTEC token from Ethereum mainnet to the Aztec Network to use as gas. Gas on Aztec is known as fee juice, 
+                    and can be used to pay for txns, token deployments, and other contract interactions. 
+                    
+                    Sending AZTEC to your wallet to use for gas is a 1-way transaction, and your fee juice is not transferable out of your Fizz wallet.
                 </p>
             </section>
 
@@ -288,10 +289,8 @@ export function BridgePage() {
                                         ) : (
                                             <p className="hint" style={{ margin: 0 }}>
                                                 Connect your <strong>Aztec wallet</strong> with{" "}
-                                                <strong>Connect Wallet</strong> (top right). The fee juice is sent
-                                                to your connected account. To deposit, this page is given that
-                                                account's Aztec address (a deposit names where it lands; it's
-                                                public on Ethereum either way). Your keys never leave the wallet.
+                                                <strong>Connect Wallet</strong> (top right). The gas is sent
+                                                to your connected account.
                                             </p>
                                         )}
                                     </div>
@@ -312,8 +311,7 @@ export function BridgePage() {
                                         </p>
                                         {isConnected && balance.status === "ready" && balance.value === 0n && (
                                             <div className="note-box" style={{ marginTop: 12 }}>
-                                                <strong>You have no {symbol} on Ethereum mainnet.</strong> Fee juice
-                                                is bridged from the AZTEC token (no faucet on mainnet). Get {symbol}{" "}
+                                                <strong>You have no {symbol} on Ethereum mainnet.</strong>. Get {symbol}{" "}
                                                 at{" "}
                                                 <a href={AZTEC_TOKEN_URL} target="_blank" rel="noopener noreferrer">
                                                     {AZTEC_TOKEN_URL.replace("https://", "")}
