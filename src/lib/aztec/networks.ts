@@ -43,9 +43,23 @@ export const NETWORKS: AztecNetwork[] = [
         l1RpcUrl: "http://localhost:8545",
     },
     {
+        id: "alpha",
+        name: "Aztec Alpha (Mainnet)",
+        description: "Production · Ethereum L1",
+        nodeUrl: "https://aztec-mainnet.drpc.org",
+        l1ChainId: 1, // Ethereum mainnet
+        rollupVersion: 2934756905,
+        // Mainnet has NO SponsoredFPC deployed and NO faucet (docs + live node:
+        // feeAssetHandlerAddress is empty). The fee asset IS the AZTEC token
+        // (0xa27ec0…, also the staking asset). So a fresh account cannot transact
+        // until it bridges AZTEC → fee juice on fizzwallet.com/bridge. fee.ts
+        // still probes on-chain, so this flag is just the (false) hint.
+        hasSponsoredFPC: false,
+    },
+    {
         id: "testnet",
-        name: "Aztec Testnet (alpha)",
-        description: "Public alpha-testnet · hosted by Nethermind",
+        name: "Aztec Testnet",
+        description: "Public testnet · Sepolia L1",
         nodeUrl: "https://rpc.testnet.aztec-labs.com",
         l1ChainId: 11155111, // Sepolia
         rollupVersion: 4127419662,
@@ -70,26 +84,15 @@ export const NETWORKS: AztecNetwork[] = [
         rollupVersion: 615022430,
         hasSponsoredFPC: true,
     },
-    // ── Alpha / mainnet ──────────────────────────────────────────────────────
-    // No live Aztec mainnet exists yet (the public network is in its "alpha"
-    // phase = the testnet above). The owner will supply the canonical alpha
-    // endpoint; fill these in and flip DEFAULT_NETWORK_ID to "alpha" then.
-    // {
-    //     id: "alpha",
-    //     name: "Aztec Alpha",
-    //     description: "Aztec alpha network",
-    //     nodeUrl: "<provided by owner>",
-    //     l1ChainId: 1,            // confirm against the supplied endpoint
-    //     rollupVersion: 0,        // informational; PXE reads canonical from node
-    //     hasSponsoredFPC: false,  // confirm the canonical FPC address first
-    // },
 ];
 
-// TESTNET-FIRST for live alpha testing: every flow (account deploy, token
-// deploy, mint private/public, private+public transfers, shield/unshield,
-// bridge claim) is verified green on this network with real proofs. The local
-// sandbox remains one click away in the network picker for development.
-export const DEFAULT_NETWORK_ID: AztecNetwork["id"] = "testnet";
+// Alpha (Mainnet) is the default — production, real value. NOTE: mainnet has no
+// SponsoredFPC and no faucet, so a brand-new wallet here holds no fee juice and
+// CANNOT transact (not even deploy its account) until the user bridges AZTEC →
+// fee juice on fizzwallet.com/bridge. The UI must lead with that. Testnet (free
+// via its SponsoredFPC) stays one tap away in the network picker for trying
+// things out without real funds.
+export const DEFAULT_NETWORK_ID: AztecNetwork["id"] = "alpha";
 
 export function getNetwork(id: AztecNetwork["id"]): AztecNetwork {
     const n = NETWORKS.find((x) => x.id === id);

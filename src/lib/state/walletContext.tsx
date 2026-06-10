@@ -291,11 +291,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 const net = networkRef.current;
                 const fee = await resolveFeePaymentMethod(w, net, manager.address);
                 if (!fee.method) {
+                    const guidance =
+                        net.id === "sandbox"
+                            ? "Bridge fee juice from the local L1 (Need fee juice?), then try again."
+                            : net.id === "alpha"
+                              ? "Aztec mainnet has no sponsored fees — bridge AZTEC → fee juice on " +
+                                "fizzwallet.com/bridge first (tap “Need fee juice?”), then try again."
+                              : "Use the testnet faucet or bridge fee juice (Need fee juice?), then try again.";
                     throw new Error(
                         net.hasSponsoredFPC
                             ? "Couldn't resolve a fee payment method to activate the account."
-                            : "Your account needs fee juice before its first transaction. " +
-                              "Bridge ETH (sandbox) or use the network faucet, then try again.",
+                            : `Your account needs fee juice before its first transaction. ${guidance}`,
                     );
                 }
                 await deployAccountContract({ wallet: w, manager, feeMethod: fee.method });

@@ -27,6 +27,10 @@ const buildManifest = (env: ConfigEnv): any => {
         // that bb.js FETCHES; without it the PXE can't boot. data: transmits
         // nothing anywhere, so the exfiltration posture is intact.
         "data:",
+        // Aztec Alpha (Mainnet) node — pinned to the exact host (not a wildcard)
+        // to keep the seed-exfil egress allowlist as tight as possible.
+        "https://aztec-mainnet.drpc.org",
+        // Testnet/devnet nodes.
         "https://*.aztec-labs.com",
         // Proving parameters (CRS) — fetched by bb.js ONCE at first proof.
         "https://crs.aztec-cdn.foundation",
@@ -86,6 +90,7 @@ const buildManifest = (env: ConfigEnv): any => {
         host_permissions: [
             "http://localhost/*",
             "http://127.0.0.1/*",
+            "https://aztec-mainnet.drpc.org/*",
             "https://*.aztec-labs.com/*",
             "https://crs.aztec-cdn.foundation/*",
         ],

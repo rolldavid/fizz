@@ -28,6 +28,7 @@ import { formatUnits } from "../../lib/aztec/balances";
 export function Bridge({ onBack }: { onBack: () => void }) {
     const { wallet, account, network } = useWallet();
     const isSandbox = network.id === "sandbox";
+    const isAlpha = network.id === "alpha";
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [done, setDone] = useState(false);
@@ -113,8 +114,12 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                 ) : (
                     <>
                         <p className="hint">
-                            Fee juice pays Aztec network fees (~2.3 per transaction). On testnet
-                            your fees are usually sponsored, so this is optional.
+                            {isAlpha
+                                ? "Fee juice pays Aztec network fees. On mainnet there's no " +
+                                  "sponsor — every transaction needs fee juice, so you'll want some " +
+                                  "before sending or deploying."
+                                : "Fee juice pays Aztec network fees (~2.3 per transaction). On " +
+                                  "testnet your fees are usually sponsored, so this is optional."}
                         </p>
                         {/* Acquisition lives on the web bridge — the wallet stays a wallet. */}
                         <div
@@ -123,9 +128,12 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                         >
                             <div style={{ fontWeight: 600 }}>Need fee juice?</div>
                             <div className="hint" style={{ margin: 0 }}>
-                                Bridge it from Ethereum on our web bridge. You'll connect this
-                                wallet there — the claim lands back here and auto-pays your next
-                                transaction.
+                                {isAlpha
+                                    ? "Bridge AZTEC → fee juice on our web bridge. You enter this " +
+                                      "wallet's address there; the claim lands back here and " +
+                                      "auto-pays your next transaction."
+                                    : "Bridge it from Ethereum on our web bridge — the claim lands " +
+                                      "back here and auto-pays your next transaction."}
                             </div>
                             <a
                                 className="btn btn-primary btn-block"
@@ -135,6 +143,15 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                             >
                                 Open fizzwallet.com/bridge ↗
                             </a>
+                            {isAlpha && (
+                                <div className="hint" style={{ margin: 0, fontSize: 11 }}>
+                                    Don't have AZTEC yet? Get it at{" "}
+                                    <a href="https://aztec.network/token" target="_blank" rel="noreferrer">
+                                        aztec.network/token
+                                    </a>
+                                    .
+                                </div>
+                            )}
                         </div>
 
                         {/* Manual ticket import — fallback when the page couldn't

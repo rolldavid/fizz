@@ -10,8 +10,10 @@
  *   1. popup renders the onboarding screen with ZERO console errors
  *   2. create a wallet with a passphrase (real Argon2id + AES-GCM + storage)
  *   3. reveal-and-confirm recovery phrase step
- *   4. wallet boots the in-browser PXE against the DEFAULT network (testnet —
- *      wasm, cross-origin isolation, connect-src CSP all proven in one shot)
+ *   4. wallet boots the in-browser PXE against the DEFAULT network (Alpha /
+ *      mainnet — wasm, cross-origin isolation, connect-src CSP, and live
+ *      mainnet-node connectivity all proven in one shot), then switches to
+ *      testnet for the deploy (mainnet has no sponsored fees)
  *   5. Home renders: address, fee-juice card, Send/Receive controls
  *   6. a token deploys end-to-end from the UI — the live-user path, including
  *      the first-proof CRS download and the busy-defers-idle-lock behavior
@@ -288,6 +290,15 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
         }));
         console.log(`[smoke] isolation: ${JSON.stringify(coi)}`);
 
+        // The default network is now Alpha (mainnet), which has NO sponsored FPC
+        // and no fee juice on a fresh account — so a deploy there can't pay fees.
+        // Switch to TESTNET (sponsored fees) for this end-to-end deploy via the
+        // Header network picker, which re-boots the PXE against testnet.
+        await popup.waitForSelector("select", { timeout: 10_000 });
+        await popup.select("select", "testnet");
+        await new Promise((r) => setTimeout(r, 1_000)); // let setNetwork fire the re-boot
+        console.log("[smoke] switched to testnet for the deploy (mainnet has no sponsored fees)");
+
         // Token deployment is no longer on Home (the wallet is just a wallet —
         // fizzwallet.com/launch owns it). Enter via the #deploy deep link in
         // the LIVE unlocked session (hashchange routing). Production /launch
@@ -301,7 +312,8 @@ describe.skipIf(!RUN)("extension smoke — real Chrome, built MV3 package", () =
             timeout: 30_000,
         });
         try {
-            await popup.waitForSelector("input[placeholder*='Acme']", { timeout: 60_000 });
+            // Generous: the testnet re-boot (PXE teardown + re-sync) precedes the form.
+            await popup.waitForSelector("input[placeholder*='Acme']", { timeout: 300_000 });
         } catch (err) {
             const body = await popup.evaluate(() => document.body.innerText);
             console.log(`[smoke] DEPLOY ENTRY FAILED — screen:\n${body.slice(0, 600)}`);
