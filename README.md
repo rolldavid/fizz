@@ -1,98 +1,128 @@
-# Fizz (browser extension)
+<p align="center">
+  <img src="landing/fizzlogo.svg" alt="Fizz" height="72" />
+</p>
 
-Tokens with sparkle. Fizz is a lightweight dark-mode Chrome MV3 wallet for the
-Aztec network — built for quick, low-value transactions (pocket change, not
-vaults). Deep-grape UI, pink accents, bubbles where they belong.
+<p align="center"><b>A lightweight, private browser-extension wallet for the Aztec network.</b></p>
 
-A static landing/splash page lives in `landing/` — self-contained HTML you can
-host anywhere; it explains the benefits and links to installing the extension.
+<p align="center">
+  Tokens with sparkle. Send and receive private tokens, flip balances between
+  private and public, deploy your own token, and bridge fee juice. Keys and
+  zero-knowledge proofs are generated and stay on your device.
+</p>
 
-- In-browser **PXE** — your secret keys never leave this device.
-- **Passkey** (WebAuthn PRF) or **12-word phrase** to unlock the vault.
-- **Public + private balances** per token, on separate tabs.
-- **Send/receive** private or public, plus shield/unshield (Convert) — with a
-  full-address confirmation screen before anything signs.
-- **Mint** new supply on tokens where you hold the minter role (private or public).
-- **Multiple accounts** from one phrase — switch instantly; keep funding and
-  spending unlinkable.
-- **Receive UX**: QR with identicon, native share, save QR, optional amount/memo encoded into an `aztec:` URI.
-- **Deploy tokens** directly from the wallet — AIP-20 standard, choose initial supply public or private, optionally renounce minter role.
-- **Fees**: sponsored-FPC detection (testnet covers your fees — start from zero),
-  fee-juice balance, one-click sandbox bridge, claim auto-consumed by your first tx.
-- **Custom node** support — point the wallet at your own Aztec node.
-- Sensitive local metadata (contacts, bridge claims) encrypted at rest; strict
-  `default-src 'none'` CSP with pinned egress; idle auto-lock.
-- **Auto theme** — follows browser light/dark; toggle to override.
-- Sandbox / Testnet (alpha) / custom network switching.
+<p align="center"><i>Alpha software, built for quick, low-value transactions. It is not a vault.</i></p>
 
-## Stack
+---
 
-Vite + React + TypeScript + `@crxjs/vite-plugin` for MV3. `@aztec/wallets/embedded` for the in-browser PXE.
+## What is Fizz?
 
-## Dev
+Fizz is a Chrome (MV3) extension wallet for [Aztec](https://aztec.network), the
+privacy-first L2. The PXE (private execution environment) and the prover run
+**in the browser**, so your seed, keys, and proofs never leave the device. The
+wallet talks directly to an Aztec node you choose, including your own.
+
+It ships with two companion pages on [fizzwallet.com](https://fizzwallet.com):
+
+- **/launch** designs a standard AIP-20 token and deploys it from your wallet.
+  The page never sees your address or keys; it hands the deploy to the
+  extension, which proves it locally and asks you to confirm.
+- **/bridge** brings your own gas: bridge the AZTEC token from Ethereum L1 into
+  fee juice on your connected account. The wallet generates the claim secret and
+  auto-completes the claim, so there is no ticket to copy.
+
+## Features
+
+- **Private by default.** Amounts, senders, and recipients stay hidden on-chain.
+- **Two balances, one tap.** Every token has a private and a public side; shield
+  and unshield whenever you like.
+- **Make your own token.** Deploy a standard AIP-20 token, mint privately or
+  publicly, keep or drop the minter role.
+- **Bring your own gas.** Bridge AZTEC into fee juice straight to your account.
+- **Multiple accounts** from one recovery phrase, to keep activities unlinkable.
+- **Encrypted vault.** Argon2id + AES-256-GCM; unlock with a passkey (WebAuthn
+  PRF) or a passphrase. The seed is zeroized after use.
+- **Bring your own node.** Point the wallet at any Aztec node, local or hosted.
+
+## How it works
+
+- **In-browser PXE + proving.** Runs inside an extension page, not the service
+  worker (which Chrome kills on idle), using SharedArrayBuffer / WASM threads
+  with the COOP/COEP headers the manifest sets.
+- **Egress is pinned.** The manifest CSP `connect-src` allowlists only the Aztec
+  node, the proving CRS CDN, and (in dev) localhost, so a compromised page has
+  nowhere to exfiltrate a seed.
+- **Address-blind dApp connect.** Sites connect to the wallet without learning
+  your address; every deploy and transfer is confirmed in-wallet.
+
+## Repository layout
+
+| Path        | What |
+|-------------|------|
+| `src/`      | The browser extension: popup UI (`src/popup`), background worker (`src/background`), libs (`src/lib`: vault, aztec, state). |
+| `public/`   | Extension static assets (logos served at `/`). |
+| `web/`      | The fizzwallet.com web app (Vite + React): `/launch` and `/bridge`. `/launch` ships zero wallet/L1 code. |
+| `landing/`  | The static home page and the Netlify publish directory. |
+| `tests/`    | Unit + property tests, plus live-network e2e and a real-Chrome smoke gate. |
+
+## Develop
+
+Requires Node 20+ and Yarn.
+
+### Extension
 
 ```sh
-nvm use 22
 yarn install
-yarn dev          # vite dev server at http://localhost:5173 (also serves a debug popup)
+yarn build            # outputs dist/
 ```
 
-Then in Chrome → `chrome://extensions` → **Load unpacked** → pick the project root (`dist/` after `yarn build`, or `dist/` directly when using vite dev — CRXJS writes the manifest there as you save).
-
-Add icons in `src/assets/` (see `src/assets/README.md`).
-
-### Run a local Aztec sandbox
+Load it unpacked: open `chrome://extensions`, enable **Developer mode**, click
+**Load unpacked**, and pick the `dist/` folder. Rebuild and hit reload to pick
+up changes.
 
 ```sh
-aztec start --local-network
+yarn typecheck        # tsc -b
+yarn test             # unit + property (fast-check) tests, hermetic, no network
+yarn verify           # frozen-lockfile install + typecheck + test + build
+yarn package          # verify, then zip dist/ for the Web Store
 ```
 
-Node defaults to `http://localhost:8080`. Select **Local sandbox** in the wallet's network picker.
-
-## Build
+Live-network tests (each gated by an env var so they never run by accident):
 
 ```sh
-yarn build
-```
-
-Loads from `dist/`.
-
-## Testing
-
-```sh
-yarn test          # unit + fuzz (fast-check) — hermetic, fast
-yarn test:e2e      # full lifecycle against a live local sandbox (start it first)
-TESTNET=1  yarn vitest run --project e2e tests/e2e/testnet.test.ts   # real proofs vs public testnet
-PRESSURE=1 yarn vitest run --project e2e tests/e2e/pressure.test.ts  # stress: many notes/tokens
-BROWSER=1  yarn vitest run --project e2e tests/browser/extension-smoke.test.ts  # real Chrome, built MV3
+yarn test:e2e                                                                   # full lifecycle vs a local sandbox (aztec start --local-network)
+TESTNET=1 yarn vitest run --project e2e tests/e2e/testnet.test.ts               # real proofs vs public testnet
+BROWSER=1 yarn vitest run --project e2e tests/browser/extension-smoke.test.ts   # real Chrome, built MV3 package
 ```
 
 The browser smoke test needs Chrome for Testing once:
-`npx @puppeteer/browsers install chrome@stable`
+`npx @puppeteer/browsers install chrome@stable`.
 
-`yarn verify` = frozen-lockfile install + typecheck + unit tests + build.
-`yarn package` = verify + zip the extension for the Web Store.
+> The unit suite pins the mnemonic-to-account derivation vectors
+> (`tests/unit/derivation.test.ts`). If those ever fail, do **not** update the
+> expectations: a derivation change would strand every existing user's funds.
 
-The unit suite pins the mnemonic→account derivation vectors
-(`tests/unit/derivation.test.ts`). If those ever fail, DO NOT update the
-expectations — a derivation change strands every existing user's funds.
+### Web app (fizzwallet.com)
 
-## Architecture sketch
-
-```
-src/
-├── manifest.ts             # MV3 manifest (cross-origin isolated)
-├── background/             # service worker (tiny, room to grow)
-├── popup/
-│   ├── App.tsx             # status machine: uninitialized → locked → loading → ready
-│   ├── pages/              # Onboarding, Unlock, Home, Send, Receive, Bridge
-│   └── components/
-└── lib/
-    ├── vault/              # passkey, mnemonic, AES-GCM, chrome.storage envelope
-    ├── aztec/              # networks, EmbeddedWallet wiring, token + fee balances,
-    │                       # transfer flows, L1 fee juice portal bridge
-    ├── state/walletContext.tsx
-    └── storage.ts          # thin chrome.storage.local wrapper
+```sh
+cd web
+yarn install
+yarn build            # writes the /bridge + /launch pages into ../landing
 ```
 
-The popup hosts the PXE because MV3 service workers get torn down too aggressively to hold long-lived proving state, and extension pages already have the cross-origin isolation needed for bb.js WASM threads.
+Set `VITE_WALLETCONNECT_PROJECT_ID` in the build environment to enable the
+WalletConnect option on `/bridge` (injected wallets like MetaMask work without it).
+
+## Security
+
+Keys and proofs never leave your device, the vault is encrypted at rest, and
+cross-origin pages can neither read wallet storage nor learn your address. That
+said: this is **alpha** software for **low-value** use. Do not keep more in it
+than you would carry in a pocket. Bridging is a public L1 action that links your
+Ethereum address to the funded Aztec address; fund from a fresh or exchange
+address if you want it unlinkable.
+
+Found a vulnerability? Please open a private report rather than a public PoC.
+
+## License
+
+[MIT](LICENSE) © rolldavid

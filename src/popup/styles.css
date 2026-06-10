@@ -331,6 +331,12 @@ input[type="radio"] {
     margin: 0 auto;
 }
 
+/* Wordmark logo in the popup header bar. */
+.brand-logo-header {
+    height: 20px;
+    display: block;
+}
+
 .content {
     flex: 1;
     padding: 16px;
