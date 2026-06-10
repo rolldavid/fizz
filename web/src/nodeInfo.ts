@@ -9,21 +9,20 @@ import { AZTEC_NODE_URL } from "./config";
 export type Hex = `0x${string}`;
 
 /**
- * PINNED canonical L1 contracts for Aztec testnet (Sepolia). The node reports
+ * PINNED canonical L1 contracts for Aztec ALPHA (mainnet). The node reports
  * these, but the page then signs an ERC-20 `approve(portal, …)` and a
  * `portal.depositToAztecPublic(…)` against them — so a hostile/compromised node
  * that returned an attacker `portal`/`asset` could make the user approve and
  * deposit straight into a thief. We fetch live (so a legit redeploy is caught
  * loudly) but REFUSE to proceed unless the value-moving contracts match this
- * pin. Update this set if/when Aztec redeploys the testnet portal/asset.
+ * pin. Update this set if/when Aztec redeploys the mainnet portal/asset.
  *
- * The free-mint handler is intentionally NOT pinned: it only ever mints the
- * testnet fee asset to the connected wallet (no theft vector), and it is
- * redeployed more often. A wrong handler can at worst make the free mint fail.
+ * The fee asset is the AZTEC token; both addresses are from the canonical Aztec
+ * docs and verified against the live mainnet node.
  */
-const PINNED_TESTNET = {
-    feeJuicePortalAddress: "0xd3361019e40026ce8a9745c19e67fd3acc10d596",
-    feeJuiceAddress: "0x762c132040fda6183066fa3b14d985ee55aa3c18",
+const PINNED_MAINNET = {
+    feeJuicePortalAddress: "0x2891f8b941067f8b5a3f34545a30cf71e3e23617",
+    feeJuiceAddress: "0xa27ec0006e59f245217ff08cd52a7e8b169e62d2",
 } as const;
 
 export type AztecNodeInfo = {
@@ -85,12 +84,12 @@ export async function fetchNodeInfo(): Promise<AztecNodeInfo> {
     // user must never approve/deposit against an unverified portal/asset.
     const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
     if (
-        !eq(feeJuicePortalAddress, PINNED_TESTNET.feeJuicePortalAddress) ||
-        !eq(feeJuiceAddress, PINNED_TESTNET.feeJuiceAddress)
+        !eq(feeJuicePortalAddress, PINNED_MAINNET.feeJuicePortalAddress) ||
+        !eq(feeJuiceAddress, PINNED_MAINNET.feeJuiceAddress)
     ) {
         throw new Error(
             "Safety check failed: the Aztec node reported L1 fee-juice contracts that do not match " +
-                "Fizz's pinned testnet addresses. Refusing to continue (your node may be compromised, " +
+                "Fizz's pinned mainnet addresses. Refusing to continue (your node may be compromised, " +
                 "or Aztec redeployed and this page needs updating). " +
                 `Node portal=${feeJuicePortalAddress} asset=${feeJuiceAddress}.`,
         );

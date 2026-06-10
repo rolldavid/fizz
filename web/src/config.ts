@@ -9,14 +9,21 @@
  */
 export const EXTENSION_ID = "bapbaajfnjockbcdhjpgpllflnhgogol";
 
-/** Canonical Aztec testnet node — l1ContractAddresses are fetched LIVE from it. */
-export const AZTEC_NODE_URL = "https://rpc.testnet.aztec-labs.com";
+/**
+ * Canonical Aztec ALPHA (mainnet) node — l1ContractAddresses are fetched LIVE
+ * from it and checked against the pin in nodeInfo.ts. The bridge is mainnet-only
+ * (Aztec mainnet has no faucet/sponsored FPC; you bridge the AZTEC token).
+ */
+export const AZTEC_NODE_URL = "https://aztec-mainnet.drpc.org";
 
-/** Friendly network id stamped into claim tickets (must match the wallet's). */
-export const AZTEC_NETWORK_ID = "testnet";
+/** Friendly network id stamped into claim tickets (must match the wallet's "alpha"). */
+export const AZTEC_NETWORK_ID = "alpha";
 
-/** Sepolia RPC used for reads/receipts — same endpoint the extension uses. */
-export const SEPOLIA_RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com";
+/** Ethereum MAINNET L1 RPC used for reads/receipts (the L1 side of the bridge). */
+export const L1_RPC_URL = "https://ethereum-rpc.publicnode.com";
+
+/** Where to acquire the AZTEC token (the L1 fee asset you bridge into fee juice). */
+export const AZTEC_TOKEN_URL = "https://aztec.network/token";
 
 /**
  * WalletConnect Cloud project id.

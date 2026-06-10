@@ -57,18 +57,18 @@
         CRS CDN (<code>crs.aztec-cdn.foundation</code>) on your first transaction. We
         operate no node and receive no traffic ourselves.</p>
         <p><strong>Running your own node:</strong> to keep your seed safe, the extension
-        only permits network traffic to <code>localhost</code> and
-        <code>*.aztec-labs.com</code>. A self-hosted node therefore has to be reachable on
-        localhost (for example via an SSH tunnel), or you build the extension with your
-        node's address added — a remote node on any other host is blocked by the
+        only permits network traffic to the Aztec nodes it ships with
+        (<code>aztec-mainnet.drpc.org</code> for Alpha, <code>*.aztec-labs.com</code> for
+        Testnet) and <code>localhost</code>. A self-hosted node therefore has to be
+        reachable on localhost (for example via an SSH tunnel), or you build the extension
+        with your node's address added — a remote node on any other host is blocked by the
         extension's content-security policy rather than silently trusted.</p>
-        <p>If you open the testnet faucet, that is a normal website visit to its
-        operator — we deliberately do <strong>not</strong> include your address in the link.</p>
         <p>If you bridge from L1 (on fizzwallet.com/bridge), the L1 transaction is public,
         like any Ethereum transaction, and links your L1 address to the funded Aztec
-        address. That page also contacts a public Sepolia RPC and, if you pick the
-        WalletConnect option, WalletConnect's relay. Fizz warns about the linkage in the
-        flow; for privacy, fund the L1 side from an exchange or faucet.</p>
+        address. On Alpha you bridge the AZTEC token on Ethereum mainnet; that page also
+        contacts a public Ethereum-mainnet RPC and, if you pick the WalletConnect option,
+        WalletConnect's relay. Fizz warns about the linkage in the flow; for privacy, fund
+        the L1 side from an exchange or a fresh address.</p>
         <p><strong>Multiple accounts:</strong> separate accounts are unlinkable on the
         Aztec layer, but funding two of them from the <em>same</em> L1 wallet links them on
         L1, and a shared node can correlate them by IP. Use a fresh L1 funding source per

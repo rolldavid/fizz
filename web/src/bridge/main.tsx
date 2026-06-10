@@ -4,18 +4,17 @@ import "@rainbow-me/rainbowkit/styles.css";
 import "../styles.css";
 import { darkTheme, getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit";
 import { WagmiProvider, http } from "wagmi";
-import { sepolia } from "wagmi/chains";
+import { mainnet } from "wagmi/chains";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SEPOLIA_RPC_URL, WALLETCONNECT_PROJECT_ID } from "../config";
+import { L1_RPC_URL, WALLETCONNECT_PROJECT_ID } from "../config";
 import { BridgePage } from "./BridgePage";
 
-// WALLETCONNECT_PROJECT_ID may be the "FIZZ_WC_PROJECT_ID" placeholder —
-// injected wallets still work; see src/config.ts and web/README.md.
+// Ethereum MAINNET — the alpha bridge moves real AZTEC into fee juice.
 const wagmiConfig = getDefaultConfig({
     appName: "Fizz — bridge fee juice",
     projectId: WALLETCONNECT_PROJECT_ID,
-    chains: [sepolia],
-    transports: { [sepolia.id]: http(SEPOLIA_RPC_URL) },
+    chains: [mainnet],
+    transports: { [mainnet.id]: http(L1_RPC_URL) },
 });
 
 const queryClient = new QueryClient();

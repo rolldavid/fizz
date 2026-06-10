@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAccount, useConfig } from "wagmi";
-import { sepolia } from "wagmi/chains";
+import { mainnet } from "wagmi/chains";
 import {
     getAccount,
     readContract,
@@ -12,10 +12,10 @@ import {
 } from "wagmi/actions";
 import { formatUnits, parseEventLogs, parseUnits } from "viem";
 import { Shell, ErrorBox, CopyButton, shortHex } from "../components";
-import { AZTEC_NETWORK_ID, AZTEC_NODE_URL } from "../config";
+import { AZTEC_NETWORK_ID, AZTEC_NODE_URL, AZTEC_TOKEN_URL } from "../config";
 import { fetchNodeInfo, type AztecNodeInfo, type Hex } from "../nodeInfo";
 import { encodeClaimTicket, type ClaimTicket } from "../claimTicket";
-import { feeAssetAbi, feeAssetHandlerAbi, feeJuicePortalAbi } from "./abi";
+import { feeAssetAbi, feeJuicePortalAbi } from "./abi";
 import { generateClaimSecretPair, type ClaimSecretPair } from "./secret";
 import { clearRecords, createRecord, listRecords, removeRecord, updateRecord, type PendingRecord } from "./pending";
 
@@ -43,7 +43,7 @@ type NodeState =
 type AssetState =
     | { status: "loading" }
     | { status: "error"; message: string }
-    | { status: "ready"; symbol: string; decimals: number; mintAmount: bigint | null };
+    | { status: "ready"; symbol: string; decimals: number };
 
 type BalanceState =
     | { status: "idle" }
@@ -51,7 +51,7 @@ type BalanceState =
     | { status: "error"; message: string }
     | { status: "ready"; value: bigint };
 
-type StepId = "secret" | "mint" | "approve" | "deposit";
+type StepId = "secret" | "approve" | "deposit";
 type StepStatus = "todo" | "active" | "done" | "failed";
 
 type Outcome = {
@@ -69,13 +69,12 @@ type Progress = {
     /** Recipient locked at first run — editing the field mid-flow must not divert a retry's claim. */
     recipient?: string;
     amount?: bigint;
-    mintDone: boolean;
     approveDone: boolean;
     depositHash?: Hex;
 };
 
-const freshProgress = (): Progress => ({ mintDone: false, approveDone: false });
-const ALL_TODO: Record<StepId, StepStatus> = { secret: "todo", mint: "todo", approve: "todo", deposit: "todo" };
+const freshProgress = (): Progress => ({ approveDone: false });
+const ALL_TODO: Record<StepId, StepStatus> = { secret: "todo", approve: "todo", deposit: "todo" };
 
 function errMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
@@ -111,8 +110,6 @@ export function BridgePage() {
 
     // The recipient is typed in — any Aztec L2 address.
     const [recipientInput, setRecipientInput] = useState("");
-
-    const [mode, setMode] = useState<"mint" | "balance">("mint");
     const [amountInput, setAmountInput] = useState("");
 
     const [running, setRunning] = useState(false);
@@ -143,23 +140,15 @@ export function BridgePage() {
 
     useEffect(() => {
         if (node.status !== "ready") return;
-        const { feeJuiceAddress, feeAssetHandlerAddress } = node.info;
+        const { feeJuiceAddress } = node.info;
         let cancelled = false;
         setAsset({ status: "loading" });
         (async () => {
             const [symbol, decimals] = await Promise.all([
-                readContract(config, { abi: feeAssetAbi, address: feeJuiceAddress, functionName: "symbol", chainId: sepolia.id }),
-                readContract(config, { abi: feeAssetAbi, address: feeJuiceAddress, functionName: "decimals", chainId: sepolia.id }),
+                readContract(config, { abi: feeAssetAbi, address: feeJuiceAddress, functionName: "symbol", chainId: mainnet.id }),
+                readContract(config, { abi: feeAssetAbi, address: feeJuiceAddress, functionName: "decimals", chainId: mainnet.id }),
             ]);
-            const mintAmount = feeAssetHandlerAddress
-                ? await readContract(config, {
-                      abi: feeAssetHandlerAbi,
-                      address: feeAssetHandlerAddress,
-                      functionName: "mintAmount",
-                      chainId: sepolia.id,
-                  })
-                : null;
-            if (!cancelled) setAsset({ status: "ready", symbol, decimals, mintAmount });
+            if (!cancelled) setAsset({ status: "ready", symbol, decimals });
         })().catch((err) => {
             if (!cancelled) setAsset({ status: "error", message: errMessage(err) });
         });
@@ -180,7 +169,7 @@ export function BridgePage() {
             address: node.info.feeJuiceAddress,
             functionName: "balanceOf",
             args: [account],
-            chainId: sepolia.id,
+            chainId: mainnet.id,
         })
             .then((value) => {
                 if (!cancelled) setBalance({ status: "ready", value });
@@ -193,22 +182,15 @@ export function BridgePage() {
         };
     }, [config, node, account, outcome]);
 
-    // When there is no faucet handler, minting is impossible.
-    const mintAvailable = asset.status === "ready" && asset.mintAmount !== null;
-    useEffect(() => {
-        if (asset.status === "ready" && asset.mintAmount === null && mode === "mint") setMode("balance");
-    }, [asset, mode]);
-
     // ── derived form validity ───────────────────────────────────────────────
     const decimals = asset.status === "ready" ? asset.decimals : 18;
-    const symbol = asset.status === "ready" ? asset.symbol : "fee asset";
+    const symbol = asset.status === "ready" ? asset.symbol : "AZTEC";
     const fmt = (v: bigint) => formatUnits(v, decimals);
 
     const recipientTrimmed = recipientInput.trim();
     const recipientValid = isValidAztecAddress(recipientTrimmed);
-    const amountValid =
-        mode === "mint" ||
-        (/^\d+(\.\d+)?$/.test(amountInput.trim()) && balance.status === "ready");
+    const hasBalance = balance.status === "ready" && balance.value > 0n;
+    const amountValid = /^\d+(\.\d+)?$/.test(amountInput.trim()) && hasBalance;
 
     const flowLocked = progress.current.secretPair !== undefined && outcome === null;
     const canStart =
@@ -226,15 +208,7 @@ export function BridgePage() {
             label: "Generate & save the claim secret",
             note: "stored in this browser before any transaction — fund safety",
         },
-        ...(mode === "mint"
-            ? [
-                  {
-                      id: "mint" as StepId,
-                      label: `Mint ${asset.status === "ready" && asset.mintAmount !== null ? fmt(asset.mintAmount) : "…"} ${symbol} (free, testnet)`,
-                  },
-              ]
-            : []),
-        { id: "approve", label: "Approve the portal to pull the fee asset" },
+        { id: "approve", label: `Approve the portal to pull your ${symbol}` },
         { id: "deposit", label: "Deposit to Aztec — one-way, L1 → L2" },
     ];
 
@@ -259,13 +233,13 @@ export function BridgePage() {
                         "recipient would strand the funds on L1.",
                 );
             }
-            if (info.l1ChainId !== sepolia.id) {
+            if (info.l1ChainId !== mainnet.id) {
                 throw new Error(
-                    `The Aztec node reports L1 chain ${info.l1ChainId}, but this page only supports Sepolia (${sepolia.id}).`,
+                    `The Aztec node reports L1 chain ${info.l1ChainId}, but this page only supports Ethereum mainnet (${mainnet.id}).`,
                 );
             }
-            if (acct.chainId !== sepolia.id) {
-                await switchChain(config, { chainId: sepolia.id });
+            if (acct.chainId !== mainnet.id) {
+                await switchChain(config, { chainId: mainnet.id });
             }
 
             // Lock the recipient on first run so editing the field can't point a
@@ -277,20 +251,13 @@ export function BridgePage() {
 
             // Lock the amount on first run so retries can't drift.
             if (progress.current.amount === undefined) {
-                if (mode === "mint") {
-                    if (meta.mintAmount === null) {
-                        throw new Error("This network has no free fee-asset handler — bridge your own balance instead.");
-                    }
-                    progress.current.amount = meta.mintAmount;
-                } else {
-                    if (balance.status !== "ready") throw new Error("Your fee-asset balance has not loaded yet.");
-                    const parsed = parseUnits(amountInput.trim(), meta.decimals);
-                    if (parsed <= 0n) throw new Error("Amount must be greater than zero.");
-                    if (parsed > balance.value) {
-                        throw new Error(`Amount exceeds your balance of ${fmt(balance.value)} ${meta.symbol}.`);
-                    }
-                    progress.current.amount = parsed;
+                if (balance.status !== "ready") throw new Error(`Your ${meta.symbol} balance has not loaded yet.`);
+                const parsed = parseUnits(amountInput.trim(), meta.decimals);
+                if (parsed <= 0n) throw new Error("Amount must be greater than zero.");
+                if (parsed > balance.value) {
+                    throw new Error(`Amount exceeds your balance of ${fmt(balance.value)} ${meta.symbol}.`);
                 }
+                progress.current.amount = parsed;
             }
             const amount = progress.current.amount;
 
@@ -301,7 +268,7 @@ export function BridgePage() {
                 const pair = await generateClaimSecretPair();
                 const record = createRecord({
                     networkId: AZTEC_NETWORK_ID,
-                    l1ChainId: sepolia.id,
+                    l1ChainId: mainnet.id,
                     recipient,
                     amount: amount.toString(),
                     claimSecret: pair.secret,
@@ -316,29 +283,7 @@ export function BridgePage() {
             if (!recordId) throw new Error("Internal: claim record id missing.");
             setStep("secret", "done");
 
-            // 2 — optional free mint (testnet handler mints a FIXED batch).
-            if (mode === "mint" && !progress.current.mintDone) {
-                active = "mint";
-                setStep("mint", "active");
-                if (!info.feeAssetHandlerAddress) {
-                    throw new Error("The node reports no fee-asset handler address.");
-                }
-                const mintHash = await writeContract(config, {
-                    abi: feeAssetHandlerAbi,
-                    address: info.feeAssetHandlerAddress,
-                    functionName: "mint",
-                    args: [acct.address],
-                    chainId: sepolia.id,
-                });
-                const mintReceipt = await waitForTransactionReceipt(config, { hash: mintHash, chainId: sepolia.id });
-                if (mintReceipt.status !== "success") {
-                    throw new Error(`Mint transaction reverted on L1 (${mintHash}).`);
-                }
-                progress.current.mintDone = true;
-            }
-            if (mode === "mint") setStep("mint", "done");
-
-            // 3 — approve the portal.
+            // 2 — approve the portal to pull the user's AZTEC.
             if (!progress.current.approveDone) {
                 active = "approve";
                 setStep("approve", "active");
@@ -347,9 +292,9 @@ export function BridgePage() {
                     address: info.feeJuiceAddress,
                     functionName: "approve",
                     args: [info.feeJuicePortalAddress, amount],
-                    chainId: sepolia.id,
+                    chainId: mainnet.id,
                 });
-                const approveReceipt = await waitForTransactionReceipt(config, { hash: approveHash, chainId: sepolia.id });
+                const approveReceipt = await waitForTransactionReceipt(config, { hash: approveHash, chainId: mainnet.id });
                 if (approveReceipt.status !== "success") {
                     throw new Error(`Approve transaction reverted on L1 (${approveHash}).`);
                 }
@@ -357,7 +302,7 @@ export function BridgePage() {
             }
             setStep("approve", "done");
 
-            // 4 — the deposit itself (simulated first to surface reverts early).
+            // 3 — the deposit itself (simulated first to surface reverts early).
             active = "deposit";
             setStep("deposit", "active");
             let depositHash = progress.current.depositHash;
@@ -368,14 +313,14 @@ export function BridgePage() {
                     functionName: "depositToAztecPublic",
                     args: [recipient as Hex, amount, secretHash],
                     account: acct.address,
-                    chainId: sepolia.id,
+                    chainId: mainnet.id,
                 });
                 depositHash = await writeContract(config, sim.request);
                 progress.current.depositHash = depositHash;
                 updateRecord(recordId, { l1TxHash: depositHash });
                 setRecords(listRecords());
             }
-            const receipt = await waitForTransactionReceipt(config, { hash: depositHash, chainId: sepolia.id });
+            const receipt = await waitForTransactionReceipt(config, { hash: depositHash, chainId: mainnet.id });
             if (receipt.status !== "success") {
                 // A reverted deposit moved nothing; a retry must send a NEW deposit.
                 progress.current.depositHash = undefined;
@@ -433,13 +378,14 @@ export function BridgePage() {
     return (
         <Shell page="bridge">
             <section className="page-hero">
-                <span className="pill">Testnet · Sepolia → Aztec</span>
+                <span className="pill">Mainnet · Ethereum → Aztec</span>
                 <h1>
                     Get <em>fee juice</em> (gas) on Aztec
                 </h1>
                 <p className="sub">
-                    Bridge the L1 fee asset from Ethereum Sepolia into fee juice on any Aztec address — from your
+                    Bridge the AZTEC token from Ethereum mainnet into fee juice on any Aztec address — from your
                     own Ethereum wallet. Fee juice only, one-way only: both are Aztec protocol rules, not ours.
+                    This moves real AZTEC; double-check the amount and recipient.
                 </p>
             </section>
 
@@ -449,24 +395,25 @@ export function BridgePage() {
                     <ConnectButton showBalance={false} />
                 </div>
 
-                {node.status === "loading" && <p className="hint">Fetching canonical addresses from the Aztec testnet node…</p>}
+                {node.status === "loading" && <p className="hint">Fetching canonical addresses from the Aztec mainnet node…</p>}
                 {node.status === "error" && (
                     <>
-                        <ErrorBox title="Could not reach the Aztec testnet node">{node.message}</ErrorBox>
+                        <ErrorBox title="Could not reach the Aztec mainnet node">{node.message}</ErrorBox>
                         <button type="button" className="btn btn-ghost btn-small" onClick={loadNode}>
                             Retry
                         </button>
                     </>
                 )}
-                {asset.status === "error" && <ErrorBox title="Could not read the L1 fee asset">{asset.message}</ErrorBox>}
+                {asset.status === "error" && <ErrorBox title="Could not read the AZTEC fee asset">{asset.message}</ErrorBox>}
 
                 {node.status === "ready" && asset.status === "ready" && (
                     <>
-                        {/* Step 1 — connect the L1 wallet that pays for the deposit. */}
+                        {/* Step 1 — connect the L1 wallet that holds AZTEC + pays gas. */}
                         {!isConnected && (
                             <p className="hint">
-                                <strong>Step 1 — connect an Ethereum wallet</strong> on Sepolia (top-right). It pays
-                                the L1 gas; the fee juice itself lands on the Aztec address you enter below.
+                                <strong>Step 1 — connect an Ethereum wallet</strong> on mainnet (top-right). It holds
+                                the {symbol} you'll bridge and pays the L1 gas; the fee juice lands on the Aztec
+                                address you enter below.
                             </p>
                         )}
 
@@ -500,81 +447,55 @@ export function BridgePage() {
                             )}
                         </div>
 
-                        {/* Step 3 — source of the fee asset. */}
-                        <div className="field">
-                            <label>{isConnected ? "Step 3 — " : ""}Where does the fee asset come from?</label>
-                            <div className="choice-list">
-                                {mintAvailable && asset.mintAmount !== null && (
-                                    <label className={`choice${mode === "mint" ? " selected" : ""}`}>
-                                        <input
-                                            type="radio"
-                                            name="mode"
-                                            checked={mode === "mint"}
-                                            onChange={() => setMode("mint")}
-                                            disabled={flowLocked || running}
-                                        />
-                                        <span>
-                                            <span className="choice-title">
-                                                Get {fmt(asset.mintAmount)} {symbol} free
-                                            </span>
-                                            <br />
-                                            <span className="choice-desc">
-                                                The testnet handler mints a fixed batch (exactly {fmt(asset.mintAmount)}) to your
-                                                wallet, then we bridge it.
-                                            </span>
-                                        </span>
-                                    </label>
-                                )}
-                                <label className={`choice${mode === "balance" ? " selected" : ""}`}>
-                                    <input
-                                        type="radio"
-                                        name="mode"
-                                        checked={mode === "balance"}
-                                        onChange={() => setMode("balance")}
-                                        disabled={flowLocked || running}
-                                    />
-                                    <span>
-                                        <span className="choice-title">Bridge my existing {symbol}</span>
-                                        <br />
-                                        <span className="choice-desc">
-                                            {balance.status === "ready" && `Your balance: ${fmt(balance.value)} ${symbol}.`}
-                                            {balance.status === "loading" && "Loading your balance…"}
-                                            {balance.status === "idle" && "Connect a wallet to see your balance."}
-                                            {balance.status === "error" && `Balance lookup failed: ${balance.message}`}
-                                        </span>
-                                    </span>
-                                </label>
-                            </div>
-                        </div>
-
-                        {mode === "balance" && (
-                            <div className="field">
-                                <label htmlFor="amount">Amount ({symbol})</label>
-                                <input
-                                    id="amount"
-                                    type="text"
-                                    inputMode="decimal"
-                                    placeholder={balance.status === "ready" ? fmt(balance.value) : "0"}
-                                    value={amountInput}
-                                    onChange={(e) => setAmountInput(e.target.value)}
-                                    disabled={flowLocked || running}
-                                    spellCheck={false}
-                                    autoComplete="off"
-                                />
-                                {balance.status === "ready" && (
-                                    <p className="sub-label">
-                                        <button
-                                            type="button"
-                                            className="btn btn-ghost btn-small"
-                                            disabled={flowLocked || running}
-                                            onClick={() => setAmountInput(fmt(balance.value))}
-                                        >
-                                            Use full balance
-                                        </button>
-                                    </p>
-                                )}
+                        {/* No AZTEC yet → point at where to get it (no faucet on mainnet). */}
+                        {isConnected && balance.status === "ready" && balance.value === 0n && (
+                            <div className="note-box">
+                                <strong>You have no {symbol} on Ethereum mainnet.</strong> Fee juice is bridged from
+                                the AZTEC token — there's no faucet on mainnet. Get {symbol} at{" "}
+                                <a href={AZTEC_TOKEN_URL} target="_blank" rel="noopener noreferrer">
+                                    {AZTEC_TOKEN_URL.replace("https://", "")}
+                                </a>
+                                , then come back.
                             </div>
                         )}
+
+                        {/* Step 3 — amount of AZTEC to bridge. */}
+                        <div className="field">
+                            <label htmlFor="amount">
+                                {isConnected ? "Step 3 — " : ""}Amount of {symbol} to bridge
+                                {balance.status === "ready" && ` (balance: ${fmt(balance.value)})`}
+                            </label>
+                            <input
+                                id="amount"
+                                type="text"
+                                inputMode="decimal"
+                                placeholder={balance.status === "ready" ? fmt(balance.value) : "0"}
+                                value={amountInput}
+                                onChange={(e) => setAmountInput(e.target.value)}
+                                disabled={flowLocked || running || !hasBalance}
+                                spellCheck={false}
+                                autoComplete="off"
+                            />
+                            {balance.status === "loading" && <p className="sub-label">Loading your balance…</p>}
+                            {balance.status === "error" && (
+                                <p className="sub-label" style={{ color: "var(--warn)" }}>
+                                    Balance lookup failed: {balance.message}
+                                </p>
+                            )}
+                            {hasBalance && (
+                                <p className="sub-label">
+                                    <button
+                                        type="button"
+                                        className="btn btn-ghost btn-small"
+                                        disabled={flowLocked || running}
+                                        onClick={() => setAmountInput(fmt(balance.value))}
+                                    >
+                                        Use full balance
+                                    </button>{" "}
+                                    Roughly ~2.3 fee juice ≈ one Aztec transaction.
+                                </p>
+                            )}
+                        </div>
 
                         {outcome === null && (
                             <div className="row-actions">
@@ -637,7 +558,7 @@ export function BridgePage() {
                                     <CopyButton text={outcome.encoded} label="Copy claim ticket" />
                                     <a
                                         className="btn btn-ghost btn-small"
-                                        href={`https://sepolia.etherscan.io/tx/${outcome.l1TxHash}`}
+                                        href={`https://etherscan.io/tx/${outcome.l1TxHash}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                     >
@@ -652,7 +573,8 @@ export function BridgePage() {
 
                         <div className="note-box">
                             <span className="live-dot" /> <strong>Canonical addresses</strong> — fetched live from the Aztec
-                            testnet node ({AZTEC_NODE_URL.replace("https://", "")}, v{node.info.nodeVersion}), never hardcoded:
+                            mainnet node ({AZTEC_NODE_URL.replace("https://", "")}, v{node.info.nodeVersion}) and verified
+                            against Fizz's pinned values:
                             <table className="addr-table">
                                 <tbody>
                                     <tr>
@@ -662,12 +584,6 @@ export function BridgePage() {
                                     <tr>
                                         <td>Fee asset ({symbol})</td>
                                         <td><code>{node.info.feeJuiceAddress}</code></td>
-                                    </tr>
-                                    <tr>
-                                        <td>Free minter</td>
-                                        <td>
-                                            <code>{node.info.feeAssetHandlerAddress ?? "— none on this network"}</code>
-                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -748,6 +664,19 @@ export function BridgePage() {
                     </p>
                 </div>
                 <div className="explainer">
+                    <div className="emoji">🪙</div>
+                    <h3>Bridged from AZTEC</h3>
+                    <p>
+                        On mainnet the L1 fee asset is the <strong>AZTEC</strong> token. You bridge AZTEC through the
+                        canonical FeeJuicePortal; it's locked on L1 and the same amount of fee juice is minted to
+                        your Aztec address. Get AZTEC at{" "}
+                        <a href={AZTEC_TOKEN_URL} target="_blank" rel="noopener noreferrer">
+                            {AZTEC_TOKEN_URL.replace("https://", "")}
+                        </a>
+                        .
+                    </p>
+                </div>
+                <div className="explainer">
                     <div className="emoji">🎫</div>
                     <h3>You get a claim ticket</h3>
                     <p>
@@ -765,22 +694,14 @@ export function BridgePage() {
                     </p>
                 </div>
                 <div className="explainer">
-                    <div className="emoji">🫧</div>
-                    <h3>Do you even need this?</h3>
-                    <p>
-                        Probably not yet! On the Aztec testnet, fees are usually <strong>sponsored</strong> — Fizz
-                        works with an empty wallet. Bridging is for when you want to pay your own way.
-                    </p>
-                </div>
-                <div className="explainer">
                     <div className="emoji">👁️</div>
                     <h3>Privacy note</h3>
                     <p>
                         Bridging is a <strong>public L1 action</strong>: it visibly links your Ethereum address to
-                        the funded Aztec address. For privacy, fund the L1 side from an exchange or faucet — not
-                        your main wallet. This page contacts the Aztec node and a public Sepolia RPC (which see
-                        your IP); the WalletConnect option also uses WalletConnect's relay — an injected wallet
-                        (MetaMask, Rabby) avoids that.
+                        the funded Aztec address. For privacy, fund the L1 side from an exchange or fresh address —
+                        not a wallet that's publicly you. This page contacts the Aztec node and a public mainnet
+                        RPC (which see your IP); the WalletConnect option also uses WalletConnect's relay — an
+                        injected wallet (MetaMask, Rabby) avoids that.
                     </p>
                 </div>
             </section>
