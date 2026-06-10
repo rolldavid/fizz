@@ -7,6 +7,7 @@ import { WagmiProvider, http } from "wagmi";
 import { mainnet } from "wagmi/chains";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { L1_RPC_URL, WALLETCONNECT_PROJECT_ID } from "../config";
+import { ConnectionProvider } from "../connection";
 import { BridgePage } from "./BridgePage";
 
 // Ethereum MAINNET — the alpha bridge moves real AZTEC into fee juice.
@@ -33,7 +34,9 @@ ReactDOM.createRoot(rootEl).render(
                         borderRadius: "large",
                     })}
                 >
-                    <BridgePage />
+                    <ConnectionProvider>
+                        <BridgePage />
+                    </ConnectionProvider>
                 </RainbowKitProvider>
             </QueryClientProvider>
         </WagmiProvider>

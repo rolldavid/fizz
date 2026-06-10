@@ -4,6 +4,44 @@
 import { useState, type ReactNode } from "react";
 import logoUrl from "./assets/fizzlogo.svg";
 import { CHROME_STORE_URL, GITHUB_URL } from "./config";
+import { useConnection } from "./connection";
+
+/**
+ * Context-aware nav button: Install Wallet (no extension / mobile / non-Chromium)
+ * → Connect Wallet (installed, not connected) → ✓ Connected (click to disconnect).
+ * The connect handshake lives here in the nav, site-wide.
+ */
+function NavWalletButton() {
+    const { platform, status, connecting, connect, disconnect } = useConnection();
+    if (status === "connected") {
+        return (
+            <button
+                type="button"
+                className="install-btn wallet-connected"
+                onClick={() => void disconnect()}
+                title="Disconnect Fizz"
+            >
+                ✓ Connected
+            </button>
+        );
+    }
+    if (platform.canUseExtension && status === "disconnected") {
+        return (
+            <button type="button" className="install-btn" disabled={connecting} onClick={() => void connect()}>
+                {connecting ? "Connecting…" : "Connect Wallet"}
+            </button>
+        );
+    }
+    if (platform.canUseExtension && status === "checking") {
+        return <span className="install-btn install-btn-muted">Wallet…</span>;
+    }
+    // Not installed, mobile, or non-Chromium → point at the store.
+    return (
+        <a className="install-btn" href={CHROME_STORE_URL} target="_blank" rel="noopener noreferrer">
+            Install Wallet
+        </a>
+    );
+}
 
 export function Shell({ page, children }: { page: "bridge" | "launch"; children: ReactNode }) {
     return (
@@ -17,16 +55,9 @@ export function Shell({ page, children }: { page: "bridge" | "launch"; children:
                         <img className="logo" src={logoUrl} alt="Fizz" />
                     </a>
                     <nav className="site-nav">
-                        <a href="/bridge/" aria-current={page === "bridge" ? "page" : undefined}>Bridge</a>
-                        <a href="/launch/" aria-current={page === "launch" ? "page" : undefined}>Launch</a>
-                        <a
-                            className="install-btn"
-                            href={CHROME_STORE_URL}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                        >
-                            Install Wallet
-                        </a>
+                        <a href="/bridge/" aria-current={page === "bridge" ? "page" : undefined}>Get Gas</a>
+                        <a href="/launch/" aria-current={page === "launch" ? "page" : undefined}>Launch a Token</a>
+                        <NavWalletButton />
                     </nav>
                 </header>
                 <main>{children}</main>

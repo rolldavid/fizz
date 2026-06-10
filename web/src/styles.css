@@ -62,9 +62,10 @@ a:hover { color: var(--accent); }
     border-bottom: 1px solid var(--surface-2);
 }
 .site-header .logo-link { display: inline-flex; align-items: center; }
-.site-header img.logo { height: 40px; display: block; }
+.site-header img.logo { height: 34px; display: block; }
 .install-btn {
-    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-width: 132px; white-space: nowrap;
     font-weight: 700; font-size: 14px; padding: 9px 18px; border-radius: 999px;
     text-decoration: none; color: #fff;
     background: linear-gradient(135deg, var(--accent), var(--purple));
@@ -73,6 +74,16 @@ a:hover { color: var(--accent); }
 }
 .install-btn:hover { color: #fff; box-shadow: 0 0 28px rgba(255, 92, 148, .55); }
 .install-btn:active { transform: scale(.98); }
+.install-btn:disabled { opacity: .6; cursor: default; box-shadow: none; }
+/* Connected: calm green, no glow — it's a status, not a CTA. */
+.install-btn.wallet-connected {
+    background: rgba(76, 214, 164, .14); color: var(--ok);
+    border: 1px solid rgba(76, 214, 164, .5); box-shadow: none;
+}
+.install-btn.wallet-connected:hover { color: var(--ok); box-shadow: none; border-color: var(--ok); }
+.install-btn.install-btn-muted {
+    background: var(--surface-2); color: var(--dim); box-shadow: none; cursor: default;
+}
 /* Right-bunched nav: Bridge, Launch, then the Install Wallet button. */
 .site-nav { display: flex; align-items: center; gap: 6px; }
 .site-nav a:not(.install-btn) {
@@ -241,7 +252,7 @@ input::placeholder { color: #594d85; }
     .site-header img.logo { height: 32px; }
     .site-nav { gap: 4px; }
     .site-nav a:not(.install-btn) { padding: 6px 8px; font-size: 13px; }
-    .install-btn { padding: 8px 13px; font-size: 13px; }
+    .install-btn { padding: 8px 13px; font-size: 13px; min-width: 0; }
     .page-hero { padding-top: 24px; }
     .field-row { gap: 8px; }
 }
