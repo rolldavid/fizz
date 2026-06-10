@@ -9,7 +9,7 @@ web/node_modules
 .cache
 .env
 .env.local
-.tsbuildinfo
+*.tsbuildinfo
 chrome/
 *.zip
 LOOP_STATE.md

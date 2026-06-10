@@ -76,26 +76,12 @@ export function sendToFizz<T extends { ok: boolean }>(
     });
 }
 
-/**
- * Presence probe. A boolean by design: "not installed" is a normal state this
- * page renders (install CTA), not an error to propagate.
- */
-export async function pingFizz(): Promise<boolean> {
-    if (!fizzMessagingAvailable()) return false;
-    try {
-        const res = await sendToFizz<FizzOk & { wallet?: string }>({ type: "fizz:ping" }, 2000);
-        return res.ok === true && res.wallet === "fizz";
-    } catch {
-        return false;
-    }
-}
-
 export type ConnectionStatus = { installed: boolean; connected: boolean };
 
 /**
  * Whether Fizz is installed and whether THIS origin is currently connected.
  * `installed:false` is a normal state (install CTA), so a failed round-trip is
- * reported as "not installed", not thrown — same rationale as pingFizz.
+ * reported as "not installed", not thrown.
  *
  * Address-blind: the wallet returns only a boolean. It never reveals the user's
  * address, account, or balances over this channel.

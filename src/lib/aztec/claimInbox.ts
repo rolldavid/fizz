@@ -59,9 +59,9 @@ async function adoptTickets(tickets: ClaimTicket[]): Promise<number> {
 }
 
 /**
- * Manual import: paste a ticket string on the Bridge screen. Decodes (which
- * validates) and writes encrypted — no plaintext hop. Returns 1 if newly
- * adopted, 0 if already present.
+ * Manual import fallback: paste a ticket string. Decodes (which validates) and
+ * writes encrypted, no plaintext hop. Returns 1 if newly adopted, 0 if already
+ * present. Not wired to UI today (the bridge auto-sends), kept as a fallback.
  */
 export async function importClaimTicketText(text: string): Promise<number> {
     return adoptTickets([decodeClaimTicket(text)]);
