@@ -1,5 +1,8 @@
 node_modules
 dist
+# web/ (fizzwallet.com pages) has its own package; only its BUILT output
+# (committed into landing/) ships.
+web/node_modules
 .DS_Store
 *.log
 .vite

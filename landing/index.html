@@ -107,6 +107,19 @@
         .benefit h3 { font-size: 15px; margin: 8px 0 4px; }
         .benefit p { color: var(--dim); font-size: 13px; }
 
+        .tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin: 0 0 8px; }
+        .tool {
+            display: flex; gap: 14px; align-items: flex-start;
+            background: var(--surface); border: 1px solid var(--border-strong); border-radius: 16px;
+            padding: 20px; text-decoration: none; color: var(--text);
+            transition: border-color .15s ease, transform .15s ease;
+        }
+        .tool:hover { border-color: var(--accent); transform: translateY(-1px); }
+        .tool .emoji { font-size: 24px; }
+        .tool h3 { font-size: 15px; margin-bottom: 4px; }
+        .tool h3 .arrow { color: var(--accent); }
+        .tool p { color: var(--dim); font-size: 13px; }
+
         .install { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 20px; padding: 28px; margin: 24px 0 56px; }
         .install h2 { font-size: 20px; margin-bottom: 6px; }
         .install p { color: var(--dim); font-size: 14px; }
@@ -174,6 +187,26 @@
             </div>
         </section>
 
+        <section class="tools" aria-label="Companion tools">
+            <a class="tool" href="./bridge/">
+                <div class="emoji">⛽</div>
+                <div>
+                    <h3>Bridge fee juice <span class="arrow">→</span></h3>
+                    <p>Bring your own gas: bridge the Sepolia fee asset from your own Ethereum wallet straight
+                       into your Fizz wallet. Works with the Fizz extension — connect it and the claim ticket
+                       is picked up automatically.</p>
+                </div>
+            </a>
+            <a class="tool" href="./launch/">
+                <div class="emoji">🚀</div>
+                <div>
+                    <h3>Launch a token <span class="arrow">→</span></h3>
+                    <p>Name it, pick a supply, and deploy a private-ready Aztec token. Works with the Fizz
+                       extension — you review and confirm in the wallet, proving runs right on your device.</p>
+                </div>
+            </a>
+        </section>
+
         <section class="install" id="install">
             <span class="pill">Alpha</span>
             <h2>Install the extension</h2>
@@ -196,7 +229,9 @@
                 in a pocket.
             </p>
             <p>
-                <a href="./privacy.html">Privacy policy</a>
+                <a href="./bridge/">Bridge fee juice</a>
+                &nbsp;·&nbsp; <a href="./launch/">Launch a token</a>
+                &nbsp;·&nbsp; <a href="./privacy.html">Privacy policy</a>
                 &nbsp;·&nbsp; <a href="https://docs.aztec.network" target="_blank" rel="noopener noreferrer">Aztec network</a>                &nbsp;·&nbsp; open source &nbsp;·&nbsp; no analytics, ever
             </p>
         </footer>
