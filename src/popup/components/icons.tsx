@@ -54,6 +54,14 @@ export const CheckIcon = (p: Props) => (
     </Svg>
 );
 
+/** Two opposing arrows — convert between private and public balance. */
+export const ConvertIcon = (p: Props) => (
+    <Svg {...p}>
+        <path d="M17 3v14M17 17l-3-3M17 17l3-3" />
+        <path d="M7 21V7M7 7L4 10M7 7l3 3" />
+    </Svg>
+);
+
 export const ShareIcon = (p: Props) => (
     <Svg {...p}>
         <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />

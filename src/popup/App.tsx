@@ -9,6 +9,7 @@ import { Receive } from "./pages/Receive";
 import { Bridge } from "./pages/Bridge";
 import { Deploy } from "./pages/Deploy";
 import { Mint } from "./pages/Mint";
+import { Convert, type ConvertTarget } from "./pages/Convert";
 import { Contacts } from "./pages/Contacts";
 import { RevealPhrase } from "./pages/RevealPhrase";
 import { vaultStore } from "../lib/vault/store";
@@ -21,6 +22,7 @@ type Route =
     | "bridge"
     | "deploy"
     | "mint"
+    | "convert"
     | "contacts"
     | "reveal";
 
@@ -98,6 +100,9 @@ function Shell() {
     // Deep-link support: a standalone window / tab opened at index.html#deploy
     // lands on that page after unlock (the toolbar popup has no hash → home).
     const [route, setRoute] = useState<Route>(() => routeFromHash(window.location.hash));
+    // The token + direction for the Convert screen (set when a token row's
+    // convert icon is tapped).
+    const [convertTarget, setConvertTarget] = useState<ConvertTarget | null>(null);
     // Live hash navigation too: changing the hash on an already-open wallet
     // page routes without a reload (used by deep links into a running session).
     useEffect(() => {
@@ -105,6 +110,11 @@ function Shell() {
         window.addEventListener("hashchange", onHash);
         return () => window.removeEventListener("hashchange", onHash);
     }, []);
+
+    const openConvert = (target: ConvertTarget) => {
+        setConvertTarget(target);
+        setRoute("convert");
+    };
 
     if (status === "uninitialized") return <Onboarding />;
     if (status === "locked") return <Unlock />;
@@ -122,7 +132,7 @@ function Shell() {
 
     return (
         <div className="app fade-in">
-            {route === "home" && <Home onNavigate={setRoute} />}
+            {route === "home" && <Home onNavigate={setRoute} onConvert={openConvert} />}
             {route === "send" && <Send onBack={() => setRoute("home")} />}
             {route === "receive" && <Receive onBack={() => setRoute("home")} />}
             {route === "bridge" && <Bridge onBack={() => setRoute("home")} />}
@@ -131,6 +141,9 @@ function Shell() {
                 user ever saw it ("deploy did nothing" in live testing). */}
             {route === "deploy" && <Deploy onBack={() => setRoute("home")} />}
             {route === "mint" && <Mint onBack={() => setRoute("home")} />}
+            {route === "convert" && convertTarget && (
+                <Convert target={convertTarget} onBack={() => setRoute("home")} />
+            )}
             {route === "contacts" && <Contacts onBack={() => setRoute("home")} />}
             {route === "reveal" && <RevealPhrase onBack={() => setRoute("home")} />}
         </div>

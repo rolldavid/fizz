@@ -2,9 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Header, shortAddress } from "../components/Header";
 import { Identicon } from "../components/Identicon";
 import { DeployRecovery } from "../components/DeployRecovery";
-import { CheckIcon, CopyIcon, KeyIcon, LockIcon, PeopleIcon, QrIcon } from "../components/icons";
+import {
+    CheckIcon,
+    ConvertIcon,
+    CopyIcon,
+    KeyIcon,
+    LockIcon,
+    PeopleIcon,
+    QrIcon,
+    TrashIcon,
+} from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
-import { KEYS, storage } from "../../lib/storage";
 import {
     formatUnits,
     getTokenBalance,
@@ -30,14 +38,19 @@ type RowState = {
     loading: boolean;
 };
 
-export function Home({ onNavigate }: { onNavigate: (r: Route) => void }) {
+export function Home({
+    onNavigate,
+    onConvert,
+}: {
+    onNavigate: (r: Route) => void;
+    onConvert: (target: import("./Convert").ConvertTarget) => void;
+}) {
     const { wallet, account, accounts, switchAccount, addAccount, lock, network } = useWallet();
     const [rows, setRows] = useState<RowState[]>([]);
     const [tab, setTab] = useState<Tab>("private");
     const [showAdd, setShowAdd] = useState(false);
     const [showAccounts, setShowAccounts] = useState(false);
     const [copied, setCopied] = useState(false);
-    const [showIntro, setShowIntro] = useState(false);
     const [sponsored, setSponsored] = useState<boolean | null>(null);
 
     useEffect(() => {
@@ -51,15 +64,6 @@ export function Home({ onNavigate }: { onNavigate: (r: Route) => void }) {
             cancelled = true;
         };
     }, [wallet]);
-
-    useEffect(() => {
-        storage.get<boolean>(KEYS.homeIntroSeen).then((seen) => setShowIntro(!seen));
-    }, []);
-
-    function dismissIntro() {
-        setShowIntro(false);
-        void storage.set(KEYS.homeIntroSeen, true);
-    }
 
     const refresh = useCallback(async () => {
         if (!wallet || !account) return;
@@ -141,26 +145,6 @@ export function Home({ onNavigate }: { onNavigate: (r: Route) => void }) {
             <div className="content">
                 {/* Surfaces (and recovers) a deploy interrupted by the popup closing. */}
                 <DeployRecovery onRecovered={refresh} />
-                {showIntro && (
-                    <div
-                        className="card card-accent fade-in"
-                        style={{ display: "flex", flexDirection: "column", gap: 8 }}
-                    >
-                        <div style={{ fontWeight: 600 }}>👋 Two kinds of balance</div>
-                        <div className="hint">
-                            <b>Private</b> is hidden on-chain. <b>Public</b> is visible, like a
-                            normal token. You can send either way, and use <b>Convert</b> (in Send)
-                            to move between them anytime.
-                        </div>
-                        <button
-                            className="btn btn-ghost"
-                            style={{ alignSelf: "flex-end", padding: "6px 14px", fontSize: 12 }}
-                            onClick={dismissIntro}
-                        >
-                            Got it
-                        </button>
-                    </div>
-                )}
 
                 {/* Account card — identicon + short address + tap to copy / share */}
                 <div className="card" style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -235,11 +219,10 @@ export function Home({ onNavigate }: { onNavigate: (r: Route) => void }) {
                     />
                 )}
 
-                <FeeJuiceCard
+                <FeeJuiceLine
                     row={feeJuiceRow}
                     onBridge={() => onNavigate("bridge")}
-                    faucetUrl={network.faucetUrl}
-                    address={addrStr}
+                    unit={network.id === "alpha" ? "AZTEC" : "JUICE"}
                     sponsored={sponsored === true}
                 />
 
@@ -266,34 +249,6 @@ export function Home({ onNavigate }: { onNavigate: (r: Route) => void }) {
                         <span className="tab-dot" /> Public
                     </button>
                 </div>
-
-                {tab === "private" && (
-                    <div
-                        className="hint"
-                        style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            gap: 8,
-                        }}
-                    >
-                        <span>Expecting a private payment but don't see it?</span>
-                        <button
-                            onClick={() => onNavigate("receive")}
-                            style={{
-                                color: "var(--accent)",
-                                fontWeight: 600,
-                                whiteSpace: "nowrap",
-                                cursor: "pointer",
-                                background: "none",
-                                border: "none",
-                                padding: 0,
-                            }}
-                        >
-                            Add the sender →
-                        </button>
-                    </div>
-                )}
 
                 <div>
                     <div
@@ -339,6 +294,14 @@ export function Home({ onNavigate }: { onNavigate: (r: Route) => void }) {
                             key={row.token.address}
                             row={row}
                             tab={tab}
+                            // Convert to the OPPOSITE of the list this row is shown in:
+                            // a private-list row makes the balance public (unshield).
+                            onConvert={() =>
+                                onConvert({
+                                    tokenAddress: row.token.address,
+                                    direction: tab === "private" ? "unshield" : "shield",
+                                })
+                            }
                             onRemove={async () => {
                                 await removeToken(network.id, row.token.address);
                                 refresh();
@@ -362,6 +325,16 @@ export function Home({ onNavigate }: { onNavigate: (r: Route) => void }) {
                     style={{ textAlign: "center", fontSize: 10, opacity: 0.6, marginTop: 4 }}
                 >
                     build {new Date(__BUILD_TIME__).toLocaleString()}
+                </div>
+
+                {/* Sticky reminder: private notes are only discovered for senders
+                    you've registered, so a private payment can sit invisible until
+                    you add the sender. Pinned to the bottom so it's always in reach. */}
+                <div className="private-note-bar">
+                    <span>🔒 Expecting a private payment but don't see it?</span>
+                    <button className="link" onClick={() => onNavigate("receive")}>
+                        Add the sender →
+                    </button>
                 </div>
             </div>
         </>
@@ -400,28 +373,21 @@ function AccountSwitcher({
         <div className="modal-backdrop">
             <div
                 className="card fade-in"
-                style={{ width: "100%", display: "flex", flexDirection: "column", gap: 8 }}
+                style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}
             >
-                <div style={{ fontWeight: 600 }}>Accounts</div>
-                <div className="hint" style={{ fontSize: 11 }}>
-                    Separate accounts keep activities unlinkable on Aztec — e.g. one for public
-                    bridging/funding, another for private spending. All derive from your one
-                    recovery phrase. (Funding two from the same L1 wallet, or using one shared
-                    node, can still link them — fund each from a different source for full
-                    separation.)
-                </div>
+                <div style={{ fontWeight: 600, fontSize: 17 }}>Accounts</div>
                 {accounts.map((a) => (
                     <button
                         key={a.index}
                         className="token-row"
                         disabled={busy}
-                        style={{ cursor: "pointer", textAlign: "left", width: "100%" }}
+                        style={{ cursor: "pointer", textAlign: "left", width: "100%", padding: "12px 14px" }}
                         onClick={() => run(() => onPick(a.index))}
                     >
-                        <div className="token-meta" style={{ minWidth: 0 }}>
-                            <Identicon address={a.address.toString()} size={28} />
+                        <div className="token-meta" style={{ minWidth: 0, gap: 12 }}>
+                            <Identicon address={a.address.toString()} size={36} />
                             <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 500 }}>
+                                <div style={{ fontWeight: 600, fontSize: 15 }}>
                                     {a.label}
                                     {a.index === activeIndex && (
                                         <span style={{ color: "var(--success)" }}> ✓</span>
@@ -429,7 +395,7 @@ function AccountSwitcher({
                                 </div>
                                 <div
                                     className="muted"
-                                    style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}
+                                    style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }}
                                 >
                                     {shortAddress(a.address.toString(), 8, 6)}
                                 </div>
@@ -455,98 +421,55 @@ function AccountSwitcher({
     );
 }
 
-function FeeJuiceCard({
+/** Fee juice (gas) — a single compact line: balance + a tap-through to bridge. */
+function FeeJuiceLine({
     row,
     onBridge,
-    faucetUrl,
-    address,
+    unit,
     sponsored,
 }: {
     row: RowState | undefined;
     onBridge: () => void;
-    faucetUrl?: string;
-    address: string;
+    unit: string;
     sponsored: boolean;
 }) {
     const balance = row?.balance.public ?? 0n;
-    const needsFunding = balance === 0n && !row?.loading && !sponsored;
-
-    function openFaucet() {
-        if (!faucetUrl) return;
-        // Deliberately NOT pre-filling the address into the URL: query strings
-        // land in the faucet operator's server logs (plus referrers/history),
-        // handing them a clean IP↔address pair. The user pastes it themselves.
-        void address;
-        window.open(faucetUrl, "_blank", "noopener,noreferrer");
-    }
-
     return (
-        <div className="card card-accent">
-            <div
-                style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 6,
-                }}
-            >
-                <div className="muted">Fee juice (gas)</div>
-                <div style={{ display: "flex", gap: 6 }}>
-                    {faucetUrl && (
-                        <button
-                            className="btn btn-ghost"
-                            style={{ padding: "4px 10px", fontSize: 11 }}
-                            onClick={openFaucet}
-                            title="Open faucet in a new tab"
-                        >
-                            Faucet ↗
-                        </button>
-                    )}
-                    <button
-                        className="btn btn-ghost"
-                        style={{ padding: "4px 10px", fontSize: 11 }}
-                        onClick={onBridge}
-                    >
-                        Need fee juice? →
-                    </button>
-                </div>
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+        <button
+            className="fee-line"
+            onClick={onBridge}
+            title={sponsored ? "Fees are sponsored here — bridging is optional" : "Get fee juice"}
+        >
+            <span className="muted">⛽ Fee juice</span>
+            <span className="fee-line-amount">
                 {row?.loading ? (
                     <span className="spinner" />
                 ) : (
-                    formatUnits(balance, FEE_JUICE_ENTRY.decimals)
-                )}{" "}
-                <span className="muted" style={{ fontSize: 12 }}>
-                    JUICE
-                </span>
-            </div>
-            {needsFunding && faucetUrl && (
-                <div className="hint" style={{ marginTop: 6 }}>
-                    No fee juice yet. Click <b>Faucet ↗</b>, then copy your address from the card
-                    above and paste it there. Usually arrives in a few minutes.
-                </div>
-            )}
-            {needsFunding && !faucetUrl && (
-                <div className="hint" style={{ marginTop: 6 }}>
-                    No fee juice yet — bridge some at fizzwallet.com/bridge (tap “Need fee
-                    juice?”), or switch to a network with a faucet.
-                </div>
-            )}
-            {sponsored && balance === 0n && !row?.loading && (
-                <div className="hint" style={{ marginTop: 6, color: "var(--success)" }}>
-                    ✓ Fees are sponsored on this network — you can send, deploy, and mint without
-                    any fee juice. Bridging is optional (for self-sufficiency).
-                </div>
-            )}
-            {row?.error && <div className="error" style={{ marginTop: 6 }}>{row.error}</div>}
-        </div>
+                    <>
+                        {formatUnits(balance, FEE_JUICE_ENTRY.decimals)}{" "}
+                        <span className="muted">{unit}</span>
+                    </>
+                )}
+            </span>
+            <span className="fee-line-cta">{sponsored ? "Sponsored · bridge →" : "Need fee juice? →"}</span>
+        </button>
     );
 }
 
-function TokenRow({ row, tab, onRemove }: { row: RowState; tab: Tab; onRemove: () => void }) {
+function TokenRow({
+    row,
+    tab,
+    onConvert,
+    onRemove,
+}: {
+    row: RowState;
+    tab: Tab;
+    onConvert: () => void;
+    onRemove: () => void;
+}) {
     const { token, balance } = row;
     const value = tab === "private" ? balance.private : balance.public;
+    const convertTo = tab === "private" ? "public" : "private";
     return (
         <div className="token-row">
             <div className="token-meta">
@@ -578,13 +501,23 @@ function TokenRow({ row, tab, onRemove }: { row: RowState; tab: Tab; onRemove: (
                         </div>
                     </>
                 )}
+            </div>
+            <div className="token-actions">
                 <button
-                    className="muted"
-                    style={{ fontSize: 10, marginTop: 4, cursor: "pointer" }}
+                    className="icon-btn"
+                    onClick={onConvert}
+                    title={`Convert to ${convertTo}`}
+                    aria-label={`Convert ${token.symbol} to ${convertTo}`}
+                >
+                    <ConvertIcon size={15} />
+                </button>
+                <button
+                    className="muted token-remove"
                     onClick={onRemove}
                     title="Remove from list"
+                    aria-label={`Remove ${token.symbol}`}
                 >
-                    remove
+                    <TrashIcon size={13} />
                 </button>
             </div>
         </div>

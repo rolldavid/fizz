@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { Header } from "../components/Header";
-import { StandaloneGuard } from "../components/StandaloneGuard";
 import { useWallet } from "../../lib/state/walletContext";
 import { trackOp } from "../../lib/state/activity";
 import {
@@ -96,7 +95,6 @@ export function Bridge({ onBack }: { onBack: () => void }) {
 
                 {isSandbox ? (
                     <>
-                        <StandaloneGuard route="bridge" />
                         <p className="hint">
                             One click — the local L1 mints a fixed batch and deposits it to your
                             account. Your next transaction claims it automatically.

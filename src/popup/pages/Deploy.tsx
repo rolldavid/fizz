@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
 import { Header } from "../components/Header";
 import { ArrowLeftIcon, CheckIcon, CopyIcon } from "../components/icons";
-import { StandaloneGuard } from "../components/StandaloneGuard";
 import { useWallet } from "../../lib/state/walletContext";
 import { trackOp } from "../../lib/state/activity";
 import {
     clearDeployJournal,
     recordDeployStart,
     recordLastLaunch,
-    saveDeployDraft,
     takeDeployDraft,
 } from "../../lib/state/opJournal";
 import { deployToken } from "../../lib/aztec/deploy";
@@ -220,13 +218,6 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                     shielding, and unshielding out of the box. You'll be the admin and (optionally)
                     the minter.
                 </p>
-
-                <StandaloneGuard
-                    route="deploy"
-                    beforeOpen={() =>
-                        saveDeployDraft({ name, symbol, decimals, supply, supplyMode, keepMinter })
-                    }
-                />
 
                 <div className="field">
                     <label>Name</label>

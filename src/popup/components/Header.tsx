@@ -27,11 +27,13 @@ export function Header({ right }: { right?: React.ReactNode }) {
                     value={network.id}
                     onChange={(e) => onPick(e.target.value)}
                     style={{
-                        background: "var(--surface-2)",
+                        // backgroundColor (not the `background` shorthand) so the
+                        // global select's custom chevron background-image survives.
+                        backgroundColor: "var(--surface-2)",
                         color: "var(--text-dim)",
                         border: "1px solid var(--border)",
                         borderRadius: "var(--radius-sm)",
-                        padding: "5px 8px",
+                        padding: "5px 26px 5px 10px",
                         fontSize: 11,
                         width: "auto",
                     }}

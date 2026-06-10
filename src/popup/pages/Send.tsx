@@ -2,13 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Header, shortAddress } from "../components/Header";
 import { Identicon } from "../components/Identicon";
-import { StandaloneGuard } from "../components/StandaloneGuard";
 import { BookmarkIcon, CheckIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
 import { trackOp } from "../../lib/state/activity";
 import { loadTokens, type TokenEntry } from "../../lib/aztec/tokens";
 import { parseUnits } from "../../lib/aztec/balances";
-import { shield, transfer, unshield, type TransferMode } from "../../lib/aztec/transfer";
+import { transfer, type TransferMode } from "../../lib/aztec/transfer";
 import {
     addContact,
     findContact,
@@ -27,17 +26,13 @@ import {
  * which mixed "pay someone" with "convert my own funds" and used jargon. The
  * two-level model maps to the same underlying transfer/shield/unshield calls.
  */
-type Intent = "send" | "convert";
-
 export function Send({ onBack }: { onBack: () => void }) {
     const { wallet, network, account, ensureAccountDeployed } = useWallet();
     const [tokens, setTokens] = useState<TokenEntry[]>([]);
     const [tokenAddr, setTokenAddr] = useState("");
     const [to, setTo] = useState("");
     const [amount, setAmount] = useState("");
-    const [intent, setIntent] = useState<Intent>("send");
     const [privacy, setPrivacy] = useState<TransferMode>("private");
-    const [direction, setDirection] = useState<"shield" | "unshield">("shield");
     const [busy, setBusy] = useState(false);
     const [busyText, setBusyText] = useState("Proving + sending…");
     const [error, setError] = useState<string | null>(null);
@@ -56,7 +51,6 @@ export function Send({ onBack }: { onBack: () => void }) {
     }, [network.id]);
 
     const token = useMemo(() => tokens.find((t) => t.address === tokenAddr), [tokens, tokenAddr]);
-    const needsRecipient = intent === "send";
 
     // Filter contacts by typed input — both label and address are matched.
     const filteredContacts = useMemo(() => {
@@ -68,10 +62,9 @@ export function Send({ onBack }: { onBack: () => void }) {
     }, [contacts, to]);
 
     /**
-     * Step 1: validate inputs and — for sends to another address — surface a
-     * full-address review screen before anything signs. Truncated addresses are
-     * an address-poisoning vector: the user must see the COMPLETE recipient.
-     * Converts (self-directed) skip review and submit directly.
+     * Step 1: validate inputs and surface a full-address review screen before
+     * anything signs. Truncated addresses are an address-poisoning vector: the
+     * user must see the COMPLETE recipient.
      */
     function review() {
         setError(null);
@@ -82,12 +75,8 @@ export function Send({ onBack }: { onBack: () => void }) {
         try {
             const value = parseUnits(amount, token.decimals);
             if (value <= 0n) throw new Error("Amount must be greater than zero.");
-            if (intent === "send") {
-                const recipientAddr = AztecAddress.fromString(to.trim());
-                setConfirming(recipientAddr.toString());
-            } else {
-                void doSubmit(account.address.toString());
-            }
+            const recipientAddr = AztecAddress.fromString(to.trim());
+            setConfirming(recipientAddr.toString());
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         }
@@ -111,20 +100,13 @@ export function Send({ onBack }: { onBack: () => void }) {
                     await ensureAccountDeployed();
                 }
                 setBusyText("Proving + sending…");
-                let result: { txHash: string };
-                if (intent === "send") {
-                    const recipientAddr = AztecAddress.fromString(recipient);
-                    result = await transfer({
-                        wallet, network, sender, tokenAddress, to: recipientAddr, amount: value, mode: privacy,
-                    });
-                    // Remember the recipient so a reciprocal private payment from them
-                    // is discoverable on the fast tagged path — no naming required.
-                    void rememberSentRecipient(network.id, recipient, wallet);
-                } else if (direction === "shield") {
-                    result = await shield({ wallet, network, sender, tokenAddress, amount: value });
-                } else {
-                    result = await unshield({ wallet, network, sender, tokenAddress, amount: value });
-                }
+                const recipientAddr = AztecAddress.fromString(recipient);
+                const result = await transfer({
+                    wallet, network, sender, tokenAddress, to: recipientAddr, amount: value, mode: privacy,
+                });
+                // Remember the recipient so a reciprocal private payment from them
+                // is discoverable on the fast tagged path — no naming required.
+                void rememberSentRecipient(network.id, recipient, wallet);
                 setConfirming(null);
                 setDone({ txHash: result.txHash, recipient });
             });
@@ -144,24 +126,6 @@ export function Send({ onBack }: { onBack: () => void }) {
                 </button>
                 <div style={{ fontWeight: 600, fontSize: 16 }}>Send</div>
 
-                <StandaloneGuard route="send" />
-
-                {/* Primary intent: pay someone vs convert your own balance */}
-                <div className="tabs">
-                    <button
-                        className={`tab ${intent === "send" ? "active" : ""}`}
-                        onClick={() => setIntent("send")}
-                    >
-                        Send to someone
-                    </button>
-                    <button
-                        className={`tab ${intent === "convert" ? "active" : ""}`}
-                        onClick={() => setIntent("convert")}
-                    >
-                        Convert
-                    </button>
-                </div>
-
                 <div className="field">
                     <label>Token</label>
                     <select value={tokenAddr} onChange={(e) => setTokenAddr(e.target.value)}>
@@ -174,44 +138,40 @@ export function Send({ onBack }: { onBack: () => void }) {
                     </select>
                 </div>
 
-                {needsRecipient && (
-                    <>
-                        <div className="field">
-                            <label>Recipient address</label>
-                            <input
-                                value={to}
-                                onChange={(e) => setTo(e.target.value)}
-                                placeholder="0x… or pick a contact below"
-                                style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }}
-                            />
-                        </div>
-                        {filteredContacts.length > 0 && (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                <div className="muted">Contacts</div>
-                                {filteredContacts.slice(0, 4).map((c) => (
-                                    <button
-                                        key={c.address}
-                                        className="token-row"
-                                        style={{ cursor: "pointer", textAlign: "left", width: "100%" }}
-                                        onClick={() => setTo(c.address)}
-                                    >
-                                        <div className="token-meta" style={{ minWidth: 0 }}>
-                                            <Identicon address={c.address} size={28} />
-                                            <div style={{ minWidth: 0 }}>
-                                                <div style={{ fontWeight: 500 }}>{c.label}</div>
-                                                <div
-                                                    className="muted"
-                                                    style={{ fontFamily: "ui-monospace, monospace" }}
-                                                >
-                                                    {shortAddress(c.address, 8, 6)}
-                                                </div>
-                                            </div>
+                <div className="field">
+                    <label>Recipient address</label>
+                    <input
+                        value={to}
+                        onChange={(e) => setTo(e.target.value)}
+                        placeholder="0x… or pick a contact below"
+                        style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }}
+                    />
+                </div>
+                {filteredContacts.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div className="muted">Contacts</div>
+                        {filteredContacts.slice(0, 4).map((c) => (
+                            <button
+                                key={c.address}
+                                className="token-row"
+                                style={{ cursor: "pointer", textAlign: "left", width: "100%" }}
+                                onClick={() => setTo(c.address)}
+                            >
+                                <div className="token-meta" style={{ minWidth: 0 }}>
+                                    <Identicon address={c.address} size={28} />
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontWeight: 500 }}>{c.label}</div>
+                                        <div
+                                            className="muted"
+                                            style={{ fontFamily: "ui-monospace, monospace" }}
+                                        >
+                                            {shortAddress(c.address, 8, 6)}
                                         </div>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </>
+                                    </div>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
                 )}
 
                 <div className="field">
@@ -224,63 +184,29 @@ export function Send({ onBack }: { onBack: () => void }) {
                     />
                 </div>
 
-                {intent === "send" && (
-                    <div className="field">
-                        <label>Privacy</label>
-                        <div className="tabs">
-                            <button
-                                className={`tab private ${privacy === "private" ? "active" : ""}`}
-                                onClick={() => setPrivacy("private")}
-                            >
-                                <span className="tab-dot" /> Private
-                            </button>
-                            <button
-                                className={`tab ${privacy === "public" ? "active" : ""}`}
-                                onClick={() => setPrivacy("public")}
-                            >
-                                Public
-                            </button>
-                        </div>
+                <div className="field">
+                    <label>Privacy</label>
+                    <div className="tabs">
+                        <button
+                            className={`tab private ${privacy === "private" ? "active" : ""}`}
+                            onClick={() => setPrivacy("private")}
+                        >
+                            <span className="tab-dot" /> Private
+                        </button>
+                        <button
+                            className={`tab ${privacy === "public" ? "active" : ""}`}
+                            onClick={() => setPrivacy("public")}
+                        >
+                            Public
+                        </button>
                     </div>
-                )}
-
-                {intent === "convert" && (
-                    <div className="field">
-                        <label>Direction</label>
-                        <div className="tabs">
-                            <button
-                                className={`tab ${direction === "shield" ? "active" : ""}`}
-                                onClick={() => setDirection("shield")}
-                            >
-                                Make private
-                            </button>
-                            <button
-                                className={`tab ${direction === "unshield" ? "active" : ""}`}
-                                onClick={() => setDirection("unshield")}
-                            >
-                                Make public
-                            </button>
-                        </div>
-                    </div>
-                )}
+                </div>
 
                 <div className="hint">
-                    {intent === "send" && privacy === "private" &&
-                        "Sent privately — amount, sender and recipient stay hidden on-chain. The recipient sees it once they've added you."}
-                    {intent === "send" && privacy === "public" &&
-                        "Sent publicly — visible on-chain, like a normal token transfer. Arrives instantly, no setup."}
-                    {intent === "convert" && direction === "shield" &&
-                        "Moves your own public balance into your private balance — it stays in your wallet."}
-                    {intent === "convert" && direction === "unshield" &&
-                        "Moves your own private balance back to public — it stays in your wallet."}
+                    {privacy === "private"
+                        ? "Sent privately — amount, sender and recipient stay hidden on-chain. The recipient sees it once they've added you."
+                        : "Sent publicly — visible on-chain, like a normal token transfer. Arrives instantly, no setup."}
                 </div>
-                {intent === "convert" && (
-                    <div className="hint" style={{ fontSize: 11 }}>
-                        ⚠️ Converting touches the public ledger with your address and the exact
-                        amount. Converting the same amount in and out makes the two sides easy for
-                        anyone to link — vary amounts and timing if that matters to you.
-                    </div>
-                )}
 
                 {error && <div className="error">{error}</div>}
 
@@ -289,17 +215,17 @@ export function Send({ onBack }: { onBack: () => void }) {
                         txHash={done.txHash}
                         recipient={done.recipient}
                         networkId={network.id}
-                        isConvert={intent === "convert"}
+                        isConvert={false}
                         onContactSaved={(c) => setContacts((prev) => [c, ...prev])}
                     />
                 )}
 
                 <button
                     className="btn btn-primary btn-block"
-                    disabled={busy || !token || !amount || (needsRecipient && !to)}
+                    disabled={busy || !token || !amount || !to}
                     onClick={review}
                 >
-                    {busy ? busyText : intent === "send" ? "Review send" : "Convert"}
+                    {busy ? busyText : "Review send"}
                 </button>
                 {busy && (
                     <div className="hint">

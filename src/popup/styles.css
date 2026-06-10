@@ -88,6 +88,87 @@ select:focus {
     box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* Selects: drop the native chrome arrow, draw our own chevron in the dim color. */
+select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    cursor: pointer;
+    padding-right: 32px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%237B6FA8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 4.5l3.5 3.5 3.5-3.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 11px center;
+}
+
+/* Checkboxes + radios: app accent, not the OS default — and opt out of the
+   full-width sizing the generic `input` rule above imposes. */
+input[type="checkbox"],
+input[type="radio"] {
+    width: auto;
+    padding: 0;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+    flex: none;
+}
+
+/* Sticky note-discovery prompt pinned to the bottom of the wallet window —
+   private notes are only discovered for registered senders, so this stays
+   visible (highlighted) as a standing reminder. */
+.private-note-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin: 8px -16px -16px;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    background: var(--accent-soft);
+    border-top: 1px solid var(--accent);
+    backdrop-filter: blur(6px);
+}
+.private-note-bar .link {
+    color: var(--accent);
+    font-weight: 700;
+    white-space: nowrap;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+
+/* Fee juice — one compact tappable line (not a loud card). */
+.fee-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    padding: 9px 14px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    font-size: 13px;
+    transition: border-color var(--transition);
+}
+.fee-line:hover {
+    border-color: var(--accent);
+}
+.fee-line-amount {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.fee-line-cta {
+    margin-left: auto;
+    color: var(--accent);
+    font-weight: 600;
+    white-space: nowrap;
+    font-size: 12px;
+}
+
 /* Buttons — round like bubbles. */
 .btn {
     padding: 11px 16px;
@@ -237,6 +318,30 @@ select:focus {
     display: flex;
     align-items: center;
     gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Per-token actions (convert / remove) on the right of a token row. */
+.token-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 10px;
+}
+.token-remove {
+    display: inline-grid;
+    place-items: center;
+    padding: 7px;
+    border-radius: 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: color var(--transition), background var(--transition);
+}
+.token-remove:hover {
+    color: var(--danger);
+    background: var(--surface-2);
 }
 
 .token-glyph {
