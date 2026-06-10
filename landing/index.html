@@ -46,6 +46,10 @@
             --ok: #4cd6a4;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* Seamless same-origin navigation; progressive enhancement (Chromium
+           crossfades, Firefox etc. navigate normally). */
+        @view-transition { navigation: auto; }
+        @media (prefers-reduced-motion: reduce) { @view-transition { navigation: none; } }
         html { scroll-behavior: smooth; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
@@ -121,6 +125,18 @@
             border: 1px solid rgba(76, 214, 164, .5); box-shadow: none; cursor: pointer;
         }
         .install-btn.wallet-connected:hover { box-shadow: none; }
+        .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 6px var(--ok); display: inline-block; }
+        .chip-caret { font-size: 10px; opacity: .7; }
+        .wallet-menu {
+            z-index: 30; background: var(--surface); border: 1px solid var(--border-strong);
+            border-radius: 12px; padding: 4px; min-width: 140px; box-shadow: 0 10px 30px rgba(0,0,0,.4);
+        }
+        .wallet-menu button {
+            display: block; width: 100%; text-align: left; background: none; border: 0;
+            color: var(--text); font: inherit; font-size: 13px; font-weight: 600;
+            padding: 8px 12px; border-radius: 8px; cursor: pointer;
+        }
+        .wallet-menu button:hover { background: var(--surface-2); color: var(--accent); }
         @media (max-width: 560px) {
             .topnav { padding: 12px 0; }
             .topnav-right { gap: 4px; }
@@ -373,12 +389,42 @@
                     function () { return { installed: false, connected: false }; }
                 );
             }
+            var menuEl = null;
+            function ensureMenu() {
+                if (menuEl) return menuEl;
+                menuEl = document.createElement("div");
+                menuEl.className = "wallet-menu";
+                menuEl.setAttribute("role", "menu");
+                menuEl.style.position = "fixed";
+                menuEl.hidden = true;
+                var d = document.createElement("button");
+                d.type = "button"; d.textContent = "Disconnect"; d.setAttribute("role", "menuitem");
+                d.onclick = function () { menuEl.hidden = true; onDisconnect(); };
+                menuEl.appendChild(d);
+                document.body.appendChild(menuEl);
+                return menuEl;
+            }
+            function toggleMenu(e) {
+                if (e) e.preventDefault();
+                var m = ensureMenu();
+                if (!m.hidden) { m.hidden = true; return; }
+                var r = btn.getBoundingClientRect();
+                m.style.top = (r.bottom + 6) + "px";
+                m.style.right = (window.innerWidth - r.right) + "px";
+                m.style.left = "auto";
+                m.hidden = false;
+            }
+            document.addEventListener("mousedown", function (e) {
+                if (menuEl && !menuEl.hidden && !menuEl.contains(e.target) && !btn.contains(e.target)) menuEl.hidden = true;
+            });
+            // Address-blind chip: "Aztec Wallet" + a dropdown to disconnect. No address.
             function render(state) {
+                if (menuEl) menuEl.hidden = true;
                 if (state === "connected") {
-                    btn.textContent = "✓ Connected";
+                    btn.innerHTML = '<span class="conn-dot"></span> Aztec Wallet <span class="chip-caret">▾</span>';
                     btn.classList.add("wallet-connected");
                     btn.removeAttribute("href"); btn.setAttribute("role", "button"); btn.setAttribute("tabindex", "0");
-                    btn.onclick = onDisconnect;
+                    btn.onclick = toggleMenu;
                 } else if (state === "disconnected") {
                     btn.textContent = "Connect Wallet";
                     btn.classList.remove("wallet-connected");

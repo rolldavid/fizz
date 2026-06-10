@@ -16,6 +16,12 @@
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+/* Seamless same-origin navigation (landing <-> /bridge <-> /launch). Progressive
+   enhancement: Chromium crossfades, other browsers (e.g. a future Firefox build)
+   just navigate normally. Kept as separate documents so /launch stays
+   wallet-free. */
+@view-transition { navigation: auto; }
+@media (prefers-reduced-motion: reduce) { @view-transition { navigation: none; } }
 html { scroll-behavior: smooth; }
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
@@ -84,6 +90,25 @@ a:hover { color: var(--accent); }
 .install-btn.install-btn-muted {
     background: var(--surface-2); color: var(--dim); box-shadow: none; cursor: default;
 }
+/* Connected chip + disconnect dropdown (address-blind — no address shown). */
+.wallet-chip { position: relative; display: inline-flex; }
+.wallet-chip .conn-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--ok);
+    box-shadow: 0 0 6px var(--ok); flex-shrink: 0;
+}
+.wallet-chip .chip-caret { font-size: 10px; opacity: .7; }
+.wallet-menu {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 30;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: 12px; padding: 4px; min-width: 140px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+}
+.wallet-menu button {
+    display: block; width: 100%; text-align: left; background: none; border: 0;
+    color: var(--text); font: inherit; font-size: 13px; font-weight: 600;
+    padding: 8px 12px; border-radius: 8px; cursor: pointer;
+}
+.wallet-menu button:hover { background: var(--surface-2); color: var(--accent); }
 /* Right-bunched nav: Bridge, Launch, then the Install Wallet button. */
 .site-nav { display: flex; align-items: center; gap: 6px; }
 .site-nav a:not(.install-btn) {

@@ -1,28 +1,53 @@
 /** Shared chrome (header/footer/shell) + small UI atoms. NO wagmi in here —
  * this module is imported by /launch, which must ship zero L1 code. */
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import logoUrl from "./assets/fizzlogo.svg";
 import { CHROME_STORE_URL, GITHUB_URL } from "./config";
 import { useConnection } from "./connection";
 
 /**
  * Context-aware nav button: Install Wallet (no extension / mobile / non-Chromium)
- * → Connect Wallet (installed, not connected) → ✓ Connected (click to disconnect).
- * The connect handshake lives here in the nav, site-wide.
+ * → Connect Wallet (installed, not connected) → "Aztec Wallet" chip with a
+ * disconnect dropdown (connected). The connect handshake lives here in the nav,
+ * site-wide. Address-blind: the chip never shows an address — we don't learn it.
+ * Labelled "Aztec Wallet" so it's clearly distinct from the Eth wallet on /bridge.
  */
 function NavWalletButton() {
     const { platform, status, connecting, connect, disconnect } = useConnection();
+    const [menuOpen, setMenuOpen] = useState(false);
+    const wrapRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!menuOpen) return;
+        const onDoc = (e: MouseEvent) => {
+            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setMenuOpen(false);
+        };
+        document.addEventListener("mousedown", onDoc);
+        return () => document.removeEventListener("mousedown", onDoc);
+    }, [menuOpen]);
+
     if (status === "connected") {
         return (
-            <button
-                type="button"
-                className="install-btn wallet-connected"
-                onClick={() => void disconnect()}
-                title="Disconnect Fizz"
-            >
-                ✓ Connected
-            </button>
+            <div className="wallet-chip" ref={wrapRef}>
+                <button
+                    type="button"
+                    className="install-btn wallet-connected"
+                    onClick={() => setMenuOpen((o) => !o)}
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                    title="Aztec wallet connected"
+                >
+                    <span className="conn-dot" /> Aztec Wallet <span className="chip-caret">▾</span>
+                </button>
+                {menuOpen && (
+                    <div className="wallet-menu" role="menu">
+                        <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); void disconnect(); }}>
+                            Disconnect
+                        </button>
+                    </div>
+                )}
+            </div>
         );
     }
     if (platform.canUseExtension && status === "disconnected") {
