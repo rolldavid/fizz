@@ -253,9 +253,13 @@ export function Home({
                             className="card fade-in"
                             style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10, textAlign: "center" }}
                         >
-                            <div style={{ fontSize: 28 }} aria-hidden>
-                                🫧
-                            </div>
+                            <img
+                                src="/fizz.png"
+                                alt=""
+                                width={48}
+                                height={48}
+                                style={{ margin: "0 auto" }}
+                            />
                             <div style={{ fontWeight: 600, fontSize: 17 }}>Gas is on the way</div>
                             <p className="hint" style={{ margin: 0 }}>
                                 Your deposit is confirmed. The gas becomes usable in a few minutes.
