@@ -21,6 +21,9 @@
  */
 
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
+import { Fr } from "@aztec/foundation/curves/bn254";
+import { FeeJuiceContract } from "@aztec/aztec.js/protocol";
+import { getNonNullifiedL1ToL2MessageWitness } from "@aztec/stdlib/messaging";
 import { TxExecutionResult, TxHash, TxStatus } from "@aztec/stdlib/tx";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
@@ -175,6 +178,34 @@ export async function autoClaimTick(args: {
     // Settle landing txs from the old eager model, if any are still around.
     for (const b of mine.filter((x) => x.claimTxHash && !x.consumedAt)) {
         await reconcileBroadcast(wallet, b);
+    }
+
+    // Nullification sweep: a "pending" claim whose message was consumed
+    // ELSEWHERE (same seed on another install, or a lost consumed-flag) would
+    // sit in the optimistic gas number forever while the balance also holds
+    // its value — a permanent double count. In-tree + nullified ⇒ consumed.
+    // Absent from the tree just means "not synced yet" and is left alone.
+    const node = (wallet as any).aztecNode;
+    const feeJuiceAddress = FeeJuiceContract.at(wallet as any).address;
+    for (const b of mine.filter(
+        (x) => (x.status ?? "pending") === "pending" && x.messageHash && !x.consumedAt && !x.claimTxHash,
+    )) {
+        try {
+            await getNonNullifiedL1ToL2MessageWitness(
+                node,
+                feeJuiceAddress,
+                Fr.fromHexString(b.messageHash!),
+                Fr.fromHexString(b.claimSecret),
+            );
+        } catch {
+            const membership = await node
+                .getL1ToL2MessageMembershipWitness("latest", Fr.fromHexString(b.messageHash!))
+                .catch(() => undefined);
+            if (membership) {
+                console.warn(`Claim ${b.id}: message already nullified on-chain — marking consumed.`);
+                await markBridgeConsumed(b.id);
+            }
+        }
     }
 
     mine = (await listPendingBridges(network.id)).filter((b) => b.recipient === recip);

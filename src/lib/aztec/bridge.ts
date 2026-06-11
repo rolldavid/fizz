@@ -214,7 +214,17 @@ export async function adoptRecoveredBridge(entry: {
     messageLeafIndex: string;
 }): Promise<boolean> {
     const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    if (all.some((b) => b.messageHash?.toLowerCase() === entry.messageHash.toLowerCase())) {
+    // Dedupe on the message hash AND the secret: a local entry still in
+    // "depositing"/"sent" has no messageHash yet, but it IS the same deposit
+    // (same seed-derived secret) — adopting it again would double-count the
+    // amount in the optimistic gas display, permanently.
+    if (
+        all.some(
+            (b) =>
+                b.messageHash?.toLowerCase() === entry.messageHash.toLowerCase() ||
+                b.claimSecret?.toLowerCase() === entry.claimSecret.toLowerCase(),
+        )
+    ) {
         return false;
     }
     await upsertBridge({
