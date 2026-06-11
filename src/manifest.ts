@@ -65,7 +65,7 @@ const buildManifest = (env: ConfigEnv): any => {
         name: "Fizz Wallet",
         short_name: "Fizz Wallet",
         description: "A lightweight wallet for the Aztec Network",
-        version: "0.1.0",
+        version: "0.1.1",
         icons: {
             16: "o.png",
             32: "o.png",
