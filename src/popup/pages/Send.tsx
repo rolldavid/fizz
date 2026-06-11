@@ -331,9 +331,9 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                     <div className="card card-accent" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <div style={{ fontWeight: 600 }}>Your gas is on the way</div>
                         <div className="hint" style={{ margin: 0 }}>
-                            A bridge to this account is still landing — fee juice usually arrives
-                            within a few minutes. Keep the wallet open; you can send as soon as it
-                            lands.
+                            A bridge to this account is still landing — the gas usually becomes
+                            usable within a few minutes, and this send will use it automatically.
+                            Check again shortly.
                         </div>
                         <button
                             className="btn btn-ghost"

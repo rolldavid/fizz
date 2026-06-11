@@ -24,6 +24,7 @@ import {
 import { FEE_JUICE_ENTRY, loadTokens, removeToken, type TokenEntry } from "../../lib/aztec/tokens";
 import { isSponsoredFPCAvailable } from "../../lib/aztec/fee";
 import { onFeeJuiceLanded } from "../../lib/aztec/autoClaim";
+import { listPendingBridges, markGasNoticeShown } from "../../lib/aztec/bridge";
 
 type Route =
     | "home"
@@ -69,10 +70,14 @@ export function Home({
     // Without this, a refresh started for account 1 could resolve after a
     // switch and paint account 1's balances under account 2's header
     // (observed live with SPRKL).
-    const [rowState, setRowState] = useState<{ forAddr: string; rows: RowState[] }>({
-        forAddr: "",
-        rows: [],
-    });
+    const [rowState, setRowState] = useState<{
+        forAddr: string;
+        rows: RowState[];
+        /** Confirmed bridge claims not yet swept by a transaction. */
+        incoming: bigint;
+    }>({ forAddr: "", rows: [], incoming: 0n });
+    /** Unacknowledged "gas is on the way" claims (one-time notice). */
+    const [gasNoticeIds, setGasNoticeIds] = useState<string[]>([]);
     const [tab, setTab] = useState<Tab>("private");
     const [showAccounts, setShowAccounts] = useState(false);
     const [copied, setCopied] = useState(false);
@@ -106,13 +111,24 @@ export function Home({
             setRowState((prev) => {
                 if (activeAddrRef.current !== addr) return prev;
                 if (prev.forAddr !== addr) return prev;
-                return { forAddr: addr, rows: update(prev.rows) };
+                return { ...prev, rows: update(prev.rows) };
             });
         const tokens = await loadTokens(network.id, addr);
+        // Bridged gas that hasn't been swept by a transaction yet: shown
+        // optimistically on the gas line, and announced once via the notice.
+        const bridges = (await listPendingBridges(network.id)).filter((b) => b.recipient === addr);
+        const incoming = bridges
+            .filter((b) => b.status === "sent" || (b.status ?? "pending") === "pending")
+            .reduce((sum, b) => sum + BigInt(b.claimAmount), 0n);
+        const notice = bridges
+            .filter((b) => (b.status ?? "pending") === "pending" && !b.noticeShownAt)
+            .map((b) => b.id);
         if (activeAddrRef.current !== addr) return; // switched while loading
+        setGasNoticeIds(notice);
         setRowState({
             forAddr: addr,
             rows: tokens.map((t) => ({ token: t, balance: ZERO_BALANCE, loading: true })),
+            incoming,
         });
         await Promise.all(
             tokens.map(async (token, i) => {
@@ -143,6 +159,7 @@ export function Home({
     const currentAddr = account?.address.toString() ?? "";
     const switching = rowState.forAddr !== currentAddr;
     const rows = switching ? [] : rowState.rows;
+    const incoming = switching ? 0n : rowState.incoming;
     const feeJuiceRow = useMemo(() => rows.find((r) => r.token.kind === "fee_juice"), [rows]);
     const tokenRows = useMemo(() => rows.filter((r) => r.token.kind !== "fee_juice"), [rows]);
 
@@ -223,11 +240,39 @@ export function Home({
                     Sandbox keeps the in-wallet screen for its local mint. */}
                 <FeeJuiceLine
                     row={feeJuiceRow}
+                    incoming={incoming}
                     bridgeHref={network.id === "sandbox" ? undefined : "https://fizzwallet.com/bridge"}
                     onBridge={() => onNavigate("bridge")}
                     unit="AZTEC"
                     sponsored={sponsored === true}
                 />
+
+                {gasNoticeIds.length > 0 && !switching && (
+                    <div className="modal-backdrop">
+                        <div
+                            className="card fade-in"
+                            style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10, textAlign: "center" }}
+                        >
+                            <div style={{ fontSize: 28 }} aria-hidden>
+                                🫧
+                            </div>
+                            <div style={{ fontWeight: 600, fontSize: 17 }}>Gas is on the way</div>
+                            <p className="hint" style={{ margin: 0 }}>
+                                Your deposit is confirmed. The gas becomes usable in a few minutes.
+                            </p>
+                            <button
+                                className="btn btn-primary btn-block"
+                                onClick={async () => {
+                                    const ids = gasNoticeIds;
+                                    setGasNoticeIds([]);
+                                    await markGasNoticeShown(ids);
+                                }}
+                            >
+                                Got it
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 <div className="nav">
                     <button className="btn btn-primary btn-block" onClick={() => onNavigate("send")}>
@@ -570,12 +615,15 @@ function AccountSwitcher({
  * bridge (external fizzwallet.com/bridge, or the in-wallet screen on sandbox). */
 function FeeJuiceLine({
     row,
+    incoming,
     bridgeHref,
     onBridge,
     unit,
     sponsored,
 }: {
     row: RowState | undefined;
+    /** Confirmed bridged gas not yet swept by a transaction (optimistic). */
+    incoming: bigint;
     /** When set, the line is a plain link there (new tab). */
     bridgeHref?: string;
     onBridge: () => void;
@@ -584,6 +632,12 @@ function FeeJuiceLine({
 }) {
     const balance = row?.balance.public ?? 0n;
     const title = sponsored ? "Fees are sponsored here. Bridging is optional" : "Get gas";
+    const incomingTag =
+        incoming > 0n ? (
+            <span className="fee-line-incoming">
+                +{formatUnits(incoming, FEE_JUICE_ENTRY.decimals)} on the way
+            </span>
+        ) : null;
     if (bridgeHref) {
         return (
             <a className="fee-line" href={bridgeHref} target="_blank" rel="noreferrer" title={title}>
@@ -598,6 +652,7 @@ function FeeJuiceLine({
                         </>
                     )}
                 </span>
+                {incomingTag}
                 <span className="fee-line-cta">Need gas? ↗</span>
             </a>
         );
@@ -617,6 +672,7 @@ function FeeJuiceLine({
                     </>
                 )}
             </span>
+            {incomingTag}
             <span className="fee-line-cta">Need gas? →</span>
         </button>
     );

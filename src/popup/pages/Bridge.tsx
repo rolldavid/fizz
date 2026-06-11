@@ -303,8 +303,8 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                                     ✓ Fee juice incoming
                                 </div>
                                 <div className="hint" style={{ marginTop: 4 }}>
-                                    It lands in your balance automatically in a few minutes —
-                                    nothing else to do.
+                                    The gas becomes usable in a few minutes and is added
+                                    automatically with your first transaction — nothing else to do.
                                 </div>
                             </div>
                             <button
@@ -361,8 +361,8 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                             <div style={{ fontWeight: 600 }}>Need fee juice?</div>
                             <div className="hint" style={{ margin: 0 }}>
                                 Bridge AZTEC into fee juice on our web bridge. Connect this wallet there, enter
-                                an amount, and approve the deposit. The fee juice lands in your connected
-                                account's balance automatically. No claim ticket to copy.
+                                an amount, and approve the deposit. The fee juice is sent straight to your
+                                connected account and pays your first transaction. No claim ticket to copy.
                             </div>
                             <a
                                 className="btn btn-primary btn-block"
@@ -391,8 +391,8 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                     <div className="card" style={{ borderColor: "var(--success)" }}>
                         <div style={{ color: "var(--success)", fontWeight: 500 }}>✓ Deposit sent</div>
                         <div className="hint" style={{ marginTop: 4 }}>
-                            It lands in your balance automatically in a few minutes — nothing
-                            else to do.
+                            The gas becomes usable in a few minutes and is added automatically
+                            with your first transaction — nothing else to do.
                         </div>
                     </div>
                 )}
@@ -411,8 +411,8 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                                     </div>
                                     <div className="muted" style={{ fontSize: 11 }}>
                                         {status === "pending" &&
-                                            `Confirmed — adding to your balance automatically. ` +
-                                                `Takes a few minutes; keep the wallet open.`}
+                                            `Confirmed — usable in a few minutes. It's added ` +
+                                                `automatically with your first transaction.`}
                                         {status === "sent" &&
                                             "L1 deposit sent, confirming. This finishes automatically; check back in a minute."}
                                         {status === "depositing" &&

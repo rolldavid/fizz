@@ -94,6 +94,8 @@ export type PendingBridge = {
     createdAt: number;
     consumedAt?: number;
     dismissedAt?: number;
+    /** When the "gas is on the way" notice was acknowledged (shown once). */
+    noticeShownAt?: number;
 };
 
 /** Complete, unspent, undismissed — the only entries a fee payment may use. */
@@ -462,6 +464,16 @@ export async function recoverInFlightBridges(
             }
         }
     }
+}
+
+/** Acknowledge the one-time "gas is on the way" notice for these claims. */
+export async function markGasNoticeShown(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+    await secureSet(
+        KEYS.pendingBridges,
+        all.map((b) => (ids.includes(b.id) ? { ...b, noticeShownAt: Date.now() } : b)),
+    );
 }
 
 /** Hide an unrecoverable entry (interrupted pre-broadcast, or reverted). */
