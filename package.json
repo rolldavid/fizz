@@ -16,7 +16,8 @@
     "test:all": "vitest run",
     "verify": "yarn install --frozen-lockfile && yarn typecheck && yarn test && yarn build",
     "package": "yarn verify && cd dist && zip -rq ../aztec-wallet-$npm_package_version.zip . && cd .. && echo \"Packaged: aztec-wallet-$npm_package_version.zip\"",
-    "package:store": "yarn verify && node scripts/strip-manifest-key.mjs && cd dist && zip -rq ../fizz-webstore-$npm_package_version.zip . && cd .. && echo \"Packaged for the Web Store (no key): fizz-webstore-$npm_package_version.zip\""
+    "package:store": "yarn verify && node scripts/strip-manifest-key.mjs && cd dist && zip -rq ../fizz-webstore-$npm_package_version.zip . && cd .. && echo \"Packaged for the Web Store (no key): fizz-webstore-$npm_package_version.zip\"",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@aztec/accounts": "4.3.0",
@@ -45,6 +46,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react-swc": "^3.7.2",
     "fast-check": "^3.23.1",
+    "patch-package": "^8.0.1",
     "puppeteer-core": "^25.1.0",
     "typescript": "~5.6.3",
     "vite": "^5.4.11",
