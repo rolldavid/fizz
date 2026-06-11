@@ -77,6 +77,19 @@ export function isSponsoredFPCAvailable(wallet: AztecWallet): Promise<boolean> {
     return cached;
 }
 
+/**
+ * Sponsored-FPC payment method, or null when this network has none deployed
+ * (a valid state — mainnet). Probes the chain (cached per wallet) and registers
+ * the FPC artifact in the PXE on first use.
+ */
+export async function resolveSponsoredFeePaymentMethod(
+    wallet: AztecWallet,
+): Promise<SponsoredFeePaymentMethod | null> {
+    if (!(await isSponsoredFPCAvailable(wallet))) return null;
+    const address = await ensureSponsoredFPCRegistered(wallet);
+    return new SponsoredFeePaymentMethod(address);
+}
+
 export type ResolvedFee = {
     method: FeePaymentMethod | undefined;
     label: "claim" | "sponsored" | "fee_juice";
@@ -105,9 +118,9 @@ export async function resolveFeePaymentMethod(
 
     // Probe the chain (cached per wallet) rather than trusting the static
     // network flag — networks redeploy and custom nodes are unknowable.
-    if (await isSponsoredFPCAvailable(wallet)) {
-        const address = await ensureSponsoredFPCRegistered(wallet);
-        return { method: new SponsoredFeePaymentMethod(address), label: "sponsored" };
+    const sponsored = await resolveSponsoredFeePaymentMethod(wallet);
+    if (sponsored) {
+        return { method: sponsored, label: "sponsored" };
     }
 
     return { method: undefined, label: "fee_juice" };

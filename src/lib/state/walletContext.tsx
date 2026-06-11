@@ -27,10 +27,20 @@ import {
     type AztecWallet,
 } from "../aztec/wallet";
 import { markFeeConsumed, resolveFeePaymentMethod } from "../aztec/fee";
+import {
+    clearPendingDeploy,
+    loadPendingDeploy,
+    recordPendingDeploy,
+    settlePriorDeploy,
+} from "../aztec/accountDeploy";
+import { markBridgeConsumed } from "../aztec/bridge";
+import { getTokenBalance } from "../aztec/balances";
+import { FEE_JUICE_ENTRY } from "../aztec/tokens";
 import { syncContactsToPxe, syncKnownSendersToPxe } from "../aztec/contacts";
 import { secureGet, secureSet, setMetaKeyProvider } from "../secureStorage";
 import { hasActiveOps, trackOp } from "./activity";
 import { drainClaimInbox } from "../aztec/claimInbox";
+import { autoClaimTick } from "../aztec/autoClaim";
 
 type AccountManager = Awaited<ReturnType<AztecWallet["createSchnorrAccount"]>>;
 
@@ -290,6 +300,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
         // Re-check live status — another popup/tab may have deployed already.
         if (await isInitialized(w, manager.address)) {
+            // If the deploy that landed was journaled by a session that died
+            // before its receipt, it still owes the claim bookkeeping: the fee
+            // consumed a bridge claim that must never be re-offered.
+            const landed = await loadPendingDeploy(
+                networkRef.current.id,
+                manager.address.toString(),
+            );
+            if (landed) {
+                if (landed.bridgeId) await markBridgeConsumed(landed.bridgeId);
+                await clearPendingDeploy(landed.network, landed.address);
+            }
             setAccount((prev) => (prev ? { ...prev, isDeployed: true } : prev));
             return;
         }
@@ -297,23 +318,59 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         if (!deployInFlightRef.current) {
             deployInFlightRef.current = trackOp(async () => {
                 const net = networkRef.current;
+                const addr = manager.address.toString();
+
+                // A deployment broadcast earlier — possibly by a session that
+                // died mid-wait — may still be settling. Resume THAT tx instead
+                // of proving a duplicate (minutes of proving, doomed by the
+                // original's initialization nullifier). Throws while genuinely
+                // in flight; returns false only when provably dead.
+                const prior = await loadPendingDeploy(net.id, addr);
+                if (prior && (await settlePriorDeploy(w, prior))) {
+                    setAccount((prev) => (prev ? { ...prev, isDeployed: true } : prev));
+                    return;
+                }
+
                 const fee = await resolveFeePaymentMethod(w, net, manager.address);
                 if (!fee.method) {
-                    const guidance =
-                        net.id === "sandbox"
-                            ? "Bridge fee juice from the local L1 (Need fee juice?), then try again."
-                            : net.id === "alpha"
-                              ? "Aztec mainnet has no sponsored fees — bridge AZTEC → fee juice on " +
-                                "fizzwallet.com/bridge first (tap “Need fee juice?”), then try again."
-                              : "Use the testnet faucet or bridge fee juice (Need fee juice?), then try again.";
-                    throw new Error(
-                        net.hasSponsoredFPC
-                            ? "Couldn't resolve a fee payment method to activate the account."
-                            : `Your account needs fee juice before its first transaction. ${guidance}`,
-                    );
+                    // No claim and no sponsor — but the account may already
+                    // HOLD fee juice (e.g. a prior deploy reverted after its
+                    // claim-paid setup landed the balance). method: undefined
+                    // means exactly "pay from balance", so only a truly empty
+                    // account is an error.
+                    const balance = await getTokenBalance(w, manager.address, FEE_JUICE_ENTRY);
+                    if (balance.public === 0n) {
+                        const guidance =
+                            net.id === "sandbox"
+                                ? "Bridge fee juice from the local L1 (Need fee juice?), then try again."
+                                : net.id === "alpha"
+                                  ? "Aztec mainnet has no sponsored fees — bridge AZTEC → fee juice on " +
+                                    "fizzwallet.com/bridge first (tap “Need fee juice?”), then try again."
+                                  : "Use the testnet faucet or bridge fee juice (Need fee juice?), then try again.";
+                        throw new Error(
+                            net.hasSponsoredFPC
+                                ? "Couldn't resolve a fee payment method to activate the account."
+                                : `Your account needs fee juice before its first transaction. ${guidance}`,
+                        );
+                    }
                 }
-                await deployAccountContract({ wallet: w, manager, feeMethod: fee.method });
+                await deployAccountContract({
+                    wallet: w,
+                    manager,
+                    feeMethod: fee.method,
+                    // Journal at broadcast so a death during the inclusion wait
+                    // resumes this exact tx (and its claim bookkeeping) later.
+                    onBroadcast: (txHash) =>
+                        recordPendingDeploy({
+                            network: net.id,
+                            address: addr,
+                            txHash,
+                            bridgeId: fee.consumesBridgeId,
+                            broadcastAt: Date.now(),
+                        }),
+                });
                 await markFeeConsumed(fee);
+                await clearPendingDeploy(net.id, addr);
                 setAccount((prev) => (prev ? { ...prev, isDeployed: true } : prev));
             }).finally(() => {
                 deployInFlightRef.current = null;
@@ -321,6 +378,36 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         }
         await deployInFlightRef.current;
     }, []);
+
+    // Background fee-juice landing: while the popup is open, a confirmed
+    // bridge claim is turned into visible balance automatically — deploying
+    // the account first if this is its first gas (the deploy pays itself with
+    // the claim). Deliberately invisible: no UI beyond the balance appearing.
+    // The 20s cadence is the polling on L1→L2 message availability; ticks
+    // before any local pending claim exist cost nothing.
+    useEffect(() => {
+        if (status !== "ready" || !wallet || !account) return;
+        let stopped = false;
+        const tick = () => {
+            void autoClaimTick({
+                wallet,
+                network: networkRef.current,
+                recipient: account.address,
+                isDeployed: account.isDeployed,
+                ensureAccountDeployed,
+            }).catch((err) => {
+                // Background path: log loudly (extension console) but never
+                // crash the popup. The claim stays usable as a next-tx fee.
+                if (!stopped) console.error("Background fee-juice claim failed:", err);
+            });
+        };
+        tick();
+        const timer = window.setInterval(tick, 20_000);
+        return () => {
+            stopped = true;
+            window.clearInterval(timer);
+        };
+    }, [status, wallet, account, ensureAccountDeployed]);
 
     const persistAccountsMeta = useCallback(async (meta: AccountsMeta) => {
         accountsMetaRef.current = meta;

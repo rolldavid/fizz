@@ -22,6 +22,7 @@ import {
 } from "../../lib/aztec/balances";
 import { FEE_JUICE_ENTRY, loadTokens, removeToken, type TokenEntry } from "../../lib/aztec/tokens";
 import { isSponsoredFPCAvailable } from "../../lib/aztec/fee";
+import { onFeeJuiceLanded } from "../../lib/aztec/autoClaim";
 
 type Route =
     | "home"
@@ -102,6 +103,9 @@ export function Home({
     useEffect(() => {
         refresh();
     }, [refresh]);
+
+    // The background claimer just turned a bridge claim into balance — show it.
+    useEffect(() => onFeeJuiceLanded(() => void refresh()), [refresh]);
 
     const feeJuiceRow = useMemo(() => rows.find((r) => r.token.kind === "fee_juice"), [rows]);
     const tokenRows = useMemo(() => rows.filter((r) => r.token.kind !== "fee_juice"), [rows]);

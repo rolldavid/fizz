@@ -34,6 +34,7 @@ import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { KEYS } from "../storage";
 import { secureGet, secureSet } from "../secureStorage";
+import { assertWithinU128 } from "./tokenContract";
 
 // LAZY by necessity, not style: pulling @aztec/aztec.js/ethereum + the
 // l1-artifacts ABIs into the popup's STATIC graph (the straightforward
@@ -77,6 +78,19 @@ export type PendingBridge = {
     status?: BridgeStatus;
     /** L1 tx hash of depositToAztecPublic, recorded at broadcast. */
     l1TxHash?: string;
+    /**
+     * L2 tx hash of the background landing tx (autoClaim), recorded at
+     * broadcast — the engine sends with NO_WAIT and reconciles the receipt on
+     * a later tick (or the next session), so the popup doesn't have to outlive
+     * inclusion. While set, the claim is withheld from fee payments: the
+     * landing tx will nullify the message, and attaching it to a user tx too
+     * would fail both.
+     */
+    claimTxHash?: string;
+    /** When the landing tx was broadcast. An unknown hash reads DROPPED on the
+     * node (gossip/load-balancer lag), so DROPPED is only treated as terminal
+     * after a grace window from this time. */
+    claimTxBroadcastAt?: number;
     createdAt: number;
     consumedAt?: number;
     dismissedAt?: number;
@@ -88,8 +102,31 @@ export function isClaimable(b: PendingBridge): boolean {
         (b.status ?? "pending") === "pending" &&
         !!b.messageHash &&
         !!b.messageLeafIndex &&
+        !b.claimTxHash && // a landing tx is in flight for it (see autoClaim)
         !b.consumedAt &&
         !b.dismissedAt
+    );
+}
+
+/** Record the broadcast landing tx for a claim (withholds it from fee use). */
+export async function markClaimTxBroadcast(id: string, txHash: string): Promise<void> {
+    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+    await secureSet(
+        KEYS.pendingBridges,
+        all.map((b) =>
+            b.id === id ? { ...b, claimTxHash: txHash, claimTxBroadcastAt: Date.now() } : b,
+        ),
+    );
+}
+
+/** The landing tx died (dropped/reverted) — return the claim to the pool. */
+export async function clearClaimTxBroadcast(id: string): Promise<void> {
+    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+    await secureSet(
+        KEYS.pendingBridges,
+        all.map((b) =>
+            b.id === id ? { ...b, claimTxHash: undefined, claimTxBroadcastAt: undefined } : b,
+        ),
     );
 }
 
@@ -318,6 +355,10 @@ export async function prepareBridgeClaim(args: {
 }): Promise<{ id: string; recipient: string; secretHash: string }> {
     const { network, recipient, amount } = args;
     if (amount <= 0n) throw new Error("Bridge amount must be greater than zero.");
+    // Bound the page-supplied amount: the real claim amount is re-bound from the
+    // on-chain deposit event in completeFromReceipt, but keep our own confirm
+    // card from ever showing a nonsensical (out-of-range) figure.
+    assertWithinU128(amount);
     const { generateClaimSecret } = await lazyEthereum();
     const [claimSecret, claimSecretHash] = await generateClaimSecret();
     const entry: PendingBridge = {
@@ -438,6 +479,27 @@ export async function listPendingBridges(networkId: AztecNetwork["id"]): Promise
 }
 
 /**
+ * Claims currently being spent by an in-flight transaction (the background
+ * auto-claim). Excluded from listReadyClaims so a concurrent user-initiated tx
+ * can't attach the same claim as its fee — the L1→L2 message nullifies on
+ * first consumption, so a double-attach makes BOTH transactions fail.
+ * Session-scoped by design: locks die with the popup, and an interrupted
+ * claim's message witness check re-gates it on the next open.
+ */
+const claimsBeingSpent = new Set<string>();
+
+/** Take the spend lock for a claim. False = someone else already holds it. */
+export function lockClaimForSpend(id: string): boolean {
+    if (claimsBeingSpent.has(id)) return false;
+    claimsBeingSpent.add(id);
+    return true;
+}
+
+export function releaseClaimSpendLock(id: string): void {
+    claimsBeingSpent.delete(id);
+}
+
+/**
  * Pending claims that are safe to attach to a fee-paying tx: scoped to THIS
  * recipient (a claim bridged to account A can't pay for account B's tx — the
  * L1→L2 message encodes the recipient) AND provably present in the message
@@ -457,9 +519,10 @@ export async function listReadyClaims(
 ): Promise<PendingBridge[]> {
     const recip = recipient.toString();
     // In-flight ("depositing"/"sent") and failed entries are never offered to
-    // fee payments — only claims completed from a confirmed L1 receipt.
+    // fee payments — only claims completed from a confirmed L1 receipt. A
+    // claim locked by an in-flight spend is excluded for the same reason.
     const mine = (await listPendingBridges(networkId)).filter(
-        (b) => b.recipient === recip && isClaimable(b),
+        (b) => b.recipient === recip && isClaimable(b) && !claimsBeingSpent.has(b.id),
     );
     if (mine.length === 0) return [];
     const node = (wallet as any).aztecNode;

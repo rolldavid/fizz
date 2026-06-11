@@ -28,6 +28,9 @@ export const KEYS = {
     /** Multi-account metadata (count, active index, labels) — encrypted at rest. */
     accountsMeta: "aztec.accountsMeta.v2",
     pendingBridges: "aztec.bridges.pending.v1",
+    // Account-deployment txs journaled at broadcast, so an interrupted session
+    // resumes the SAME deploy instead of proving a doomed duplicate.
+    pendingAccountDeploys: "aztec.accountDeploys.pending.v1",
     contactsPrefix: "aztec.contacts.v1",
     // Addresses you've sent to — the broad "known sender" set used for private
     // note discovery, distinct from named contacts. Per-network.

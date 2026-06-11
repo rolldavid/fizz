@@ -47,15 +47,18 @@ function withDomain(seed: Uint8Array, tag: string): Uint8Array {
 }
 
 async function deriveFr(seed: Uint8Array, tag: string): Promise<Fr> {
-    // `domained` holds a copy of the seed; zero it (and the wide hash) after use
-    // so derivation leaves no extra copies of seed-derived material lingering.
+    // `domained` holds a copy of the seed; zero it (and the wide hash, plus the
+    // Buffer copy handed to fromBufferReduce) after use so derivation leaves no
+    // extra copies of seed-derived material lingering.
     const domained = withDomain(seed, tag);
     const wide = await sha512(domained);
     domained.fill(0);
+    const buf = Buffer.from(wide);
     try {
-        return Fr.fromBufferReduce(Buffer.from(wide));
+        return Fr.fromBufferReduce(buf);
     } finally {
         wide.fill(0);
+        buf.fill(0);
     }
 }
 
@@ -175,8 +178,17 @@ export async function deployAccountContract(args: {
     wallet: AztecWallet;
     manager: Awaited<ReturnType<AztecWallet["createSchnorrAccount"]>>;
     feeMethod?: { getExecutionPayload?: unknown } | undefined;
+    /**
+     * Called the moment the deploy tx is broadcast, BEFORE the inclusion wait.
+     * Journal the hash here: if the popup dies during the wait, the next
+     * session resumes the SAME tx (settlePriorDeploy) instead of proving a
+     * duplicate that the initialization nullifier dooms anyway.
+     */
+    onBroadcast?: (txHash: string) => Promise<void>;
 }): Promise<{ txHash: string }> {
     const { NO_FROM } = await import("@aztec/aztec.js/account");
+    const { NO_WAIT } = await import("@aztec/aztec.js/contracts");
+    const { waitForTx } = await import("@aztec/aztec.js/node");
     const deployMethod = await args.manager.getDeployMethod();
 
     // If the account contract CLASS is already published on this chain (true on
@@ -190,12 +202,19 @@ export async function deployAccountContract(args: {
         instance.currentContractClassId,
     );
 
-    const sent: any = await deployMethod.send({
+    // NO_WAIT so the hash exists at broadcast (for the journal); the
+    // deployed-ness guarantee this function makes is the waitForTx below.
+    const txHash: any = await deployMethod.send({
         from: NO_FROM,
         skipClassPublication: publishedClass != null,
+        wait: NO_WAIT,
         ...(args.feeMethod ? { fee: { paymentMethod: args.feeMethod } } : {}),
     } as any);
-    const hash = sent?.receipt?.txHash;
-    if (!hash) throw new Error("Account deployment sent but returned no tx hash.");
-    return { txHash: hash.toString() };
+    if (!txHash) throw new Error("Account deployment sent but returned no tx hash.");
+    await args.onBroadcast?.(txHash.toString());
+
+    // Throws on dropped/reverted/timeout — callers must never see "deployed"
+    // for an account whose entrypoint doesn't exist on-chain yet.
+    await waitForTx((args.wallet as any).aztecNode, txHash);
+    return { txHash: txHash.toString() };
 }

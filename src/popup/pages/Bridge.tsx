@@ -15,6 +15,7 @@ import {
     type PendingBridge,
 } from "../../lib/aztec/bridge";
 import { drainClaimInbox } from "../../lib/aztec/claimInbox";
+import { onFeeJuiceLanded } from "../../lib/aztec/autoClaim";
 import {
     clearBridgeDeposit,
     clearBridgeParams,
@@ -79,6 +80,9 @@ export function Bridge({ onBack }: { onBack: () => void }) {
     useEffect(() => {
         void refresh();
     }, [refresh]);
+
+    // Drop the card the moment the background claimer lands the juice.
+    useEffect(() => onFeeJuiceLanded(() => void refresh()), [refresh]);
 
     // On open: pick up a prepare hand-off, or — if none — recover a deposit
     // that was reported while this popup was closed, so a confirmed L1 deposit
@@ -299,8 +303,8 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                                     ✓ Fee juice incoming
                                 </div>
                                 <div className="hint" style={{ marginTop: 4 }}>
-                                    It lands on L2 in a few minutes and pays your next transaction
-                                    automatically. Nothing else to do.
+                                    It lands in your balance automatically in a few minutes —
+                                    nothing else to do.
                                 </div>
                             </div>
                             <button
@@ -357,8 +361,8 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                             <div style={{ fontWeight: 600 }}>Need fee juice?</div>
                             <div className="hint" style={{ margin: 0 }}>
                                 Bridge AZTEC into fee juice on our web bridge. Connect this wallet there, enter
-                                an amount, and approve the deposit. The fee juice is sent straight to your
-                                connected account and pays your next transaction. No claim ticket to copy.
+                                an amount, and approve the deposit. The fee juice lands in your connected
+                                account's balance automatically. No claim ticket to copy.
                             </div>
                             <a
                                 className="btn btn-primary btn-block"
@@ -387,8 +391,8 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                     <div className="card" style={{ borderColor: "var(--success)" }}>
                         <div style={{ color: "var(--success)", fontWeight: 500 }}>✓ Deposit sent</div>
                         <div className="hint" style={{ marginTop: 4 }}>
-                            The claim lands on L2 in a few minutes and your next transaction uses it
-                            automatically. Nothing else to do.
+                            It lands in your balance automatically in a few minutes — nothing
+                            else to do.
                         </div>
                     </div>
                 )}
@@ -407,7 +411,8 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                                     </div>
                                     <div className="muted" style={{ fontSize: 11 }}>
                                         {status === "pending" &&
-                                            `Posted ${new Date(b.createdAt).toLocaleString()} · auto-claims on your next outgoing transaction.`}
+                                            `Confirmed — adding to your balance automatically. ` +
+                                                `Takes a few minutes; keep the wallet open.`}
                                         {status === "sent" &&
                                             "L1 deposit sent, confirming. This finishes automatically; check back in a minute."}
                                         {status === "depositing" &&
