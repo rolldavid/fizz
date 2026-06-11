@@ -187,6 +187,45 @@ export function directRpcProvider(url: string): EthereumProvider {
 
 export const SANDBOX_L1_RPC_URL = "http://localhost:8545";
 
+/** Use the provided (seed-derived) secret, or fall back to a random one. */
+async function resolveClaimSecret(
+    provided: Fr | undefined,
+): Promise<{ claimSecret: Fr; claimSecretHash: Fr }> {
+    if (provided) {
+        const { computeSecretHash } = await lazyHash();
+        return { claimSecret: provided, claimSecretHash: await computeSecretHash(provided) };
+    }
+    const { generateClaimSecret } = await lazyEthereum();
+    const [claimSecret, claimSecretHash] = await generateClaimSecret();
+    return { claimSecret, claimSecretHash };
+}
+
+/**
+ * Adopt a claim reconstructed from an on-chain deposit event during seed
+ * recovery (claimRecovery.ts). Dedupes on the message hash — re-running the
+ * scan, or scanning on a wallet that already tracks the claim, is a no-op.
+ */
+export async function adoptRecoveredBridge(entry: {
+    network: AztecNetwork["id"];
+    recipient: string;
+    claimAmount: string;
+    claimSecret: string;
+    messageHash: string;
+    messageLeafIndex: string;
+}): Promise<boolean> {
+    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+    if (all.some((b) => b.messageHash?.toLowerCase() === entry.messageHash.toLowerCase())) {
+        return false;
+    }
+    await upsertBridge({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        ...entry,
+        status: "pending",
+        createdAt: Date.now(),
+    });
+    return true;
+}
+
 /** Insert or replace (by id) and persist. Newest first. */
 async function upsertBridge(entry: PendingBridge): Promise<void> {
     const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
@@ -258,6 +297,9 @@ export async function bridgeFeeJuice(args: {
     amount: bigint;
     provider: EthereumProvider;
     mint?: boolean;
+    /** Seed-derived secret (deriveBridgeClaimSecret) — recoverable after a
+     * reinstall. Omitted (tests) → random, recoverable only from local storage. */
+    claimSecret?: Fr;
 }): Promise<PendingBridge> {
     const { wallet, network, recipient, amount, provider, mint = false } = args;
 
@@ -281,12 +323,10 @@ export async function bridgeFeeJuice(args: {
         throw new Error("Node did not report the L1 fee-juice portal/asset addresses.");
     }
 
-    // The secret is generated HERE and persisted BEFORE any L1 transaction is
-    // broadcast. The previous flow (SDK portal manager) generated it
-    // internally and only surfaced it after mining — a page death in that
-    // window lost the secret and stranded the deposited funds forever.
-    const { generateClaimSecret } = await lazyEthereum();
-    const [claimSecret, claimSecretHash] = await generateClaimSecret();
+    // The secret exists BEFORE any L1 transaction is broadcast, and (when the
+    // caller passes a seed-derived one) is re-derivable from the recovery
+    // phrase — losing local storage no longer strands the deposit.
+    const { claimSecret, claimSecretHash } = await resolveClaimSecret(args.claimSecret);
     let entry: PendingBridge = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         network: network.id,
@@ -354,6 +394,9 @@ export async function prepareBridgeClaim(args: {
     network: AztecNetwork;
     recipient: AztecAddress;
     amount: bigint;
+    /** Seed-derived secret (deriveBridgeClaimSecret) — recoverable after a
+     * reinstall. Omitted → random (legacy behaviour). */
+    claimSecret?: Fr;
 }): Promise<{ id: string; recipient: string; secretHash: string }> {
     const { network, recipient, amount } = args;
     if (amount <= 0n) throw new Error("Bridge amount must be greater than zero.");
@@ -361,8 +404,7 @@ export async function prepareBridgeClaim(args: {
     // on-chain deposit event in completeFromReceipt, but keep our own confirm
     // card from ever showing a nonsensical (out-of-range) figure.
     assertWithinU128(amount);
-    const { generateClaimSecret } = await lazyEthereum();
-    const [claimSecret, claimSecretHash] = await generateClaimSecret();
+    const { claimSecret, claimSecretHash } = await resolveClaimSecret(args.claimSecret);
     const entry: PendingBridge = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         network: network.id,

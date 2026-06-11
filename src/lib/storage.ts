@@ -28,6 +28,10 @@ export const KEYS = {
     /** Multi-account metadata (count, active index, labels) — encrypted at rest. */
     accountsMeta: "aztec.accountsMeta.v2",
     pendingBridges: "aztec.bridges.pending.v1",
+    // Next seed-derived bridge-claim index, per network + account (encrypted).
+    bridgeClaimIndexPrefix: "aztec.bridges.claimIndex.v1",
+    // Whether the one-time L1 claim-recovery scan ran, per network + account.
+    bridgeRecoveryDonePrefix: "aztec.bridges.recoveryDone.v1",
     // Account-deployment txs journaled at broadcast, so an interrupted session
     // resumes the SAME deploy instead of proving a doomed duplicate.
     pendingAccountDeploys: "aztec.accountDeploys.pending.v1",

@@ -25,6 +25,9 @@ import {
     saveBridgeParams,
 } from "../../lib/state/bridgeHandoff";
 import { formatUnits } from "../../lib/aztec/balances";
+import { vaultStore } from "../../lib/vault/store";
+import { deriveBridgeClaimSecret } from "../../lib/aztec/wallet";
+import { bumpClaimIndex, nextClaimIndex, recoverBridgedClaims } from "../../lib/aztec/claimRecovery";
 
 type PrepPhase = "confirm" | "awaiting" | "completing" | "done";
 
@@ -43,6 +46,39 @@ export function Bridge({ onBack }: { onBack: () => void }) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [done, setDone] = useState(false);
+    const [rescanMsg, setRescanMsg] = useState<string | null>(null);
+    const [rescanning, setRescanning] = useState(false);
+
+    // Manual escape hatch for the once-per-install recovery scan: a flaky L1
+    // RPC (or an empty answer from a withholding one) must never be a dead
+    // end — the user can always re-scan for seed-derived deposits.
+    async function rescan() {
+        setRescanMsg(null);
+        setError(null);
+        if (!wallet || !account) return setError("Wallet not loaded.");
+        const seed = vaultStore.getUnlocked()?.seed;
+        if (!seed) return setError("Wallet is locked.");
+        setRescanning(true);
+        try {
+            const res = await recoverBridgedClaims({
+                wallet,
+                network,
+                seed,
+                accountIndex: account.index,
+                recipient: account.address,
+            });
+            setRescanMsg(
+                res.scanned === 0
+                    ? "No deposits found on L1 for this account."
+                    : `Checked ${res.scanned} deposit${res.scanned === 1 ? "" : "s"}; recovered ${res.recovered}.`,
+            );
+            await refresh();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setRescanning(false);
+        }
+    }
     const [pending, setPending] = useState<PendingBridge[]>([]);
     const [refreshError, setRefreshError] = useState<string | null>(null);
 
@@ -126,6 +162,14 @@ export function Bridge({ onBack }: { onBack: () => void }) {
         setDone(false);
         setBusy(true);
         trackOp(async () => {
+            const seed = vaultStore.getUnlocked()?.seed;
+            if (!seed) throw new Error("Wallet is locked.");
+            const addr = account.address.toString();
+            // Allocate-then-use: bump BEFORE the secret can reach a deposit. A
+            // crash after the bump wastes an index (a gap, covered by the
+            // recovery scan's window); reuse would make a deposit unclaimable.
+            const claimIndex = await nextClaimIndex(network.id, addr);
+            await bumpClaimIndex(network.id, addr, claimIndex);
             await bridgeFeeJuice({
                 wallet,
                 network,
@@ -133,6 +177,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                 amount: SANDBOX_MINT_AMOUNT,
                 provider: directRpcProvider(SANDBOX_L1_RPC_URL),
                 mint: true,
+                claimSecret: await deriveBridgeClaimSecret(seed, account.index, claimIndex),
             });
         })
             .then(async () => {
@@ -152,10 +197,20 @@ export function Bridge({ onBack }: { onBack: () => void }) {
         setPrepError(null);
         try {
             await clearPrepare(); // consume the request
+            // Seed-derived secret: re-derivable from the recovery phrase, so a
+            // reinstall (even a new browser) can recover this claim from L1.
+            const seed = vaultStore.getUnlocked()?.seed;
+            if (!seed) throw new Error("Wallet is locked.");
+            const addr = account.address.toString();
+            // Allocate-then-use: a crash after the bump leaves a harmless gap;
+            // reusing an index would make the second deposit unclaimable.
+            const claimIndex = await nextClaimIndex(network.id, addr);
+            await bumpClaimIndex(network.id, addr, claimIndex);
             const { secretHash } = await prepareBridgeClaim({
                 network,
                 recipient: account.address,
                 amount: BigInt(prep.amount),
+                claimSecret: await deriveBridgeClaimSecret(seed, account.index, claimIndex),
             });
             // Hand the page the two PUBLIC values it needs to deposit.
             await saveBridgeParams(account.address.toString(), secretHash);
@@ -394,6 +449,24 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                             The gas becomes usable in a few minutes and is added automatically
                             with your first transaction — nothing else to do.
                         </div>
+                    </div>
+                )}
+
+                {!isSandbox && network.l1RpcUrl && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <button
+                            className="btn btn-ghost"
+                            style={{ fontSize: 11, padding: "6px 12px", alignSelf: "flex-start" }}
+                            disabled={rescanning}
+                            onClick={() => void rescan()}
+                        >
+                            {rescanning ? "Scanning L1…" : "Recover bridged gas from L1"}
+                        </button>
+                        {rescanMsg && (
+                            <div className="muted" style={{ fontSize: 11 }}>
+                                {rescanMsg}
+                            </div>
+                        )}
                     </div>
                 )}
 

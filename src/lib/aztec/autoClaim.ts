@@ -27,6 +27,7 @@ import type { AztecNetwork } from "./networks";
 import { hasActiveOps } from "../state/activity";
 import { clearBridgeDeposit, readBridgeDeposit } from "../state/bridgeHandoff";
 import { loadPendingDeploy } from "./accountDeploy";
+import { isClaimRecoveryDone, recoverBridgedClaims } from "./claimRecovery";
 import {
     clearClaimTxBroadcast,
     listPendingBridges,
@@ -96,9 +97,39 @@ export async function autoClaimTick(args: {
     isDeployed: boolean;
     /** walletContext's deploy — used only to RESUME an interrupted deployment. */
     ensureAccountDeployed: () => Promise<void>;
+    /** For the once-per-install seed recovery scan (claimRecovery). */
+    seed?: Uint8Array;
+    accountIndex?: number;
 }): Promise<void> {
     const { wallet, network, recipient, isDeployed, ensureAccountDeployed } = args;
     const recip = recipient.toString();
+
+    // Once per (network, account) per install: scan L1 for seed-derived claims
+    // this install doesn't know about (fresh import / reinstall). Marked done
+    // only on success, so a failed scan retries next tick.
+    if (
+        args.seed &&
+        args.accountIndex !== undefined &&
+        network.l1RpcUrl &&
+        !(await isClaimRecoveryDone(network.id, recip))
+    ) {
+        try {
+            const result = await recoverBridgedClaims({
+                wallet,
+                network,
+                seed: args.seed,
+                accountIndex: args.accountIndex,
+                recipient,
+            });
+            if (result.recovered > 0) emitLanded();
+        } catch (err) {
+            // Best-effort, once-per-install: an unhealthy L1 RPC must not hold
+            // the load-bearing paths below (deposit adoption, deploy resume)
+            // hostage. The done-flag is only set on success, so this retries
+            // on the next tick.
+            console.error("Bridge claim recovery scan failed (will retry):", err);
+        }
+    }
 
     // A deployment journaled by an earlier session reconciles first — its tx
     // may have landed (flip isDeployed + finish claim bookkeeping) or still be

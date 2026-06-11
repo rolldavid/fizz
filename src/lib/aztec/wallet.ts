@@ -97,6 +97,28 @@ export async function exportAccountSecretHex(seed: Uint8Array, accountIndex = 0)
     return secret.toString();
 }
 
+/**
+ * Deterministic bridge-claim secret. Claims used to be RANDOM, which made the
+ * extension's local storage the only copy — uninstalling mid-bridge stranded
+ * the deposit forever (observed live, real funds). Deriving from the seed
+ * means a wallet imported into a fresh browser can re-derive candidate
+ * secrets, scan the portal's deposit events for its address, and recover any
+ * unclaimed deposit (claimRecovery.ts).
+ *
+ * PINNED like account derivation (tests/unit/derivation.test.ts): changing
+ * this scheme orphans every in-flight claim made under the old one.
+ */
+export async function deriveBridgeClaimSecret(
+    seed: Uint8Array,
+    accountIndex: number,
+    claimIndex: number,
+): Promise<Fr> {
+    return deriveFr(
+        seed,
+        `v${DERIVATION_VERSION}/account/${accountIndex}/bridge-claim/${claimIndex}`,
+    );
+}
+
 async function checkNodeReachable(nodeUrl: string, timeoutMs = 6000): Promise<void> {
     // Aztec node speaks JSON-RPC. A trivial node_getNodeInfo call confirms the URL
     // is up before we spend time spinning up PXE + WASM.

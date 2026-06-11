@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     DERIVATION_VERSION,
     deriveAccount,
+    deriveBridgeClaimSecret,
     exportAccountSecretHex,
 } from "../../src/lib/aztec/wallet";
 import { mnemonicToSeed } from "../../src/lib/vault/mnemonic";
@@ -84,5 +85,27 @@ describe("mnemonic", () => {
     it("normalizes interior whitespace", () => {
         const messy = "test  test   test test\ttest test test test test test test junk";
         expect(hex(mnemonicToSeed(messy))).toBe(PINNED.seedHex);
+    });
+});
+
+describe("bridge-claim secret derivation (DERIVATION_VERSION 1)", () => {
+    // PINNED like account secrets: claim recovery re-derives these from the
+    // mnemonic and matches them against on-chain deposit events. A change here
+    // orphans every in-flight claim made under the old scheme.
+    it("derives the pinned claim-secret vectors", async () => {
+        const seed = await mnemonicToSeed(MNEMONIC);
+        const c00 = await deriveBridgeClaimSecret(seed, 0, 0);
+        const c01 = await deriveBridgeClaimSecret(seed, 0, 1);
+        const c10 = await deriveBridgeClaimSecret(seed, 1, 0);
+        expect(new Set([c00, c01, c10].map((f) => f.toString())).size).toBe(3);
+        // Distinct from the account-secret domain.
+        const a0 = await deriveAccount(seed, 0);
+        expect(c00.toString()).not.toBe(a0.secret.toString());
+        // Deterministic.
+        expect((await deriveBridgeClaimSecret(seed, 0, 0)).toString()).toBe(c00.toString());
+        // Pin the exact value — never update this expectation (see above).
+        expect(c00.toString()).toBe(
+            "0x2bafeefad8466360daa7db9162eb6aca6ef3b3cbfe05e782e9e47789d2f4bbda",
+        );
     });
 });

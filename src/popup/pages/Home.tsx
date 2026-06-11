@@ -630,14 +630,13 @@ function FeeJuiceLine({
     unit: string;
     sponsored: boolean;
 }) {
-    const balance = row?.balance.public ?? 0n;
+    // Optimistic headline: confirmed-but-unswept bridge claims count into the
+    // number (the user asked for the total they own, not just what's minted);
+    // the green tag marks that part of it is still in transit.
+    const balance = (row?.balance.public ?? 0n) + incoming;
     const title = sponsored ? "Fees are sponsored here. Bridging is optional" : "Get gas";
     const incomingTag =
-        incoming > 0n ? (
-            <span className="fee-line-incoming">
-                +{formatUnits(incoming, FEE_JUICE_ENTRY.decimals)} on the way
-            </span>
-        ) : null;
+        incoming > 0n ? <span className="fee-line-incoming">· on the way</span> : null;
     if (bridgeHref) {
         return (
             <a className="fee-line" href={bridgeHref} target="_blank" rel="noreferrer" title={title}>

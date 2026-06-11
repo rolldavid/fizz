@@ -422,6 +422,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 recipient: account.address,
                 isDeployed: account.isDeployed,
                 ensureAccountDeployed,
+                seed: vaultStore.getUnlocked()?.seed,
+                accountIndex: account.index,
             }).catch((err) => {
                 // Background path: log loudly (extension console) but never
                 // crash the popup. The claim stays usable as a next-tx fee.
