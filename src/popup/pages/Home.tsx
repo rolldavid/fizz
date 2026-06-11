@@ -630,13 +630,11 @@ function FeeJuiceLine({
     unit: string;
     sponsored: boolean;
 }) {
-    // Optimistic headline: confirmed-but-unswept bridge claims count into the
-    // number (the user asked for the total they own, not just what's minted);
-    // the green tag marks that part of it is still in transit.
+    // Optimistic headline: confirmed-but-unswept bridge claims count straight
+    // into the number — it's the user's gas either way (the first transaction
+    // sweeps it in), so no transit marker.
     const balance = (row?.balance.public ?? 0n) + incoming;
     const title = sponsored ? "Fees are sponsored here. Bridging is optional" : "Get gas";
-    const incomingTag =
-        incoming > 0n ? <span className="fee-line-incoming">· on the way</span> : null;
     if (bridgeHref) {
         return (
             <a className="fee-line" href={bridgeHref} target="_blank" rel="noreferrer" title={title}>
@@ -651,7 +649,6 @@ function FeeJuiceLine({
                         </>
                     )}
                 </span>
-                {incomingTag}
                 <span className="fee-line-cta">Need gas? ↗</span>
             </a>
         );
@@ -671,7 +668,6 @@ function FeeJuiceLine({
                     </>
                 )}
             </span>
-            {incomingTag}
             <span className="fee-line-cta">Need gas? →</span>
         </button>
     );
