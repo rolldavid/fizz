@@ -16,10 +16,22 @@ index 867a42d..fbe56aa 100644
              throw new NoRetryError(errorMessage);
          } else {
 diff --git a/node_modules/@aztec/foundation/dest/json-rpc/client/safe_json_rpc_client.js b/node_modules/@aztec/foundation/dest/json-rpc/client/safe_json_rpc_client.js
-index 07c93b1..d5f4d3b 100644
+index 07c93b1..784bad3 100644
 --- a/node_modules/@aztec/foundation/dest/json-rpc/client/safe_json_rpc_client.js
 +++ b/node_modules/@aztec/foundation/dest/json-rpc/client/safe_json_rpc_client.js
-@@ -165,7 +165,8 @@ const clients = new Map();
+@@ -9,7 +9,10 @@ import { defaultFetch } from './fetch.js';
+ // minimal latency
+ const DEFAULT_BATCH_WINDOW_MS = 0;
+ // the maximum size of a batched request
+-const DEFAULT_MAX_BATCH_SIZE = 100;
++// PATCHED (fizz): drpc's free tier (the canonical public Aztec mainnet RPC)
++// rejects JSON-RPC batches of more than 3 requests with a 500. The SDK's
++// default of 100 made every deploy/simulation burst fail there.
++const DEFAULT_MAX_BATCH_SIZE = 3;
+ // 10 mb
+ const DEFAULT_MAX_REQUESTY_BODY_SIZE = 10 * 1024 * 1024;
+ // expose helpful information on the RPC clients such that we can recognize them later
+@@ -165,7 +168,8 @@ const clients = new Map();
          const response = await deferred.promise;
          log.debug(format(`result`, method, response));
          if ('error' in response) {
