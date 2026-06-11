@@ -16,7 +16,7 @@ index 867a42d..fbe56aa 100644
              throw new NoRetryError(errorMessage);
          } else {
 diff --git a/node_modules/@aztec/foundation/dest/json-rpc/client/safe_json_rpc_client.js b/node_modules/@aztec/foundation/dest/json-rpc/client/safe_json_rpc_client.js
-index 07c93b1..784bad3 100644
+index 07c93b1..b977380 100644
 --- a/node_modules/@aztec/foundation/dest/json-rpc/client/safe_json_rpc_client.js
 +++ b/node_modules/@aztec/foundation/dest/json-rpc/client/safe_json_rpc_client.js
 @@ -9,7 +9,10 @@ import { defaultFetch } from './fetch.js';
@@ -41,3 +41,31 @@ index 07c93b1..784bad3 100644
                  cause: response.error
              });
          }
+@@ -178,7 +182,26 @@ const clients = new Map();
+         ].includes(response.result)) {
+             return;
+         }
+-        return schema[methodName].returnType().parseAsync(response.result);
++        // PATCHED (fizz): name the failing method and include the raw result
++        // on schema mismatches — bare zod messages ("Expected string, received
++        // object (0)") were undiagnosable, especially across a load-balanced
++        // public node pool where instances can disagree on response shapes.
++        try {
++            return await schema[methodName].returnType().parseAsync(response.result);
++        } catch (err) {
++            const detail = Array.isArray(err?.issues)
++                ? err.issues.map((i)=>`${i.message} at ${i.path?.join('.') || '(root)'}`).join('; ')
++                : (err?.message ?? String(err));
++            let raw;
++            try {
++                raw = JSON.stringify(response.result).slice(0, 400);
++            } catch {
++                raw = String(response.result);
++            }
++            throw new Error(`RPC response for ${method} failed schema validation: ${detail}. Raw result: ${raw}`, {
++                cause: err
++            });
++        }
+     };
+     const clientId = nextClientId++;
+     const proxy = {
