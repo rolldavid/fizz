@@ -158,7 +158,10 @@ export function startTokenDeploy(args: {
         setTask({ phase: "done", ...base, address: addrStr, txHash: res.txHash });
     }).catch(async (e) => {
         // The failure is shown in the status bar + Deploy page — the journal
-        // would only produce a stale "interrupted" banner next session.
+        // would only produce a stale "interrupted" banner next session. Keep
+        // the FULL error (stack and all) in the console: the UI only carries
+        // the message, which for deep SDK failures can be a bare TypeError.
+        console.error("Token deploy failed:", e);
         await clearDeployJournal();
         setTask({
             phase: "failed",

@@ -8,6 +8,7 @@ import {
     useDeployTask,
 } from "../../lib/state/deployTask";
 import { parseUnits } from "../../lib/aztec/balances";
+import { assessFeeReadiness } from "../../lib/aztec/fee";
 
 /**
  * Token deployment, fully in-wallet. The deploy itself runs as a background
@@ -27,6 +28,9 @@ export function Deploy({ onBack }: { onBack: () => void }) {
     const [keepMinter, setKeepMinter] = useState(true);
 
     const [error, setError] = useState<string | null>(null);
+    const [checking, setChecking] = useState(false);
+    /** Why deploying is blocked: gas is incoming (wait) or absent (go get it). */
+    const [gasGate, setGasGate] = useState<"incoming" | "none" | null>(null);
     const [copied, setCopied] = useState(false);
 
     // Visible elapsed clock while proving — minutes of silent "Deploying…"
@@ -43,14 +47,31 @@ export function Deploy({ onBack }: { onBack: () => void }) {
         return () => window.clearInterval(t);
     }, [startedAt]);
 
-    function deploy() {
+    async function deploy() {
         setError(null);
+        setGasGate(null);
         // Validate on click instead of disabling the button: a disabled button
         // swallows the click with zero feedback ("nothing happened").
         if (!name.trim() || !symbol.trim()) {
             return setError("Give your token a name and a symbol first.");
         }
         if (!wallet || !account) return setError("Wallet not loaded.");
+        // Gas gate BEFORE proving anything (same as Send): the headline gas
+        // number includes incoming claims that may not be consumable yet, and
+        // a deploy with no usable fee source dies deep in the SDK with an
+        // unhelpful error.
+        setChecking(true);
+        try {
+            const readiness = await assessFeeReadiness(wallet, network, account.address);
+            if (readiness.kind !== "ready") {
+                setGasGate(readiness.kind);
+                return;
+            }
+        } catch (e) {
+            return setError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setChecking(false);
+        }
         try {
             const d = Number(decimals);
             const supplyValue = supply.trim() ? parseUnits(supply, d) : 0n;
@@ -320,8 +341,36 @@ export function Deploy({ onBack }: { onBack: () => void }) {
 
                 {error && <div className="error">{error}</div>}
 
-                <button className="btn btn-primary btn-block" onClick={deploy}>
-                    Deploy token
+                {gasGate === "incoming" && (
+                    <div className="card card-accent" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ fontWeight: 600 }}>Your gas is on the way</div>
+                        <div className="hint" style={{ margin: 0 }}>
+                            A bridge to this account is still landing — the gas usually becomes
+                            usable within a few minutes, and this deploy will use it automatically.
+                            Try again shortly.
+                        </div>
+                    </div>
+                )}
+                {gasGate === "none" && (
+                    <div className="card card-accent" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ fontWeight: 600 }}>You need gas first</div>
+                        <div className="hint" style={{ margin: 0 }}>
+                            This account has no fee juice, and deploying a token needs some. Get
+                            gas, wait for it to land, then deploy.
+                        </div>
+                        <a
+                            className="btn btn-primary btn-block"
+                            href="https://fizzwallet.com/bridge"
+                            target="_blank"
+                            rel="noreferrer"
+                        >
+                            Get gas ↗
+                        </a>
+                    </div>
+                )}
+
+                <button className="btn btn-primary btn-block" disabled={checking} onClick={() => void deploy()}>
+                    {checking ? "Checking…" : "Deploy token"}
                 </button>
             </div>
         </>
