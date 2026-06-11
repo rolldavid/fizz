@@ -27,18 +27,14 @@ const buildManifest = (env: ConfigEnv): any => {
         // that bb.js FETCHES; without it the PXE can't boot. data: transmits
         // nothing anywhere, so the exfiltration posture is intact.
         "data:",
-        // Aztec Alpha (Mainnet) node — pinned to the exact host (not a wildcard)
-        // to keep the seed-exfil egress allowlist as tight as possible.
-        "https://aztec-mainnet.drpc.org",
+        // drpc (keyed): the Aztec mainnet node AND the read-only L1 RPCs the
+        // bridge uses for receipt verification + claim recovery (networks.ts).
+        // One pinned host covers all three networks. Removing it silently
+        // strands every bridge at "sent" — the CSP block is indistinguishable
+        // from "not mined yet".
+        "https://lb.drpc.live",
         // Testnet/devnet nodes.
         "https://*.aztec-labs.com",
-        // L1 receipt reads for the fee-juice bridge: recoverInFlightBridges
-        // verifies the DepositToAztecPublic event straight from L1 before a
-        // claim becomes spendable (networks.ts l1RpcUrl). Read-only JSON-RPC,
-        // pinned to exact hosts. Removing these silently strands every bridge
-        // at "sent" — the CSP block is indistinguishable from "not mined yet".
-        "https://ethereum-rpc.publicnode.com",
-        "https://ethereum-sepolia-rpc.publicnode.com",
         // Proving parameters (CRS) — fetched by bb.js ONCE at first proof.
         "https://crs.aztec-cdn.foundation",
         ...(isProd ? [] : ["http://localhost:*", "http://127.0.0.1:*"]),
@@ -97,10 +93,8 @@ const buildManifest = (env: ConfigEnv): any => {
         // footprint, and avoid a Web Store review flag.
         host_permissions: [
             ...(isProd ? [] : ["http://localhost/*", "http://127.0.0.1/*"]),
-            "https://aztec-mainnet.drpc.org/*",
+            "https://lb.drpc.live/*",
             "https://*.aztec-labs.com/*",
-            "https://ethereum-rpc.publicnode.com/*",
-            "https://ethereum-sepolia-rpc.publicnode.com/*",
             "https://crs.aztec-cdn.foundation/*",
         ],
         // The Aztec stack (PXE, bb.js prover, Noir ACVM, foundation crypto) runs

@@ -46,7 +46,7 @@ export const NETWORKS: AztecNetwork[] = [
         id: "alpha",
         name: "Aztec Mainnet",
         description: "Production · Ethereum L1",
-        nodeUrl: "https://aztec-mainnet.drpc.org",
+        nodeUrl: "https://lb.drpc.live/aztec-mainnet/AsSP5jeGMUnUmdsy88mWgdsyXG-SZcwR8ZfEVjewFaCJ",
         l1ChainId: 1, // Ethereum mainnet
         rollupVersion: 2934756905,
         // Mainnet has NO SponsoredFPC deployed and NO faucet (docs + live node:
@@ -58,7 +58,7 @@ export const NETWORKS: AztecNetwork[] = [
         // Without this, recoverInFlightBridges never runs on mainnet and every
         // bridge deposit strands at "sent" (the secret survives locally, but
         // the claim can't complete). Must stay in the manifest's connect-src.
-        l1RpcUrl: "https://ethereum-rpc.publicnode.com",
+        l1RpcUrl: "https://lb.drpc.live/ethereum/AsSP5jeGMUnUmdsy88mWgdsyXG-SZcwR8ZfEVjewFaCJ",
     },
     {
         id: "testnet",
@@ -77,7 +77,7 @@ export const NETWORKS: AztecNetwork[] = [
         //     artifact: instance and artifact must match for the PXE to prove.
         hasSponsoredFPC: true,
         faucetUrl: "https://aztec-faucet.nethermind.io/",
-        l1RpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
+        l1RpcUrl: "https://lb.drpc.live/sepolia/AsSP5jeGMUnUmdsy88mWgdsyXG-SZcwR8ZfEVjewFaCJ",
     },
     {
         id: "devnet",

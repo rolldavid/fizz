@@ -30,9 +30,9 @@ export const BRIDGE_NETWORKS: Record<NetId, BridgeNetwork> = {
     mainnet: {
         id: "mainnet",
         label: "Mainnet",
-        aztecNodeUrl: "https://aztec-mainnet.drpc.org",
+        aztecNodeUrl: "https://lb.drpc.live/aztec-mainnet/AsSP5jeGMUnUmdsy88mWgdsyXG-SZcwR8ZfEVjewFaCJ",
         l1: mainnet,
-        l1RpcUrl: "https://ethereum-rpc.publicnode.com",
+        l1RpcUrl: "https://lb.drpc.live/ethereum/AsSP5jeGMUnUmdsy88mWgdsyXG-SZcwR8ZfEVjewFaCJ",
         pin: {
             feeJuicePortalAddress: "0x2891f8b941067f8b5a3f34545a30cf71e3e23617",
             feeJuiceAddress: "0xa27ec0006e59f245217ff08cd52a7e8b169e62d2",
@@ -43,7 +43,7 @@ export const BRIDGE_NETWORKS: Record<NetId, BridgeNetwork> = {
         label: "Testnet",
         aztecNodeUrl: "https://rpc.testnet.aztec-labs.com",
         l1: sepolia,
-        l1RpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
+        l1RpcUrl: "https://lb.drpc.live/sepolia/AsSP5jeGMUnUmdsy88mWgdsyXG-SZcwR8ZfEVjewFaCJ",
         pin: null,
     },
 };
