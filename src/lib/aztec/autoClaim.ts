@@ -45,6 +45,7 @@ import { TxExecutionResult, TxHash, TxStatus } from "@aztec/stdlib/tx";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { hasActiveOps, trackOp } from "../state/activity";
+import { clearBridgeDeposit, readBridgeDeposit } from "../state/bridgeHandoff";
 import { loadPendingDeploy } from "./accountDeploy";
 import { resolveSponsoredFeePaymentMethod } from "./fee";
 import {
@@ -55,6 +56,8 @@ import {
     lockClaimForSpend,
     markBridgeConsumed,
     markClaimTxBroadcast,
+    recordBridgeDeposit,
+    recoverInFlightBridges,
     releaseClaimSpendLock,
     type PendingBridge,
 } from "./bridge";
@@ -183,8 +186,33 @@ export async function autoClaimTick(args: {
         return;
     }
 
+    // Adopt a deposit the web bridge reported while no wallet window was on
+    // the Bridge screen, then finish "sent" entries from their L1 receipts.
+    // Both used to run only on the Bridge screen's mount — moved here so that
+    // screen is purely the hand-off window, not load-bearing plumbing (users
+    // now go straight to fizzwallet.com/bridge from Home).
+    const dep = await readBridgeDeposit();
+    if (dep) {
+        const sent = await recordBridgeDeposit({
+            networkId: network.id,
+            secretHash: dep.secretHash,
+            l1TxHash: dep.l1TxHash,
+        });
+        // Only consume the slot when it matched a prepared claim here — it may
+        // belong to a claim prepared on another network.
+        if (sent) await clearBridgeDeposit();
+    }
+
     // Local-storage gate first — zero network cost on the common empty case.
-    const mine = (await listPendingBridges(network.id)).filter((b) => b.recipient === recip);
+    let mine = (await listPendingBridges(network.id)).filter((b) => b.recipient === recip);
+    if (mine.some((b) => b.status === "sent" && b.l1TxHash) && network.l1RpcUrl) {
+        const { l1ContractAddresses } = await (wallet as any).aztecNode.getNodeInfo();
+        const portal = l1ContractAddresses.feeJuicePortalAddress?.toString();
+        if (portal) {
+            await recoverInFlightBridges(network.id, network.l1RpcUrl, portal);
+            mine = (await listPendingBridges(network.id)).filter((b) => b.recipient === recip);
+        }
+    }
     if (mine.length === 0) return;
 
     // Settle broadcasts from earlier ticks / sessions before starting new work.

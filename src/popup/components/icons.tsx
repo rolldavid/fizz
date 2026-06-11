@@ -54,6 +54,15 @@ export const CheckIcon = (p: Props) => (
     </Svg>
 );
 
+/** Vertical three-dot "more actions" trigger. */
+export const MoreIcon = (p: Props) => (
+    <Svg {...p}>
+        <circle cx="12" cy="5" r="1" />
+        <circle cx="12" cy="12" r="1" />
+        <circle cx="12" cy="19" r="1" />
+    </Svg>
+);
+
 /** Two opposing arrows — convert between private and public balance. */
 export const ConvertIcon = (p: Props) => (
     <Svg {...p}>

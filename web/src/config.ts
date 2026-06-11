@@ -2,8 +2,8 @@
 
 /**
  * Chrome extension id of the Fizz wallet. The pages message the extension via
- * chrome.runtime.sendMessage(EXTENSION_ID, …) — a token draft on /launch, a
- * bridge request on /bridge — and the extension's manifest
+ * chrome.runtime.sendMessage(EXTENSION_ID, …) — the fee-juice bridge hand-off
+ * on /bridge — and the extension's manifest
  * `externally_connectable` allows fizzwallet.com. If the published Web Store id
  * ever differs from this dev id, update it here — this is the ONLY place it lives.
  */

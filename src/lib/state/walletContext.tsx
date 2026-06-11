@@ -68,10 +68,23 @@ type AccountsMeta = {
     count: number;
     activeIndex: number;
     labels: Record<number, string>;
+    /**
+     * Indices the user removed from the wallet UI. Accounts are deterministic
+     * derivations, so "remove" can only ever mean HIDE: the keys remain
+     * derivable from the seed and any funds stay on-chain. "+ New account"
+     * restores the lowest hidden index first, so nothing is ever stranded.
+     */
+    hidden?: number[];
 };
 
 const DEFAULT_ACCOUNTS_META: AccountsMeta = { count: 1, activeIndex: 0, labels: {} };
 const MAX_ACCOUNTS = 16;
+
+/** Indices currently shown in the wallet (derivation order, minus hidden). */
+function visibleIndices(meta: AccountsMeta): number[] {
+    const hidden = meta.hidden ?? [];
+    return Array.from({ length: meta.count }, (_, i) => i).filter((i) => !hidden.includes(i));
+}
 
 type Ctx = {
     status: Status;
@@ -87,6 +100,8 @@ type Ctx = {
     /** Derive + register the next account index and switch to it. */
     addAccount: (label?: string) => Promise<void>;
     renameAccount: (index: number, label: string) => Promise<void>;
+    /** Hide an account from the wallet (keys/funds untouched; restorable). */
+    removeAccount: (index: number) => Promise<void>;
     wallet: AztecWallet | null;
 
     bootError: string | null;
@@ -132,10 +147,19 @@ async function loadAccountsMeta(): Promise<AccountsMeta> {
     if (!stored || !Number.isInteger(stored.count) || stored.count < 1) {
         return DEFAULT_ACCOUNTS_META;
     }
+    const count = Math.min(stored.count, MAX_ACCOUNTS);
+    // Sanitize hidden: in-range only, and NEVER all of them — a meta that
+    // hides every account would brick the wallet, so it falls back to none.
+    let hidden = (stored.hidden ?? []).filter((i) => Number.isInteger(i) && i >= 0 && i < count);
+    if (hidden.length >= count) hidden = [];
+    const visible = Array.from({ length: count }, (_, i) => i).filter((i) => !hidden.includes(i));
+    let activeIndex = Math.min(Math.max(stored.activeIndex ?? 0, 0), count - 1);
+    if (!visible.includes(activeIndex)) activeIndex = visible[0];
     return {
-        count: Math.min(stored.count, MAX_ACCOUNTS),
-        activeIndex: Math.min(Math.max(stored.activeIndex ?? 0, 0), stored.count - 1),
+        count,
+        activeIndex,
         labels: stored.labels ?? {},
+        hidden,
     };
 }
 
@@ -167,11 +191,12 @@ async function bootWallet(
     const wallet = await createBrowserWallet(network);
     const meta = await loadAccountsMeta();
 
-    // Register EVERY known account in the PXE so notes for all of them are
-    // discovered continuously; only the active one drives the UI.
+    // Register every VISIBLE account in the PXE so notes for all of them are
+    // discovered continuously; only the active one drives the UI. Hidden
+    // (removed) indices are skipped entirely — not derived, not synced.
     const managers = new Map<number, AccountManager>();
     const accounts: AccountListEntry[] = [];
-    for (let i = 0; i < meta.count; i++) {
+    for (const i of visibleIndices(meta)) {
         const { secret: accSecret, salt } = await deriveAccount(secret.seed, i);
         const label = accountLabel(meta, i);
         const manager = await wallet.createSchnorrAccount(accSecret, salt, undefined, label);
@@ -437,15 +462,22 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             const secret = vaultStore.getUnlocked();
             if (!w || !secret) throw new Error("Wallet not loaded.");
             const meta = accountsMetaRef.current;
-            if (meta.count >= MAX_ACCOUNTS) {
+            const cleanLabel = label?.trim();
+
+            // Restore-first: removed (hidden) indices are the same deterministic
+            // derivations, possibly with funds — "new account" brings the lowest
+            // one back before minting a fresh index, so nothing stays stranded.
+            const hidden = meta.hidden ?? [];
+            const restoring = hidden.length > 0 ? Math.min(...hidden) : null;
+            if (restoring === null && meta.count >= MAX_ACCOUNTS) {
                 throw new Error(`Account limit reached (${MAX_ACCOUNTS}).`);
             }
-            const index = meta.count;
-            const cleanLabel = label?.trim();
+            const index = restoring ?? meta.count;
             const nextMeta: AccountsMeta = {
-                count: meta.count + 1,
+                count: restoring !== null ? meta.count : meta.count + 1,
                 activeIndex: index,
                 labels: cleanLabel ? { ...meta.labels, [index]: cleanLabel } : meta.labels,
+                hidden: restoring !== null ? hidden.filter((h) => h !== index) : hidden,
             };
             const { secret: accSecret, salt } = await deriveAccount(secret.seed, index);
             const manager = await w.createSchnorrAccount(
@@ -457,16 +489,36 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             managersRef.current.set(index, manager);
             await persistAccountsMeta(nextMeta);
             activeIndexRef.current = index;
-            setAccounts((prev) => [
-                ...prev,
-                { index, label: accountLabel(nextMeta, index), address: manager.address },
-            ]);
+            setAccounts((prev) =>
+                [...prev, { index, label: accountLabel(nextMeta, index), address: manager.address }].sort(
+                    (a, b) => a.index - b.index,
+                ),
+            );
             setAccount({
                 address: manager.address,
-                isDeployed: false, // brand-new derivation can't be deployed yet
+                // A restored account may well be deployed already — check live.
+                isDeployed: restoring !== null ? await isInitialized(w, manager.address) : false,
                 index,
                 label: accountLabel(nextMeta, index),
             });
+        },
+        [persistAccountsMeta],
+    );
+
+    const removeAccount = useCallback(
+        async (index: number) => {
+            const meta = accountsMetaRef.current;
+            const visible = visibleIndices(meta);
+            if (!visible.includes(index)) throw new Error(`No account at index ${index}.`);
+            if (visible.length <= 1) throw new Error("You can't remove your only account.");
+            if (index === activeIndexRef.current) {
+                throw new Error("Switch to another account first, then remove this one.");
+            }
+            // Hide, never delete: the derivation (and any funds) is recoverable
+            // via "+ New account", which restores hidden indices first.
+            await persistAccountsMeta({ ...meta, hidden: [...(meta.hidden ?? []), index] });
+            managersRef.current.delete(index);
+            setAccounts((prev) => prev.filter((a) => a.index !== index));
         },
         [persistAccountsMeta],
     );
@@ -613,6 +665,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             switchAccount,
             addAccount,
             renameAccount,
+            removeAccount,
             wallet,
             bootError,
             retryBoot,
@@ -633,6 +686,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             switchAccount,
             addAccount,
             renameAccount,
+            removeAccount,
             wallet,
             bootError,
             retryBoot,

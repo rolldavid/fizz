@@ -10,6 +10,7 @@ import {
     LinkIcon,
     LockIcon,
     MenuIcon,
+    MoreIcon,
     PeopleIcon,
     TrashIcon,
 } from "../components/icons";
@@ -52,7 +53,17 @@ export function Home({
     onNavigate: (r: Route) => void;
     onConvert: (target: import("./Convert").ConvertTarget) => void;
 }) {
-    const { wallet, account, accounts, switchAccount, addAccount, lock, network } = useWallet();
+    const {
+        wallet,
+        account,
+        accounts,
+        switchAccount,
+        addAccount,
+        renameAccount,
+        removeAccount,
+        lock,
+        network,
+    } = useWallet();
     // STRICT rule: rows are tagged with the address they were fetched FOR, and
     // are only ever rendered while that address is still the active account.
     // Without this, a refresh started for account 1 could resolve after a
@@ -151,8 +162,10 @@ export function Home({
                 {/* Surfaces (and recovers) a deploy interrupted by the popup closing. */}
                 <DeployRecovery onRecovered={refresh} />
 
-                {/* Account card — a PROMINENT account-switcher pill on top;
-                    tapping the address (or the copy icon) copies it. */}
+                {/* Account card — a PROMINENT account-switcher pill on top.
+                    Copying is the clipboard icon's job alone; the address text
+                    is display-only (an accidental tap must not touch the
+                    clipboard). */}
                 <div className="card" style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <Identicon address={addrStr} size={40} />
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -168,15 +181,9 @@ export function Home({
                                 ▾
                             </span>
                         </button>
-                        <button
-                            className="address-tap"
-                            onClick={copyAddr}
-                            title={copied ? "Copied" : "Copy address"}
-                            aria-label="Copy address"
-                        >
-                            {shortAddress(addrStr, 10, 8)}
-                            {copied && <span style={{ color: "var(--success)" }}> ✓ copied</span>}
-                        </button>
+                        <div className="address-display" title={addrStr}>
+                            {shortAddress(addrStr, 6, 4)}
+                        </div>
                     </div>
                     <button
                         className="icon-btn"
@@ -204,12 +211,19 @@ export function Home({
                             await addAccount();
                             setShowAccounts(false);
                         }}
+                        onRename={renameAccount}
+                        onRemove={removeAccount}
                         onClose={() => setShowAccounts(false)}
                     />
                 )}
 
+                {/* Gas goes STRAIGHT to the web bridge — the in-wallet Bridge
+                    screen remains only as the hand-off window the web page
+                    opens (recovery + auto-claim run in the background engine).
+                    Sandbox keeps the in-wallet screen for its local mint. */}
                 <FeeJuiceLine
                     row={feeJuiceRow}
+                    bridgeHref={network.id === "sandbox" ? undefined : "https://fizzwallet.com/bridge"}
                     onBridge={() => onNavigate("bridge")}
                     unit="AZTEC"
                     sponsored={sponsored === true}
@@ -357,16 +371,25 @@ function AccountSwitcher({
     activeIndex,
     onPick,
     onAdd,
+    onRename,
+    onRemove,
     onClose,
 }: {
     accounts: import("../../lib/state/walletContext").AccountListEntry[];
     activeIndex: number;
     onPick: (index: number) => Promise<void>;
     onAdd: () => Promise<void>;
+    onRename: (index: number, label: string) => Promise<void>;
+    onRemove: (index: number) => Promise<void>;
     onClose: () => void;
 }) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    /** Which row's ⋮ menu is open, if any. */
+    const [menuFor, setMenuFor] = useState<number | null>(null);
+    /** Which row is in rename mode, with its draft label. */
+    const [renaming, setRenaming] = useState<number | null>(null);
+    const [draftLabel, setDraftLabel] = useState("");
 
     async function run(fn: () => Promise<void>) {
         setError(null);
@@ -380,6 +403,19 @@ function AccountSwitcher({
         }
     }
 
+    function startRename(a: { index: number; label: string }) {
+        setMenuFor(null);
+        setRenaming(a.index);
+        setDraftLabel(a.label);
+    }
+
+    async function saveRename(index: number) {
+        await run(async () => {
+            await onRename(index, draftLabel);
+            setRenaming(null);
+        });
+    }
+
     return (
         <div className="modal-backdrop">
             <div
@@ -388,31 +424,129 @@ function AccountSwitcher({
             >
                 <div style={{ fontWeight: 600, fontSize: 17 }}>Accounts</div>
                 {accounts.map((a) => (
-                    <button
+                    <div
                         key={a.index}
                         className="token-row"
-                        disabled={busy}
-                        style={{ cursor: "pointer", textAlign: "left", width: "100%", padding: "12px 14px" }}
-                        onClick={() => run(() => onPick(a.index))}
+                        style={{ width: "100%", padding: "12px 14px" }}
                     >
-                        <div className="token-meta" style={{ minWidth: 0, gap: 12 }}>
-                            <Identicon address={a.address.toString()} size={36} />
-                            <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 600, fontSize: 15 }}>
-                                    {a.label}
-                                    {a.index === activeIndex && (
-                                        <span style={{ color: "var(--success)" }}> ✓</span>
+                        {renaming === a.index ? (
+                            <div style={{ display: "flex", gap: 6, alignItems: "center", width: "100%" }}>
+                                <input
+                                    value={draftLabel}
+                                    onChange={(e) => setDraftLabel(e.target.value)}
+                                    maxLength={24}
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") void saveRename(a.index);
+                                        if (e.key === "Escape") setRenaming(null);
+                                    }}
+                                    style={{ flex: 1 }}
+                                />
+                                <button
+                                    className="btn btn-primary"
+                                    style={{ padding: "8px 12px", fontSize: 12 }}
+                                    disabled={busy || !draftLabel.trim()}
+                                    onClick={() => saveRename(a.index)}
+                                >
+                                    Save
+                                </button>
+                                <button
+                                    className="btn btn-ghost"
+                                    style={{ padding: "8px 10px", fontSize: 12 }}
+                                    disabled={busy}
+                                    onClick={() => setRenaming(null)}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                <button
+                                    className="token-meta"
+                                    disabled={busy}
+                                    style={{
+                                        minWidth: 0,
+                                        gap: 12,
+                                        flex: 1,
+                                        background: "none",
+                                        border: "none",
+                                        padding: 0,
+                                        cursor: "pointer",
+                                        textAlign: "left",
+                                    }}
+                                    onClick={() => run(() => onPick(a.index))}
+                                >
+                                    <Identicon address={a.address.toString()} size={36} />
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontWeight: 600, fontSize: 15 }}>
+                                            {a.label}
+                                            {a.index === activeIndex && (
+                                                <span style={{ color: "var(--success)" }}> ✓</span>
+                                            )}
+                                        </div>
+                                        <div
+                                            className="muted"
+                                            style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }}
+                                        >
+                                            {shortAddress(a.address.toString(), 6, 4)}
+                                        </div>
+                                    </div>
+                                </button>
+                                <div className="header-menu">
+                                    <button
+                                        className="icon-btn"
+                                        disabled={busy}
+                                        onClick={() => setMenuFor(menuFor === a.index ? null : a.index)}
+                                        title="Account actions"
+                                        aria-label={`${a.label} actions`}
+                                        aria-haspopup="menu"
+                                        aria-expanded={menuFor === a.index}
+                                    >
+                                        <MoreIcon size={15} />
+                                    </button>
+                                    {menuFor === a.index && (
+                                        <div className="menu-dropdown" role="menu">
+                                            <button
+                                                className="menu-item"
+                                                role="menuitem"
+                                                onClick={() => startRename(a)}
+                                            >
+                                                Rename account
+                                            </button>
+                                            <button
+                                                className="menu-item"
+                                                role="menuitem"
+                                                disabled={a.index === activeIndex || accounts.length <= 1}
+                                                title={
+                                                    a.index === activeIndex
+                                                        ? "Switch to another account first"
+                                                        : accounts.length <= 1
+                                                          ? "You can't remove your only account"
+                                                          : undefined
+                                                }
+                                                onClick={() => {
+                                                    setMenuFor(null);
+                                                    // Hide-only: keys come from the recovery
+                                                    // phrase and funds stay on-chain.
+                                                    if (
+                                                        !confirm(
+                                                            `Remove ${a.label} from this wallet?\n\n` +
+                                                                "Its keys come from your recovery phrase and any funds stay on-chain. " +
+                                                                "“＋ New account” restores removed accounts first.",
+                                                        )
+                                                    )
+                                                        return;
+                                                    void run(() => onRemove(a.index));
+                                                }}
+                                            >
+                                                Remove account
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
-                                <div
-                                    className="muted"
-                                    style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }}
-                                >
-                                    {shortAddress(a.address.toString(), 8, 6)}
-                                </div>
-                            </div>
-                        </div>
-                    </button>
+                            </>
+                        )}
+                    </div>
                 ))}
                 {error && <div className="error">{error}</div>}
                 <div style={{ display: "flex", gap: 8 }}>
@@ -432,25 +566,46 @@ function AccountSwitcher({
     );
 }
 
-/** Fee juice (gas) — a single compact line: balance + a tap-through to bridge. */
+/** Fee juice (gas) — a single compact line: balance + a tap-through to the
+ * bridge (external fizzwallet.com/bridge, or the in-wallet screen on sandbox). */
 function FeeJuiceLine({
     row,
+    bridgeHref,
     onBridge,
     unit,
     sponsored,
 }: {
     row: RowState | undefined;
+    /** When set, the line is a plain link there (new tab). */
+    bridgeHref?: string;
     onBridge: () => void;
     unit: string;
     sponsored: boolean;
 }) {
     const balance = row?.balance.public ?? 0n;
+    const title = sponsored ? "Fees are sponsored here. Bridging is optional" : "Get gas";
+    if (bridgeHref) {
+        return (
+            <a className="fee-line" href={bridgeHref} target="_blank" rel="noreferrer" title={title}>
+                <span className="muted">Gas</span>
+                <span className="fee-line-amount">
+                    {!row || row.loading ? (
+                        <span className="spinner" />
+                    ) : (
+                        <>
+                            {formatUnits(balance, FEE_JUICE_ENTRY.decimals)}{" "}
+                            <span className="muted">{unit}</span>
+                        </>
+                    )}
+                </span>
+                <span className="fee-line-cta">
+                    {sponsored ? "Sponsored · bridge ↗" : "Need gas? ↗"}
+                </span>
+            </a>
+        );
+    }
     return (
-        <button
-            className="fee-line"
-            onClick={onBridge}
-            title={sponsored ? "Fees are sponsored here. Bridging is optional" : "Get gas"}
-        >
+        <button className="fee-line" onClick={onBridge} title={title}>
             <span className="muted">Gas</span>
             <span className="fee-line-amount">
                 {/* No row yet = an account switch is in flight — never show a
@@ -481,38 +636,47 @@ function TokenRow({
     onRemove: () => void;
 }) {
     const { token, balance } = row;
+    const [menuOpen, setMenuOpen] = useState(false);
     const [addrCopied, setAddrCopied] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
     const value = tab === "private" ? balance.private : balance.public;
     const convertTo = tab === "private" ? "public" : "private";
 
+    useEffect(() => {
+        if (!menuOpen) return;
+        const onDoc = (e: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setMenuOpen(false);
+        };
+        document.addEventListener("mousedown", onDoc);
+        document.addEventListener("keydown", onKey);
+        return () => {
+            document.removeEventListener("mousedown", onDoc);
+            document.removeEventListener("keydown", onKey);
+        };
+    }, [menuOpen]);
+
     // Recipients must import a token by its contract address before they can
-    // see it — so the address needs to be one tap away, right on the row.
+    // see it — so the address is one tap away in the row menu. Feedback is the
+    // icon swap ALONE (check for a beat) — no text, no layout shift.
     async function copyTokenAddress() {
         await navigator.clipboard.writeText(token.address);
+        setMenuOpen(false);
         setAddrCopied(true);
         setTimeout(() => setAddrCopied(false), 1500);
     }
 
     return (
         <div className="token-row">
-            <button
-                className="token-meta"
-                style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
-                onClick={copyTokenAddress}
-                title={addrCopied ? "Copied" : `Copy ${token.symbol}'s contract address`}
-                aria-label={`Copy ${token.symbol} contract address`}
-            >
+            <div className="token-meta">
                 <div className="token-glyph">{token.symbol.slice(0, 2).toUpperCase()}</div>
                 <div>
-                    <div style={{ fontWeight: 500 }}>
-                        {token.symbol}
-                        {addrCopied && (
-                            <span style={{ color: "var(--success)", fontSize: 11 }}> ✓ address copied</span>
-                        )}
-                    </div>
+                    <div style={{ fontWeight: 500 }}>{token.symbol}</div>
                     <div className="muted">{token.name}</div>
                 </div>
-            </button>
+            </div>
             <div className="balance">
                 {row.loading ? (
                     <span className="spinner" />
@@ -536,31 +700,44 @@ function TokenRow({
                     </>
                 )}
             </div>
-            <div className="token-actions">
+            <div className="token-actions header-menu" ref={menuRef}>
                 <button
                     className="icon-btn"
-                    onClick={copyTokenAddress}
-                    title={addrCopied ? "Copied" : "Copy contract address"}
-                    aria-label={`Copy ${token.symbol} contract address`}
+                    onClick={() => setMenuOpen((o) => !o)}
+                    title={`${token.symbol} actions`}
+                    aria-label={`${token.symbol} actions`}
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
                 >
-                    {addrCopied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
+                    {addrCopied ? <CheckIcon size={15} /> : <MoreIcon size={15} />}
                 </button>
-                <button
-                    className="icon-btn"
-                    onClick={onConvert}
-                    title={`Convert to ${convertTo}`}
-                    aria-label={`Convert ${token.symbol} to ${convertTo}`}
-                >
-                    <ConvertIcon size={15} />
-                </button>
-                <button
-                    className="muted token-remove"
-                    onClick={onRemove}
-                    title="Remove from list"
-                    aria-label={`Remove ${token.symbol}`}
-                >
-                    <TrashIcon size={13} />
-                </button>
+                {menuOpen && (
+                    <div className="menu-dropdown" role="menu">
+                        <button className="menu-item" role="menuitem" onClick={copyTokenAddress}>
+                            <CopyIcon size={14} /> Copy address
+                        </button>
+                        <button
+                            className="menu-item"
+                            role="menuitem"
+                            onClick={() => {
+                                setMenuOpen(false);
+                                onConvert();
+                            }}
+                        >
+                            <ConvertIcon size={14} /> Swap to {convertTo}
+                        </button>
+                        <button
+                            className="menu-item"
+                            role="menuitem"
+                            onClick={() => {
+                                setMenuOpen(false);
+                                onRemove();
+                            }}
+                        >
+                            <TrashIcon size={14} /> Remove from list
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

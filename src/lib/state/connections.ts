@@ -1,13 +1,15 @@
 /**
- * Connected sites — origins the user has authorized to hand token-launch
- * drafts to the wallet. Today fizzwallet.com/launch is the only caller.
+ * Connected sites — origins the user has authorized to talk to the wallet.
+ * Today fizzwallet.com/bridge (the fee-juice bridge hand-off) is the only
+ * caller; the old /launch token-draft flow was removed (deploys are fully
+ * in-wallet).
  *
  * ADDRESS-BLIND BY DESIGN. A connection records only the origin + timestamps.
  * The page learns "connected / not connected" and nothing more — never the
- * user's address, account, or keys. Every deploy is still reviewed and
+ * user's address, account, or keys. Every action is still reviewed and
  * confirmed in-wallet, from whatever account is active at confirm time, so the
  * connection grants no spending authority: it is purely a UI gate + an
- * anti-spam token (an un-connected origin can't even open a launch window).
+ * anti-spam token (an un-connected origin can't even open a wallet window).
  *
  * PERSISTENT + REVOCABLE. Stored in chrome.storage.local so a connection
  * survives browser restarts; capped by CONNECTION_TTL_MS; and removable from

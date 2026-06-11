@@ -126,12 +126,6 @@ export function Contacts({ onBack, openAdd = false }: { onBack: () => void; open
                         </button>
                     </div>
                 ))}
-
-                <div className="hint" style={{ marginTop: 8, lineHeight: 1.5 }}>
-                    <b>Privacy note:</b> contacts live only on this device and adding one doesn't
-                    notify them. Private funds from a sender you haven't added won't be detected
-                    until you add them; public funds always arrive.
-                </div>
             </div>
 
             {showAdd && (

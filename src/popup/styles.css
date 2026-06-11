@@ -230,21 +230,56 @@ input[type="radio"] {
     font-size: 12px;
     line-height: 1;
 }
-/* The account address under the pill — tapping it copies. */
-.address-tap {
-    display: block;
+/* The account address under the pill — display only; the clipboard icon is
+   the single copy affordance (an accidental tap must not touch the clipboard). */
+.address-display {
     margin-top: 5px;
-    padding: 0;
-    background: none;
-    border: none;
     font-family: ui-monospace, monospace;
     font-size: 13px;
     color: var(--text);
-    cursor: pointer;
-    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-.address-tap:hover {
+
+/* Contact combobox on Send — the input filters; the anchored dropdown lists
+   every contact (scrolls past ~5) or just the matches for a typed term. */
+.contact-combo {
+    position: relative;
+}
+.contact-combo-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.contact-combo-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    text-align: left;
+    transition: background var(--transition);
+}
+.contact-combo-option:hover {
+    background: var(--surface-2);
+}
+.contact-combo-add {
     color: var(--accent);
+    font-weight: 600;
+    font-size: 12px;
+    border-top: 1px solid var(--border);
+    border-radius: 0 0 8px 8px;
 }
 
 /* Fee juice — one compact tappable line (not a loud card). */
@@ -260,6 +295,10 @@ input[type="radio"] {
     border: 1px solid var(--border);
     font-size: 13px;
     transition: border-color var(--transition);
+    /* Rendered as an <a> when it links straight to the web bridge. */
+    text-decoration: none;
+    color: var(--text);
+    cursor: pointer;
 }
 .fee-line:hover {
     border-color: var(--accent);

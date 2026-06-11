@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Header, shortAddress } from "../components/Header";
 import { Identicon } from "../components/Identicon";
@@ -30,6 +30,27 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
     const [contacts, setContacts] = useState<Contact[]>([]);
     const [recipient, setRecipient] = useState<Contact | null>(null);
     const [query, setQuery] = useState("");
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const pickerRef = useRef<HTMLDivElement>(null);
+
+    // Close the contact dropdown on outside click / Escape.
+    useEffect(() => {
+        if (!pickerOpen) return;
+        const onDoc = (e: MouseEvent) => {
+            if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+                setPickerOpen(false);
+            }
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setPickerOpen(false);
+        };
+        document.addEventListener("mousedown", onDoc);
+        document.addEventListener("keydown", onKey);
+        return () => {
+            document.removeEventListener("mousedown", onDoc);
+            document.removeEventListener("keydown", onKey);
+        };
+    }, [pickerOpen]);
     const [amount, setAmount] = useState("");
     const [privacy, setPrivacy] = useState<TransferMode>("private");
     const [busy, setBusy] = useState(false);
@@ -189,47 +210,63 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                         </button>
                     </div>
                 ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    /* Combobox: the input filters, the anchored dropdown lists
+                       ALL contacts (or just the matches when a term is typed). */
+                    <div className="contact-combo" ref={pickerRef}>
                         <input
                             value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            placeholder="Search your contacts…"
+                            onFocus={() => setPickerOpen(true)}
+                            onClick={() => setPickerOpen(true)}
+                            onChange={(e) => {
+                                setQuery(e.target.value);
+                                setPickerOpen(true);
+                            }}
+                            placeholder={
+                                contacts.length === 0
+                                    ? "No contacts yet — add one below"
+                                    : "Pick or search a contact…"
+                            }
                         />
-                        {filteredContacts.slice(0, 5).map((c) => (
-                            <button
-                                key={c.address}
-                                className="token-row"
-                                style={{ cursor: "pointer", textAlign: "left", width: "100%" }}
-                                onClick={() => setRecipient(c)}
-                            >
-                                <div className="token-meta" style={{ minWidth: 0 }}>
-                                    <Identicon address={c.address} size={28} />
-                                    <div style={{ minWidth: 0 }}>
-                                        <div style={{ fontWeight: 500 }}>{c.label}</div>
-                                        <div
-                                            className="muted"
-                                            style={{ fontFamily: "ui-monospace, monospace" }}
-                                        >
-                                            {shortAddress(c.address, 8, 6)}
+                        {pickerOpen && (
+                            <div className="contact-combo-dropdown" role="listbox">
+                                {filteredContacts.map((c) => (
+                                    <button
+                                        key={c.address}
+                                        className="contact-combo-option"
+                                        role="option"
+                                        onClick={() => {
+                                            setRecipient(c);
+                                            setPickerOpen(false);
+                                            setQuery("");
+                                        }}
+                                    >
+                                        <Identicon address={c.address} size={26} />
+                                        <div style={{ minWidth: 0, flex: 1 }}>
+                                            <div style={{ fontWeight: 500 }}>{c.label}</div>
+                                            <div
+                                                className="muted"
+                                                style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}
+                                            >
+                                                {shortAddress(c.address, 6, 4)}
+                                            </div>
                                         </div>
+                                    </button>
+                                ))}
+                                {filteredContacts.length === 0 && (
+                                    <div className="muted" style={{ fontSize: 12, padding: "8px 10px" }}>
+                                        {query.trim()
+                                            ? "No contacts match."
+                                            : "No contacts yet. Sending is contacts-only — add the recipient's address once, then reuse it safely."}
                                     </div>
-                                </div>
-                            </button>
-                        ))}
-                        {filteredContacts.length === 0 && (
-                            <div className="muted" style={{ fontSize: 12 }}>
-                                {query.trim()
-                                    ? "No contacts match."
-                                    : "No contacts yet. Sending is contacts-only — add the recipient's address once, then reuse it safely."}
+                                )}
+                                <button
+                                    className="contact-combo-option contact-combo-add"
+                                    onClick={onAddContact}
+                                >
+                                    + New contact
+                                </button>
                             </div>
                         )}
-                        <button
-                            className="btn btn-ghost btn-block"
-                            style={{ fontSize: 12 }}
-                            onClick={onAddContact}
-                        >
-                            + New contact
-                        </button>
                     </div>
                 )}
 
