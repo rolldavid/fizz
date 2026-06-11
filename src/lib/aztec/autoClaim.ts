@@ -202,7 +202,11 @@ export async function autoClaimTick(args: {
                 .getL1ToL2MessageMembershipWitness("latest", Fr.fromHexString(b.messageHash!))
                 .catch(() => undefined);
             if (membership) {
-                console.warn(`Claim ${b.id}: message already nullified on-chain — marking consumed.`);
+                // Normal right after the user's own transaction spends the
+                // claim: the sweep checks the LATEST tip, while the tx path
+                // waits for CHECKPOINTED before its own (idempotent) marking —
+                // so this usually just updates the gas display a block sooner.
+                console.info(`Claim ${b.id}: spent on-chain — marking consumed.`);
                 await markBridgeConsumed(b.id);
             }
         }

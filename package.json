@@ -1,6 +1,6 @@
 {
   "name": "fizz-wallet",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Fizz \u2014 dark-mode Aztec network browser-extension wallet. Private + public balances, in-browser PXE, passkey or mnemonic unlock.",
   "private": true,
   "type": "module",

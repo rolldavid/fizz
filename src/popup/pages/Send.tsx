@@ -143,7 +143,7 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                     setStage("Activating your account — first send only (takes a few minutes)…");
                     await ensureAccountDeployed();
                 }
-                setStage("Generating a private proof on your device (~30 seconds)…");
+                setStage("Generating a private proof on your device (~45 seconds)…");
                 return transfer({
                     wallet,
                     network,
@@ -401,12 +401,12 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
 }
 
 /**
- * Time-based progress for client-side proving. Proof generation is ~30s of
+ * Time-based progress for client-side proving. Proof generation is ~45s of
  * silence that reads as a hang; a bar moving toward done reads as work. It
  * eases to 95% over PROVING_ESTIMATE_S and holds there — never claiming done
  * before the receipt actually lands (slow machines / first-run key loading).
  */
-const PROVING_ESTIMATE_S = 30;
+const PROVING_ESTIMATE_S = 45;
 function ProvingProgress({ status }: { status: string }) {
     const [pct, setPct] = useState(0);
     useEffect(() => {
