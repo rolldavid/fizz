@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Header, shortAddress } from "../components/Header";
 import { Identicon } from "../components/Identicon";
-import { CheckIcon, CopyIcon } from "../components/icons";
+import { CheckIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
 import { trackOp } from "../../lib/state/activity";
 import { loadTokens, type TokenEntry } from "../../lib/aztec/tokens";
@@ -345,6 +345,35 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
 }
 
 /**
+ * Time-based progress for client-side proving. Proof generation is ~30s of
+ * silence that reads as a hang; a bar moving toward done reads as work. It
+ * eases to 95% over PROVING_ESTIMATE_S and holds there — never claiming done
+ * before the receipt actually lands (slow machines / first-run key loading).
+ */
+const PROVING_ESTIMATE_S = 30;
+function ProvingProgress() {
+    const [pct, setPct] = useState(0);
+    useEffect(() => {
+        const started = Date.now();
+        const t = window.setInterval(() => {
+            const elapsed = (Date.now() - started) / 1000;
+            setPct(Math.min(95, (elapsed / PROVING_ESTIMATE_S) * 100));
+        }, 250);
+        return () => window.clearInterval(t);
+    }, []);
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div className="muted" style={{ fontSize: 12 }}>
+                Generating a private proof on your device — about 30 seconds…
+            </div>
+            <div className="progress-track">
+                <div className="progress-fill" style={{ width: `${pct}%` }} />
+            </div>
+        </div>
+    );
+}
+
+/**
  * Full-address review before signing. Defends against address poisoning:
  * look-alike addresses share truncated head/tail, so the COMPLETE address (and
  * its identicon) is shown and the user explicitly confirms.
@@ -425,6 +454,8 @@ function ConfirmSendModal({
                     Transfers are irreversible. There is no way to claw back funds sent to the
                     wrong address.
                 </div>
+
+                {busy && <ProvingProgress />}
 
                 {error && <div className="error">{error}</div>}
 
@@ -549,39 +580,35 @@ function SentConfirmation({
                             ? `${token.symbol} shows up for them only after they import the token AND add you as a contact (private transfers are invisible until the sender is registered).`
                             : `${token.symbol} shows up for them only after they import the token's contract address into their list.`}
                     </div>
-                    <div className="muted" style={{ fontSize: 11 }}>Token contract</div>
-                    <div
-                        style={{
-                            fontFamily: "ui-monospace, monospace",
-                            fontSize: 11,
-                            wordBreak: "break-all",
-                            background: "var(--surface-2)",
-                            border: "1px solid var(--border)",
-                            borderRadius: 8,
-                            padding: 8,
-                        }}
+                    <div className="muted" style={{ fontSize: 11 }}>
+                        Token contract · tap to copy
+                    </div>
+                    {/* The address box IS the copy control; the ✓ overlays so
+                        nothing shifts. */}
+                    <button
+                        className="address-copy-box"
+                        onClick={() => copy("address")}
+                        title={copied === "address" ? "Copied" : "Copy token address"}
+                        aria-label="Copy token address"
                     >
                         {token.address}
-                    </div>
-                    <div style={{ display: "flex", gap: 6 }}>
+                        {copied === "address" && (
+                            <span className="address-copy-check" aria-hidden>
+                                ✓
+                            </span>
+                        )}
+                    </button>
+                    {privacy === "private" && (
                         <button
-                            className={`copy-btn ${copied === "address" ? "success" : ""}`}
-                            style={{ flex: 1 }}
-                            onClick={() => copy("address")}
-                        >
-                            {copied === "address" ? <CheckIcon /> : <CopyIcon />}
-                            {copied === "address" ? "Copied" : "Copy address"}
-                        </button>
-                        <button
-                            className={`btn btn-primary`}
-                            style={{ flex: 2, fontSize: 12 }}
+                            className="btn btn-primary btn-block"
+                            style={{ fontSize: 12 }}
                             onClick={() => copy("instructions")}
                         >
                             {copied === "instructions"
                                 ? "✓ Copied — paste it to them"
                                 : "Copy instructions to share"}
                         </button>
-                    </div>
+                    )}
                 </div>
 
                 <button className="btn btn-ghost btn-block" onClick={onSendAnother}>

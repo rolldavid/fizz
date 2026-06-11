@@ -6,7 +6,13 @@
 # shells (/bridge, /launch), the static privacy page, images, and serve.json.
 # Stage 2 serves web/dist on $PORT with the security headers + cache policy that
 # serve.json carries (CSP, X-Frame-Options, no-cache HTML + immutable hashed
-# assets). Deep links work via the real per-route shells emitted in stage 1
+# assets). NOTE: serve-handler validates serve.json against a STRICT schema —
+# any unknown key (even "comment") makes `serve` exit at boot and the
+# healthcheck fail with "service unavailable". Rationale for the cache rules
+# lives here instead: hashed assets are content-addressed (cache forever); the
+# **/*.js rule is listed after ** because serve-handler is last-match-wins per
+# header key; HTML shells stay no-cache so a redeploy is picked up immediately
+# rather than booting a stale entry bundle that imports deleted chunks. Deep links work via the real per-route shells emitted in stage 1
 # (/bridge/index.html, /launch/index.html); there is deliberately NO catch-all
 # "** -> /index.html" rewrite, because that would serve index.html for a missing
 # hashed chunk and the browser would fail to parse the HTML as a JS module.
