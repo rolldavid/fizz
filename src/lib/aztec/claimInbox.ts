@@ -3,7 +3,7 @@
  *
  * A claim ticket (from fizzwallet.com/bridge) is brought in by the user PASTING
  * it on the Bridge screen — there is NO external/cross-origin writer (the
- * background worker handles only ping/launch and never writes claims). So a
+ * background worker handles only ping/connect/bridge and never writes claims). So a
  * pasted ticket is decoded and written STRAIGHT into the encrypted
  * pendingBridges store (`adoptClaimTicket`); it never sits in plaintext.
  *
