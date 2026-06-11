@@ -112,10 +112,6 @@ export function Layout() {
                             GitHub
                         </a>
                     </p>
-                    <p className="small" style={{ marginTop: 8 }}>
-                        Fizz runs no servers and no analytics of its own. Each page lists exactly which networks
-                        and services it contacts.
-                    </p>
                 </footer>
             </div>
         </>

@@ -454,7 +454,7 @@ export function BridgePage() {
                                     </div>
                                 </div>
 
-                                <div className="row-actions">
+                                <div className="row-actions row-actions-center">
                                     <button type="button" className="btn btn-primary" disabled={!canStart} onClick={() => void run()}>
                                         {running ? <span className="spin">{phaseLabel[phase]}</span> : phaseLabel.idle}
                                     </button>
@@ -536,14 +536,6 @@ export function BridgePage() {
                     </p>
                 </div>
                 <div className="explainer">
-                    <div className="emoji">✨</div>
-                    <h3>No claim ticket</h3>
-                    <p>
-                        Fizz generates the claim secret and keeps it. After your deposit, the wallet completes the
-                        claim for your connected account on its own. Nothing to copy or paste.
-                    </p>
-                </div>
-                <div className="explainer">
                     <div className="emoji">➡️</div>
                     <h3>One-way by design</h3>
                     <p>
@@ -561,17 +553,6 @@ export function BridgePage() {
                                 </a>
                             </>
                         )}
-                    </p>
-                </div>
-                <div className="explainer">
-                    <div className="emoji">👁️</div>
-                    <h3>Privacy note</h3>
-                    <p>
-                        Bridging is a <strong>public L1 action</strong>: it visibly links your Ethereum address to
-                        the funded Aztec address. For privacy, fund the L1 side from an exchange or a fresh address,
-                        not a wallet that's publicly you. This page contacts the Aztec node and a public mainnet
-                        RPC (which see your IP). It connects MetaMask or Rabby directly — there's no WalletConnect
-                        relay.
                     </p>
                 </div>
             </section>

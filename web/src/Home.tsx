@@ -4,6 +4,7 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useConnection } from "./connection";
+import { CHROME_STORE_URL } from "./config";
 
 const AZTEC_DOCS = "https://docs.aztec.network";
 
@@ -13,14 +14,14 @@ export function Home() {
         document.title = "Fizz — the lightweight private wallet for Aztec";
     }, []);
 
-    // Desktop Chromium: CTA scrolls to install steps. Otherwise steer to a
+    // Desktop Chromium: CTA opens the Web Store listing. Otherwise steer to a
     // supported browser (matches the nav's Aztec button behaviour).
     const ctaLabel = platform.isMobile
         ? "Open on desktop to install"
         : !platform.isChromium
           ? "Use a Chromium browser"
           : "Add Fizz to Chrome";
-    const ctaHref = platform.canUseExtension ? "#install" : "#desktop-note";
+    const ctaHref = platform.canUseExtension ? CHROME_STORE_URL : "#desktop-note";
 
     return (
         <>
@@ -35,7 +36,13 @@ export function Home() {
                 </p>
                 <p className="lightweight">🫧 Built for quick, low-value transactions: pocket change, not vaults</p>
                 <div className="cta-row">
-                    <a className="btn btn-primary" href={ctaHref}>
+                    <a
+                        className="btn btn-primary"
+                        href={ctaHref}
+                        {...(platform.canUseExtension
+                            ? { target: "_blank", rel: "noopener noreferrer" }
+                            : {})}
+                    >
                         {ctaLabel}
                     </a>
                     <a className="btn btn-ghost" href={AZTEC_DOCS} target="_blank" rel="noopener noreferrer">
@@ -126,26 +133,6 @@ export function Home() {
                 </Link>
             </section>
 
-            <section className="install" id="install">
-                <span className="pill">Alpha</span>
-                <h2>Install the extension</h2>
-                <p>
-                    Fizz is in alpha on the Aztec testnet. The Chrome Web Store listing is coming soon. Until
-                    then, load it straight from the repo:
-                </p>
-                <ol>
-                    <li>
-                        Download or clone the repo, then run <code>yarn install &amp;&amp; yarn build</code>.
-                    </li>
-                    <li>
-                        Open <code>chrome://extensions</code> and switch on <strong>Developer mode</strong>.
-                    </li>
-                    <li>
-                        Click <strong>Load unpacked</strong> and pick the <code>dist/</code> folder.
-                    </li>
-                    <li>Pin Fizz to your toolbar and pop it open. 🫧</li>
-                </ol>
-            </section>
         </>
     );
 }

@@ -290,6 +290,7 @@ select {
 .record .record-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
 .row-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.row-actions-center { justify-content: center; }
 .muted { color: var(--dim); }
 .small { font-size: 12.5px; }
 .spin { display: inline-block; animation: pulse 1.2s ease-in-out infinite; }
