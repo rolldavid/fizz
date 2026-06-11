@@ -104,7 +104,7 @@ export function Layout() {
                     <p>
                         <Link to="/">fizzwallet.com</Link>
                         <span className="sep">·</span>
-                        <Link to="/bridge">Bridge fee juice</Link>
+                        <Link to="/bridge">Get gas</Link>
                         <span className="sep">·</span>
                         <a href="/privacy">Privacy</a>
                         <span className="sep">·</span>

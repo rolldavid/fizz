@@ -67,7 +67,7 @@ export function BridgePage() {
     const { status: aztecStatus } = useConnection();
 
     useEffect(() => {
-        document.title = "Bridge fee juice to Aztec — Fizz";
+        document.title = "Get gas on Aztec — Fizz";
     }, []);
 
     // Network toggle — default mainnet (the real bridge). Testnet (Sepolia) is a

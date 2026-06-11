@@ -115,7 +115,7 @@ export function Home() {
                     <div className="emoji">⛽</div>
                     <div>
                         <h3>
-                            Bridge fee juice <span className="arrow">→</span>
+                            Get gas <span className="arrow">→</span>
                         </h3>
                         <p>
                             Bring your own gas: bridge AZTEC from your own Ethereum wallet on mainnet into fee

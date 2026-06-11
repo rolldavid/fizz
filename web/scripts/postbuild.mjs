@@ -53,7 +53,7 @@ function withMeta(html, { title, desc, url }) {
 const ROUTES = [
     {
         dir: "bridge",
-        title: "Bridge fee juice to Aztec — Fizz",
+        title: "Get gas on Aztec — Fizz",
         desc: "Bring your own gas: bridge the AZTEC token from your Ethereum wallet (MetaMask or Rabby) into fee juice on your connected Fizz wallet. The wallet auto-completes the claim — nothing to copy.",
         url: "https://fizzwallet.com/bridge/",
     },
