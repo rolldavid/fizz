@@ -8,6 +8,7 @@ import { trackOp } from "../../lib/state/activity";
 import { loadTokens, type TokenEntry } from "../../lib/aztec/tokens";
 import { parseUnits } from "../../lib/aztec/balances";
 import { transfer, type TransferMode } from "../../lib/aztec/transfer";
+import { assessFeeReadiness } from "../../lib/aztec/fee";
 import { listContacts, rememberSentRecipient, type Contact } from "../../lib/aztec/contacts";
 
 /**
@@ -54,7 +55,11 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
     const [amount, setAmount] = useState("");
     const [privacy, setPrivacy] = useState<TransferMode>("private");
     const [busy, setBusy] = useState(false);
-    const [busyText, setBusyText] = useState("Proving + sending…");
+    /** Stage line shown above the proving progress bar (NOT on buttons). */
+    const [stage, setStage] = useState("");
+    const [checking, setChecking] = useState(false);
+    /** Why sending is blocked: gas is incoming (wait) or absent (go get it). */
+    const [gasGate, setGasGate] = useState<"incoming" | "none" | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [confirming, setConfirming] = useState(false);
     const [done, setDone] = useState<{
@@ -86,9 +91,10 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
         );
     }, [contacts, query]);
 
-    /** Step 1: validate, then surface the full-address review before signing. */
-    function review() {
+    /** Step 1: validate + gate on gas, then surface the full-address review. */
+    async function review() {
         setError(null);
+        setGasGate(null);
         if (!wallet) return setError("Wallet not loaded.");
         if (!account) return setError("Account not loaded.");
         if (!token) return setError("Pick a token.");
@@ -96,9 +102,24 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
         try {
             const value = parseUnits(amount, token.decimals);
             if (value <= 0n) throw new Error("Amount must be greater than zero.");
+        } catch (e) {
+            return setError(e instanceof Error ? e.message : String(e));
+        }
+        // Gas gate BEFORE building anything: a send with no fee source dies
+        // deep in the SDK with an unhelpful schema error. If a bridge claim is
+        // mid-flight the answer is "wait", not "go get gas".
+        setChecking(true);
+        try {
+            const readiness = await assessFeeReadiness(wallet, network, account.address);
+            if (readiness.kind !== "ready") {
+                setGasGate(readiness.kind);
+                return;
+            }
             setConfirming(true);
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setChecking(false);
         }
     }
 
@@ -119,10 +140,10 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                 if (!account.isDeployed) {
                     // First transaction ever: the account contract must be
                     // published + initialized on-chain before it can send.
-                    setBusyText("Activating your account (one-time setup)…");
+                    setStage("Activating your account — first send only (takes a few minutes)…");
                     await ensureAccountDeployed();
                 }
-                setBusyText("Proving + sending…");
+                setStage("Generating a private proof on your device (~30 seconds)…");
                 return transfer({
                     wallet,
                     network,
@@ -306,12 +327,47 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
 
                 {error && !confirming && <div className="error">{error}</div>}
 
+                {gasGate === "incoming" && (
+                    <div className="card card-accent" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ fontWeight: 600 }}>Your gas is on the way</div>
+                        <div className="hint" style={{ margin: 0 }}>
+                            A bridge to this account is still landing — fee juice usually arrives
+                            within a few minutes. Keep the wallet open; you can send as soon as it
+                            lands.
+                        </div>
+                        <button
+                            className="btn btn-ghost"
+                            style={{ fontSize: 12, padding: "6px 12px", alignSelf: "flex-start" }}
+                            onClick={() => void review()}
+                        >
+                            Check again
+                        </button>
+                    </div>
+                )}
+                {gasGate === "none" && (
+                    <div className="card card-accent" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ fontWeight: 600 }}>You need gas first</div>
+                        <div className="hint" style={{ margin: 0 }}>
+                            This account has no fee juice, and every Aztec transaction needs some.
+                            Get gas, wait for it to land (it arrives automatically), then send.
+                        </div>
+                        <a
+                            className="btn btn-primary btn-block"
+                            href="https://fizzwallet.com/bridge"
+                            target="_blank"
+                            rel="noreferrer"
+                        >
+                            Get gas ↗
+                        </a>
+                    </div>
+                )}
+
                 <button
                     className="btn btn-primary btn-block"
-                    disabled={busy || !token || !amount || !recipient}
-                    onClick={review}
+                    disabled={busy || checking || !token || !amount || !recipient}
+                    onClick={() => void review()}
                 >
-                    {busy ? busyText : "Review send"}
+                    {busy ? "Sending…" : checking ? "Checking…" : "Review send"}
                 </button>
                 {busy && (
                     <div className="hint">
@@ -328,7 +384,7 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                         privacy={privacy}
                         contact={recipient}
                         busy={busy}
-                        busyText={busyText}
+                        stage={stage}
                         error={error}
                         onCancel={() => {
                             if (!busy) {
@@ -351,7 +407,7 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
  * before the receipt actually lands (slow machines / first-run key loading).
  */
 const PROVING_ESTIMATE_S = 30;
-function ProvingProgress() {
+function ProvingProgress({ status }: { status: string }) {
     const [pct, setPct] = useState(0);
     useEffect(() => {
         const started = Date.now();
@@ -363,9 +419,8 @@ function ProvingProgress() {
     }, []);
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div className="muted" style={{ fontSize: 12 }}>
-                Generating a private proof on your device — about 30 seconds…
-            </div>
+            {/* Stage line lives HERE — buttons stay short ("Sending…"). */}
+            <div className="muted" style={{ fontSize: 12 }}>{status}</div>
             <div className="progress-track">
                 <div className="progress-fill" style={{ width: `${pct}%` }} />
             </div>
@@ -385,7 +440,7 @@ function ConfirmSendModal({
     privacy,
     contact,
     busy,
-    busyText,
+    stage,
     error,
     onCancel,
     onConfirm,
@@ -396,7 +451,7 @@ function ConfirmSendModal({
     privacy: TransferMode;
     contact?: Contact;
     busy: boolean;
-    busyText: string;
+    stage: string;
     error: string | null;
     onCancel: () => void;
     onConfirm: () => void;
@@ -455,7 +510,7 @@ function ConfirmSendModal({
                     wrong address.
                 </div>
 
-                {busy && <ProvingProgress />}
+                {busy && <ProvingProgress status={stage} />}
 
                 {error && <div className="error">{error}</div>}
 
@@ -464,7 +519,7 @@ function ConfirmSendModal({
                         Cancel
                     </button>
                     <button className="btn btn-primary btn-block" disabled={busy} onClick={onConfirm}>
-                        {busy ? busyText : "Confirm & send"}
+                        {busy ? "Sending…" : "Confirm & send"}
                     </button>
                 </div>
             </div>

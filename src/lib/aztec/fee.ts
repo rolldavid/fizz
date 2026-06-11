@@ -22,7 +22,9 @@ import {
 } from "@aztec/noir-contracts.js/SponsoredFPC";
 import type { AztecNetwork } from "./networks";
 import type { AztecWallet } from "./wallet";
-import { listReadyClaims, markBridgeConsumed } from "./bridge";
+import { listPendingBridges, listReadyClaims, markBridgeConsumed } from "./bridge";
+import { getTokenBalance } from "./balances";
+import { FEE_JUICE_ENTRY } from "./tokens";
 
 let sponsoredAddressPromise: Promise<AztecAddress> | null = null;
 export async function getSponsoredFPCAddress(): Promise<AztecAddress> {
@@ -128,4 +130,38 @@ export async function resolveFeePaymentMethod(
 
 export async function markFeeConsumed(fee: ResolvedFee) {
     if (fee.consumesBridgeId) await markBridgeConsumed(fee.consumesBridgeId);
+}
+
+/**
+ * Can this account pay for a transaction RIGHT NOW — and if not, why?
+ *
+ *   ready     — a fee source exists: sponsored FPC, own fee-juice balance, or
+ *               a bridge claim that's consumable on L2.
+ *   incoming  — no source yet, but a bridge to this account is in flight
+ *               (deposit confirming, message syncing, or the background
+ *               landing tx pending). The right answer is WAIT, not retry.
+ *   none      — no gas and nothing on the way: send the user to get gas.
+ *
+ * Send-type screens gate on this BEFORE building a transaction: attempting a
+ * send with no fee source dies deep in the SDK with an unhelpful schema error
+ * ("Expected string, received object") instead of anything actionable.
+ */
+export type FeeReadiness = { kind: "ready" } | { kind: "incoming" } | { kind: "none" };
+
+export async function assessFeeReadiness(
+    wallet: AztecWallet,
+    network: AztecNetwork,
+    sender: AztecAddress,
+): Promise<FeeReadiness> {
+    if (await isSponsoredFPCAvailable(wallet)) return { kind: "ready" };
+    const balance = await getTokenBalance(wallet, sender, FEE_JUICE_ENTRY);
+    if (balance.public > 0n) return { kind: "ready" };
+    if ((await listReadyClaims(wallet, network.id, sender)).length > 0) return { kind: "ready" };
+    // listPendingBridges already excludes consumed/dismissed entries; "failed"
+    // deposits are dead, not incoming.
+    const inFlight = (await listPendingBridges(network.id)).filter(
+        (b) => b.recipient === sender.toString() && b.status !== "failed",
+    );
+    if (inFlight.length > 0) return { kind: "incoming" };
+    return { kind: "none" };
 }

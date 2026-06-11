@@ -21,22 +21,24 @@ privacy-first L2. The PXE (private execution environment) and the prover run
 **in the browser**, so your seed, keys, and proofs never leave the device. The
 wallet talks directly to an Aztec node you choose, including your own.
 
-It ships with two companion pages on [fizzwallet.com](https://fizzwallet.com):
+It ships with one companion page on [fizzwallet.com](https://fizzwallet.com):
 
-- **/launch** designs a standard AIP-20 token and deploys it from your wallet.
-  The page never sees your address or keys; it hands the deploy to the
-  extension, which proves it locally and asks you to confirm.
 - **/bridge** brings your own gas: bridge the AZTEC token from Ethereum L1 into
   fee juice on your connected account. The wallet generates the claim secret and
-  auto-completes the claim, so there is no ticket to copy.
+  auto-completes the claim, so there is no ticket to copy — the juice lands in
+  your balance by itself.
+
+Token creation happens **entirely in the wallet**: name it, pick a supply, and
+deploy from the Deploy screen. Proving runs in the background while you keep
+using the wallet — a status bar tracks it on every screen.
 
 ## Features
 
 - **Private by default.** Amounts, senders, and recipients stay hidden on-chain.
 - **Two balances, one tap.** Every token has a private and a public side; shield
   and unshield whenever you like.
-- **Make your own token.** Deploy a standard AIP-20 token, mint privately or
-  publicly, keep or drop the minter role.
+- **Make your own token.** Deploy a standard AIP-20 token right in the wallet,
+  mint privately or publicly, keep or drop the minter role.
 - **Bring your own gas.** Bridge AZTEC into fee juice straight to your account.
 - **Multiple accounts** from one recovery phrase, to keep activities unlinkable.
 - **Encrypted vault.** Argon2id + AES-256-GCM; unlock with a passkey (WebAuthn
@@ -52,7 +54,7 @@ It ships with two companion pages on [fizzwallet.com](https://fizzwallet.com):
   node, the proving CRS CDN, and (in dev) localhost, so a compromised page has
   nowhere to exfiltrate a seed.
 - **Address-blind dApp connect.** Sites connect to the wallet without learning
-  your address; every deploy and transfer is confirmed in-wallet.
+  your address; every transaction is confirmed in-wallet.
 
 ## Repository layout
 
@@ -60,7 +62,7 @@ It ships with two companion pages on [fizzwallet.com](https://fizzwallet.com):
 |-------------|------|
 | `src/`      | The browser extension: popup UI (`src/popup`), background worker (`src/background`), libs (`src/lib`: vault, aztec, state). |
 | `public/`   | Extension static assets (logos served at `/`). |
-| `web/`      | The fizzwallet.com web app: a single-page Vite + React SPA — the home, `/bridge`, and `/launch`. The build emits per-route SEO shells into `web/dist`. |
+| `web/`      | The fizzwallet.com web app: a single-page Vite + React SPA — the home and `/bridge`. The build emits per-route SEO shells into `web/dist`. |
 | `tests/`    | Unit + property tests, plus live-network e2e and a real-Chrome smoke gate. |
 
 ## Develop
