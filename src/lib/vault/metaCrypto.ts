@@ -82,16 +82,22 @@ function fromB64(b64: string): Uint8Array {
 
 export async function encryptJson(key: CryptoKey, value: unknown, storageKey: string): Promise<EncBlob> {
     const iv = crypto.getRandomValues(new Uint8Array(12));
+    // The plaintext can hold spendable bridge-claim secrets — wipe the byte
+    // buffer in a finally so it's cleared even if encrypt throws (the only
+    // residue then is the un-wipeable source JS value).
     const pt = new TextEncoder().encode(JSON.stringify(value));
-    const ct = new Uint8Array(
-        await crypto.subtle.encrypt(
-            { name: "AES-GCM", iv, additionalData: metaAAD(storageKey) as BufferSource },
-            key,
-            pt,
-        ),
-    );
-    pt.fill(0);
-    return { __enc: 2, iv: toB64(iv), ct: toB64(ct) };
+    try {
+        const ct = new Uint8Array(
+            await crypto.subtle.encrypt(
+                { name: "AES-GCM", iv, additionalData: metaAAD(storageKey) as BufferSource },
+                key,
+                pt,
+            ),
+        );
+        return { __enc: 2, iv: toB64(iv), ct: toB64(ct) };
+    } finally {
+        pt.fill(0);
+    }
 }
 
 export async function decryptJson<T>(key: CryptoKey, blob: EncBlob, storageKey: string): Promise<T> {
@@ -99,6 +105,12 @@ export async function decryptJson<T>(key: CryptoKey, blob: EncBlob, storageKey: 
     // secureStorage re-writes them as v2 on read). v2 binds the storage key.
     const params: AesGcmParams = { name: "AES-GCM", iv: fromB64(blob.iv) as BufferSource };
     if (blob.__enc === 2) params.additionalData = metaAAD(storageKey) as BufferSource;
-    const pt = await crypto.subtle.decrypt(params, key, fromB64(blob.ct) as BufferSource);
-    return JSON.parse(new TextDecoder().decode(new Uint8Array(pt))) as T;
+    // Wipe the decrypted plaintext bytes once parsed (it can carry claim
+    // secrets); the parsed JS value is all that survives.
+    const pt = new Uint8Array(await crypto.subtle.decrypt(params, key, fromB64(blob.ct) as BufferSource));
+    try {
+        return JSON.parse(new TextDecoder().decode(pt)) as T;
+    } finally {
+        pt.fill(0);
+    }
 }

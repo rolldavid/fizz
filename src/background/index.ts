@@ -10,7 +10,7 @@
  *     constraints.
  */
 
-import { readLastLaunch, saveDeployDraft, type DeployDraft } from "../lib/state/opJournal";
+import { readLastLaunchFor, saveDeployDraft, type DeployDraft } from "../lib/state/opJournal";
 import {
     isConnected,
     removeConnection,
@@ -77,12 +77,17 @@ async function openWindowRateLimited(key: string): Promise<boolean> {
 
 function sanitizeDraft(raw: any): DeployDraft {
     const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
-    // Light bounds only — the Deploy page and deployToken re-validate strictly
-    // (the user always reviews this draft in the wallet before anything runs).
+    // A token-standard decimals value is an integer 0..18; anything else (NaN,
+    // out-of-range) falls back to 18 so a malformed draft can't pre-fill a value
+    // that surfaces as NaN downstream. Light bounds only — the Deploy page and
+    // deployToken re-validate strictly and the user reviews before anything runs.
+    const decRaw = str(raw?.decimals, 2);
+    const decNum = Number(decRaw);
+    const decimals = decRaw && Number.isInteger(decNum) && decNum >= 0 && decNum <= 18 ? decRaw : "18";
     return {
         name: str(raw?.name, 30),
         symbol: str(raw?.symbol, 8).toUpperCase(),
-        decimals: str(raw?.decimals, 2) || "18",
+        decimals,
         supply: str(raw?.supply, 30),
         supplyMode: raw?.supplyMode === "public" ? "public" : "private",
         keepMinter: raw?.keepMinter !== false,
@@ -146,7 +151,7 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
                         });
                         return;
                     }
-                    await saveDeployDraft(sanitizeDraft(message.draft));
+                    await saveDeployDraft(sanitizeDraft(message.draft), origin);
                     await chrome.windows.create({
                         url: chrome.runtime.getURL("src/popup/index.html#deploy"),
                         type: "popup",
@@ -228,7 +233,16 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
                     return;
                 }
                 case "fizz:launch-status": {
-                    sendResponse({ ok: true, result: await readLastLaunch() });
+                    // Gated + origin-scoped: only the connected site that
+                    // initiated a launch can read its OWN public result, and
+                    // only within the result's short TTL. A never-connected or
+                    // unrelated page (and any manual in-wallet deploy) is
+                    // invisible here — preserving the address-blind session.
+                    if (!(await isConnected(origin))) {
+                        sendResponse({ ok: false, error: "Connect your Fizz wallet first." });
+                        return;
+                    }
+                    sendResponse({ ok: true, result: await readLastLaunchFor(origin) });
                     return;
                 }
                 default:

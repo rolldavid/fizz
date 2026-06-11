@@ -123,7 +123,7 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
             // swallow this silently: the user asked to drop their minter role, so
             // surface it loudly. They can retry revocation from token settings.
             console.warn(
-                `Token deployed at ${address.toString()} but revoking the deployer's minter role failed:`,
+                `Token deployed (${address.toString().slice(0, 10)}…) but revoking the deployer's minter role failed:`,
                 e,
             );
         }

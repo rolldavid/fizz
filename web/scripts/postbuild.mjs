@@ -5,7 +5,10 @@
  *     by cloning the built dist/index.html and swapping the <head> meta. Every
  *     shell boots the SAME SPA bundle; the router renders the matching route.
  *     This keeps per-page share cards (OG/Twitter) without server rendering, and
- *     gives real files for those routes (the serve.json rewrite covers the rest).
+ *     gives real files for those routes. There is no catch-all SPA rewrite: an
+ *     unknown deep path 404s (acceptable), and — critically — a missing hashed
+ *     chunk also 404s honestly instead of being served index.html (HTML that the
+ *     browser would then fail to parse as a JS module).
  *  2. Asserts the bundle is free of RainbowKit / WalletConnect / metamask-sdk —
  *     the bridge connects MetaMask + Rabby via EIP-6963 only.
  *

@@ -17,7 +17,12 @@ import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { ensureTokenRegistered } from "./balances";
 import { markFeeConsumed, resolveFeePaymentMethod } from "./fee";
-import { assertPositiveAmount, assertWithinU128, getTokenContract } from "./tokenContract";
+import {
+    assertPositiveAmount,
+    assertSpendableRecipient,
+    assertWithinU128,
+    getTokenContract,
+} from "./tokenContract";
 
 export type TransferMode = "private" | "public";
 
@@ -58,6 +63,7 @@ export type TransferParams = SendCtx & {
 export async function transfer(params: TransferParams): Promise<{ txHash: string }> {
     assertPositiveAmount(params.amount);
     assertWithinU128(params.amount);
+    assertSpendableRecipient(params.to);
     const Token = await getTokenContract();
     await ensureTokenRegistered(params.wallet, params.tokenAddress);
     const contract = await Contract.at(params.tokenAddress, Token.artifact, params.wallet as any);

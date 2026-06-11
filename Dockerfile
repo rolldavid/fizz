@@ -4,8 +4,12 @@
 # Stage 1 installs web/ deps and runs `yarn build` (tsc + vite + postbuild),
 # which emits the SPA into web/dist: index.html, hashed /assets, per-route
 # shells (/bridge, /launch), the static privacy page, images, and serve.json.
-# Stage 2 serves web/dist on $PORT with the security headers + SPA fallback that
-# serve.json carries (CSP, X-Frame-Options, ** -> /index.html rewrite).
+# Stage 2 serves web/dist on $PORT with the security headers + cache policy that
+# serve.json carries (CSP, X-Frame-Options, no-cache HTML + immutable hashed
+# assets). Deep links work via the real per-route shells emitted in stage 1
+# (/bridge/index.html, /launch/index.html); there is deliberately NO catch-all
+# "** -> /index.html" rewrite, because that would serve index.html for a missing
+# hashed chunk and the browser would fail to parse the HTML as a JS module.
 
 # ── build ────────────────────────────────────────────────────────────────────
 # Full node image (not -slim): it bundles python3 + a C toolchain, which some
@@ -28,7 +32,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 RUN npm install -g serve@14
 
-# web/dist already includes serve.json (security headers + SPA rewrite; serve
+# web/dist already includes serve.json (security headers + cache policy; serve
 # reads it from the served dir), the per-route shells, and static assets.
 COPY --from=build /app/web/dist ./site
 

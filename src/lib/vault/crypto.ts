@@ -123,14 +123,20 @@ export async function deriveKeyFromPassphrase(
     // argon2idAsync yields to the event loop (asyncTick) so the popup spinner
     // keeps animating during the ~1.5s derivation instead of freezing.
     const pw = new TextEncoder().encode(passphrase);
-    const raw = await argon2idAsync(pw, salt, {
-        t: params.t,
-        m: params.m,
-        p: params.p,
-        dkLen: 32,
-        asyncTick: 20,
-    });
-    pw.fill(0);
+    let raw: Uint8Array;
+    try {
+        raw = await argon2idAsync(pw, salt, {
+            t: params.t,
+            m: params.m,
+            p: params.p,
+            dkLen: 32,
+            asyncTick: 20,
+        });
+    } finally {
+        // Wipe the passphrase bytes even if Argon2 throws — the un-wipeable
+        // source string is all that should survive this call.
+        pw.fill(0);
+    }
     try {
         return await importContentKey(raw);
     } finally {

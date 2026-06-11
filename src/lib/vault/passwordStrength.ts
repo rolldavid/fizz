@@ -59,8 +59,9 @@ export function passwordStrength(pw: string): PassStrength {
     const lc = pw.toLowerCase();
 
     const weak =
-        unique <= 3 || // "aaaaaaaaaaaa", "abababab"
+        unique <= 4 || // "aaaaaaaaaaaa", "abababab", "aaaabbbbcccc"
         /^(.)\1+$/.test(pw) || // all one character
+        /^(.{1,6})\1+$/.test(pw) || // a short unit tiled to length: "abcdabcdabcd"
         /(0123456|1234567|abcdefg|qwertyui)/.test(lc) || // sequences
         COMMON_SUBSTRINGS.some((c) => lc.includes(c));
 
@@ -81,12 +82,15 @@ export function passwordStrength(pw: string): PassStrength {
         };
     }
     // Minimum acceptable bar: 3+ character types, OR a long (16+) passphrase
-    // (so diceware-style word passphrases pass via length).
-    if (classes < 3 && pw.length < 16) {
+    // that also has real character VARIETY (>= 10 distinct chars). Length alone
+    // is not enough — a long low-entropy pattern like "abcdabcdabcdabcd" must not
+    // pass — but a diceware-style multi-word passphrase clears the variety bar
+    // easily while staying memorable.
+    if (classes < 3 && (pw.length < 16 || unique < 10)) {
         return {
             score: 1,
             label: "Weak",
-            hint: "add another character type, or make it 16+ characters",
+            hint: "add another character type, or use a longer passphrase of several different words",
             ok: false,
         };
     }

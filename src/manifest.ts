@@ -91,9 +91,11 @@ const buildManifest = (env: ConfigEnv): any => {
         // + anvil (8545); *.aztec-labs.com covers testnet/devnet; the CRS CDN
         // serves proving params; the publicnode hosts are the read-only L1
         // RPCs the bridge uses to verify deposit receipts (see connectSrc).
+        // localhost is DEV-ONLY: prod drops it to mirror the connect-src /
+        // externally_connectable gates, minimize the install-time permission
+        // footprint, and avoid a Web Store review flag.
         host_permissions: [
-            "http://localhost/*",
-            "http://127.0.0.1/*",
+            ...(isProd ? [] : ["http://localhost/*", "http://127.0.0.1/*"]),
             "https://aztec-mainnet.drpc.org/*",
             "https://*.aztec-labs.com/*",
             "https://ethereum-rpc.publicnode.com/*",

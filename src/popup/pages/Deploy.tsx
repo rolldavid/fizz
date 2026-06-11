@@ -25,6 +25,11 @@ export function Deploy({ onBack }: { onBack: () => void }) {
     const [supplyMode, setSupplyMode] = useState<"private" | "public">("private");
     const [keepMinter, setKeepMinter] = useState(true);
 
+    // Set only when this Deploy was handed over by a connected site (/launch).
+    // null for a manual in-wallet deploy — which is never reported back to any
+    // page, so an in-wallet deployment stays unlinkable to the browser session.
+    const [launchOrigin, setLaunchOrigin] = useState<string | null>(null);
+
     const [busy, setBusy] = useState(false);
     const [stage, setStage] = useState<string | null>(null);
     const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -36,14 +41,16 @@ export function Deploy({ onBack }: { onBack: () => void }) {
     // Draft hand-off: when the user jumps from the fragile toolbar popup to a
     // standalone window, their typed form follows them (one-shot).
     useEffect(() => {
-        void takeDeployDraft().then((draft) => {
-            if (!draft) return;
+        void takeDeployDraft().then((handoff) => {
+            if (!handoff) return;
+            const { draft, origin } = handoff;
             setName(draft.name);
             setSymbol(draft.symbol);
             setDecimals(draft.decimals);
             setSupply(draft.supply);
             setSupplyMode(draft.supplyMode);
             setKeepMinter(draft.keepMinter);
+            setLaunchOrigin(origin);
         });
     }, []);
 
@@ -114,15 +121,21 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                     decimals: d,
                 });
                 await clearDeployJournal();
-                // /launch round-trip: the page that initiated this (if any)
-                // polls the background for the public result.
-                await recordLastLaunch({
-                    address: addrStr,
-                    txHash: res.txHash,
-                    name: name.trim(),
-                    symbol: symbol.trim().toUpperCase(),
-                    at: Date.now(),
-                });
+                // /launch round-trip: ONLY when a connected site initiated this
+                // deploy do we stash the public result for it to poll — tagged
+                // with that origin so the background serves it back to that site
+                // alone. A manual in-wallet deploy records nothing, so it can't
+                // be linked to the browser session by any page.
+                if (launchOrigin) {
+                    await recordLastLaunch({
+                        address: addrStr,
+                        txHash: res.txHash,
+                        name: name.trim(),
+                        symbol: symbol.trim().toUpperCase(),
+                        at: Date.now(),
+                        origin: launchOrigin,
+                    });
+                }
                 setResult({ address: addrStr, txHash: res.txHash });
             });
         } catch (e) {

@@ -6,6 +6,7 @@
             "headers": [
                 { "key": "X-Frame-Options", "value": "DENY" },
                 { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
                 { "key": "Referrer-Policy", "value": "no-referrer" },
                 {
                     "key": "Permissions-Policy",
@@ -15,7 +16,15 @@
                 {
                     "key": "Content-Security-Policy",
                     "value": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' data: https://aztec-mainnet.drpc.org https://ethereum-rpc.publicnode.com https://rpc.testnet.aztec-labs.com https://ethereum-sepolia-rpc.publicnode.com; frame-src 'none'"
-                }
+                },
+                { "key": "Cache-Control", "value": "no-cache" }
+            ]
+        },
+        {
+            "comment": "Hashed build assets are content-addressed — safe to cache forever. This block is matched AFTER ** so its Cache-Control overrides the no-cache default (serve-handler is last-match-wins per header key). The HTML shells stay no-cache so a redeploy is picked up on the next load instead of booting a stale entry bundle that imports now-deleted chunks.",
+            "source": "**/*.@(js|css|woff2|woff|ttf|png|jpg|jpeg|gif|svg|webp|ico|wasm)",
+            "headers": [
+                { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
             ]
         }
     ]
