@@ -126,8 +126,7 @@ export function Home() {
                         </h3>
                         <p>
                             Bring your own gas: bridge AZTEC from your own Ethereum wallet on mainnet into fee
-                            juice on your connected account. Fizz generates the claim secret and auto-completes
-                            it — there's nothing to copy.
+                            juice on your connected account.
                         </p>
                     </div>
                 </Link>

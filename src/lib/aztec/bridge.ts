@@ -629,8 +629,20 @@ export async function listReadyClaims(
                 anchorBlockHash as any,
             );
             ready.push(b);
-        } catch {
-            // Absent, not-yet-synced, or already claimed — not ready.
+        } catch (err) {
+            // Absent, not-yet-synced, or already claimed — not ready. One cause
+            // deserves a visible trace: the node not recognizing the PXE's
+            // anchor block hash (reorg, or a load-balanced node instance behind
+            // the one the PXE synced from). Transient — the PXE re-anchors on
+            // the next sync — but silent "not ready" here was undiagnosable.
+            const msg = err instanceof Error ? err.message : String(err);
+            if (/not found when querying world state|reorg/i.test(msg)) {
+                console.warn(
+                    `Claim ${b.id}: node did not recognize the PXE anchor block ` +
+                        "(transient reorg / load-balancer skew); will retry on the next check.",
+                    msg,
+                );
+            }
         }
     }
     return ready;

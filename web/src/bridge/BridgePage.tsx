@@ -506,7 +506,6 @@ export function BridgePage() {
                                     <br />
                                     Your deposit is on L1. Fizz is completing the claim for your connected account;
                                     it pays your next transaction automatically once it lands on L2 (a few minutes).
-                                    There's nothing to copy.
                                 </div>
                                 <div className="row-actions">
                                     {depositTx && (
