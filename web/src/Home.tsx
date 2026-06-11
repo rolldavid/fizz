@@ -124,18 +124,6 @@ export function Home() {
                         </p>
                     </div>
                 </Link>
-                <Link className="tool" to="/launch">
-                    <div className="emoji">🚀</div>
-                    <div>
-                        <h3>
-                            Launch a token <span className="arrow">→</span>
-                        </h3>
-                        <p>
-                            Name it, pick a supply, and deploy a private-ready Aztec token. Works with the Fizz
-                            extension. You review and confirm in the wallet; proving runs right on your device.
-                        </p>
-                    </div>
-                </Link>
             </section>
 
             <section className="install" id="install">

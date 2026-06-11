@@ -44,7 +44,7 @@ const buildManifest = (env: ConfigEnv): any => {
         ...(isProd ? [] : ["http://localhost:*", "http://127.0.0.1:*"]),
     ].join(" ");
 
-    // fizzwallet.com/launch is the only external caller (token-draft hand-off).
+    // fizzwallet.com/bridge is the only external caller (fee-juice hand-off).
     // localhost is allowed ONLY in dev so a local web build can drive the
     // wallet; a published wallet never trusts a localhost page.
     const externallyConnectableMatches = [
@@ -56,7 +56,7 @@ const buildManifest = (env: ConfigEnv): any => {
     return {
         manifest_version: 3,
         // Pins the extension ID to bapbaajfnjockbcdhjpgpllflnhgogol on EVERY
-        // unpacked install (and the Web Store build). fizzwallet.com/launch
+        // unpacked install (and the Web Store build). fizzwallet.com/bridge
         // messages the wallet by this ID — without the pin every dev machine
         // gets a random one. This is only the PUBLIC key; no private half.
         key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4Pgg5vyd9mDoO0hrNEqXDziJk3bv3Qg9KBhgkv6UhS2t+/AupeQtv7dUwT7O5jaqPefu/Y1GIwQgVDXDzY/mPyP6Fu1fjTK1dT8tnMRdn8iFzmGd6vBtfBDHSC6hVpVV8mlHEuBx6ZQYq+tAwA10Zjv60+JfbEEn9uG40bEHy+mSmTBtMVEWa9EIRhjdaBJEGbM9SoFbBCeBn0ZcgOOZBYb4pZKTD01NSnwutvkdft4ER7RBR0oztoSPVK4rnceFKtsz3Mair/YAVgLesUn3i9xnNtoeQ56EYK+OMiZAuNEdWyk8ftOGH8HWbTSztzlW6oAuDV2G+08Hu4idzBt+DwIDAQAB",

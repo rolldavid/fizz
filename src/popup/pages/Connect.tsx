@@ -11,12 +11,13 @@ function prettyOrigin(origin: string): string {
 }
 
 /**
- * Authorize a site to hand token launches to the wallet. Reached only via the
+ * Authorize a site to talk to the wallet (today: the fee-juice bridge).
+ * Reached only via the
  * #connect deep link the background opens after a page sends "fizz:connect".
  * The user is already unlocked here (App.tsx gates locked → Unlock).
  *
  * Address-blind: approving stores ONLY the origin. The page never learns who
- * the user is, and the connection grants no spending authority — every deploy
+ * the user is, and the connection grants no spending authority — every action
  * is still confirmed in-wallet.
  */
 export function Connect({ onDone }: { onDone: () => void }) {
@@ -62,7 +63,7 @@ export function Connect({ onDone }: { onDone: () => void }) {
                         <div style={{ fontWeight: 600, fontSize: 16 }}>No pending request</div>
                         <p className="hint">
                             There's no connection waiting for approval. Start the connection from the
-                            site you want to link (for example fizzwallet.com/launch).
+                            site you want to link (for example fizzwallet.com/bridge).
                         </p>
                         <button className="btn btn-primary btn-block" onClick={close}>
                             Close
@@ -97,8 +98,8 @@ export function Connect({ onDone }: { onDone: () => void }) {
                         </div>
 
                         <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                            <Bullet>It can ask your wallet to open a token launch.</Bullet>
-                            <Bullet>You review and confirm every deploy here, in the wallet.</Bullet>
+                            <Bullet>It can ask your wallet to open a fee-juice bridge.</Bullet>
+                            <Bullet>You review and confirm every action here, in the wallet.</Bullet>
                             <Bullet>
                                 It never sees your address, balances, or keys, and can't move funds.
                             </Bullet>
@@ -136,7 +137,7 @@ export function Connect({ onDone }: { onDone: () => void }) {
                             </div>
                             <div style={{ fontWeight: 600, fontSize: 18 }}>Connected</div>
                             <div className="muted" style={{ marginTop: 4 }}>
-                                {prettyOrigin(origin)} can now hand launches to your wallet.
+                                {prettyOrigin(origin)} can now talk to your wallet.
                             </div>
                         </div>
                         <div className="hint">

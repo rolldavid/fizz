@@ -53,11 +53,25 @@ export function Home({
     onConvert: (target: import("./Convert").ConvertTarget) => void;
 }) {
     const { wallet, account, accounts, switchAccount, addAccount, lock, network } = useWallet();
-    const [rows, setRows] = useState<RowState[]>([]);
+    // STRICT rule: rows are tagged with the address they were fetched FOR, and
+    // are only ever rendered while that address is still the active account.
+    // Without this, a refresh started for account 1 could resolve after a
+    // switch and paint account 1's balances under account 2's header
+    // (observed live with SPRKL).
+    const [rowState, setRowState] = useState<{ forAddr: string; rows: RowState[] }>({
+        forAddr: "",
+        rows: [],
+    });
     const [tab, setTab] = useState<Tab>("private");
     const [showAccounts, setShowAccounts] = useState(false);
     const [copied, setCopied] = useState(false);
     const [sponsored, setSponsored] = useState<boolean | null>(null);
+
+    // Live active address, readable from async closures so a stale refresh can
+    // notice the account changed under it. Render-time assignment keeps it
+    // exact even before effects run.
+    const activeAddrRef = useRef("");
+    activeAddrRef.current = account?.address.toString() ?? "";
 
     useEffect(() => {
         if (!wallet) return;
@@ -73,28 +87,34 @@ export function Home({
 
     const refresh = useCallback(async () => {
         if (!wallet || !account) return;
-        const tokens = await loadTokens(network.id);
-        setRows(tokens.map((t) => ({ token: t, balance: ZERO_BALANCE, loading: true })));
+        const addr = account.address.toString();
+        // Every write below is double-gated: dropped if the active account
+        // moved on (ref), and dropped if the row state belongs to another
+        // address (functional check). An account only ever shows its own rows.
+        const apply = (update: (rows: RowState[]) => RowState[]) =>
+            setRowState((prev) => {
+                if (activeAddrRef.current !== addr) return prev;
+                if (prev.forAddr !== addr) return prev;
+                return { forAddr: addr, rows: update(prev.rows) };
+            });
+        const tokens = await loadTokens(network.id, addr);
+        if (activeAddrRef.current !== addr) return; // switched while loading
+        setRowState({
+            forAddr: addr,
+            rows: tokens.map((t) => ({ token: t, balance: ZERO_BALANCE, loading: true })),
+        });
         await Promise.all(
             tokens.map(async (token, i) => {
                 try {
                     const balance = await getTokenBalance(wallet, account.address, token);
-                    setRows((prev) => {
-                        const next = [...prev];
-                        next[i] = { token, balance, loading: false };
-                        return next;
-                    });
+                    apply((rows) => rows.map((r, j) => (j === i ? { token, balance, loading: false } : r)));
                 } catch (err) {
-                    setRows((prev) => {
-                        const next = [...prev];
-                        next[i] = {
-                            token,
-                            balance: ZERO_BALANCE,
-                            loading: false,
-                            error: err instanceof Error ? err.message : String(err),
-                        };
-                        return next;
-                    });
+                    const error = err instanceof Error ? err.message : String(err);
+                    apply((rows) =>
+                        rows.map((r, j) =>
+                            j === i ? { token, balance: ZERO_BALANCE, loading: false, error } : r,
+                        ),
+                    );
                 }
             }),
         );
@@ -107,6 +127,11 @@ export function Home({
     // The background claimer just turned a bridge claim into balance — show it.
     useEffect(() => onFeeJuiceLanded(() => void refresh()), [refresh]);
 
+    // Render NOTHING from a previous account: a mismatch means the switch
+    // happened and this account's refresh is still in flight.
+    const currentAddr = account?.address.toString() ?? "";
+    const switching = rowState.forAddr !== currentAddr;
+    const rows = switching ? [] : rowState.rows;
     const feeJuiceRow = useMemo(() => rows.find((r) => r.token.kind === "fee_juice"), [rows]);
     const tokenRows = useMemo(() => rows.filter((r) => r.token.kind !== "fee_juice"), [rows]);
 
@@ -126,42 +151,33 @@ export function Home({
                 {/* Surfaces (and recovers) a deploy interrupted by the popup closing. */}
                 <DeployRecovery onRecovered={refresh} />
 
-                {/* Account card — identicon + short address + tap to copy / share */}
+                {/* Account card — a PROMINENT account-switcher pill on top;
+                    tapping the address (or the copy icon) copies it. */}
                 <div className="card" style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <Identicon address={addrStr} size={40} />
-                    <button
-                        style={{
-                            flex: 1,
-                            minWidth: 0,
-                            textAlign: "left",
-                            background: "none",
-                            border: "none",
-                            padding: 0,
-                            cursor: "pointer",
-                        }}
-                        onClick={() => setShowAccounts(true)}
-                        title="Switch account"
-                        aria-label="Switch account"
-                    >
-                        <div
-                            className="muted"
-                            style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <button
+                            className="account-pill"
+                            onClick={() => setShowAccounts(true)}
+                            title="Switch account"
+                            aria-label="Switch account"
+                            aria-haspopup="dialog"
                         >
-                            {account.label}{" "}
-                            <span style={{ fontSize: 16, lineHeight: 1, color: "var(--text-dim)" }}>▾</span>
-                        </div>
-                        <div
-                            style={{
-                                fontFamily: "ui-monospace, monospace",
-                                fontSize: 13,
-                                marginTop: 2,
-                                color: "var(--text)",
-                            }}
-                            title={addrStr}
+                            <span className="account-pill-label">{account.label}</span>
+                            <span className="account-pill-chevron" aria-hidden>
+                                ▾
+                            </span>
+                        </button>
+                        <button
+                            className="address-tap"
+                            onClick={copyAddr}
+                            title={copied ? "Copied" : "Copy address"}
+                            aria-label="Copy address"
                         >
                             {shortAddress(addrStr, 10, 8)}
-                        </div>
-                    </button>
+                            {copied && <span style={{ color: "var(--success)" }}> ✓ copied</span>}
+                        </button>
+                    </div>
                     <button
                         className="icon-btn"
                         onClick={copyAddr}
@@ -176,15 +192,17 @@ export function Home({
                     <AccountSwitcher
                         accounts={accounts}
                         activeIndex={account.index}
+                        // No manual refresh here: switching updates `account`,
+                        // which re-creates `refresh` and re-fires its effect for
+                        // the NEW address. Calling the captured (stale) refresh
+                        // raced that and painted the old account's balances.
                         onPick={async (i) => {
                             await switchAccount(i);
                             setShowAccounts(false);
-                            refresh();
                         }}
                         onAdd={async () => {
                             await addAccount();
                             setShowAccounts(false);
-                            refresh();
                         }}
                         onClose={() => setShowAccounts(false)}
                     />
@@ -231,8 +249,13 @@ export function Home({
                 </div>
 
                 <div>
+                    {switching && (
+                        <div className="card hint" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span className="spinner" /> Loading this account's balances…
+                        </div>
+                    )}
 
-                    {tokenRows.length === 0 && (
+                    {!switching && tokenRows.length === 0 && (
                         <div className="card hint">
                             No tokens yet. Import one by contract address to see {tab} balances.
                         </div>
@@ -252,24 +275,19 @@ export function Home({
                                 })
                             }
                             onRemove={async () => {
-                                await removeToken(network.id, row.token.address);
+                                await removeToken(network.id, addrStr, row.token.address);
                                 refresh();
                             }}
                         />
                     ))}
                 </div>
 
-                {/* Sticky CTA — straight to the web launcher (no intermediate
-                    in-wallet screen). It hands the deploy back here to confirm. */}
-                <a
-                    className="sticky-cta"
-                    href="https://fizzwallet.com/launch"
-                    target="_blank"
-                    rel="noreferrer"
-                >
+                {/* Sticky CTA — straight to the in-wallet Deploy screen. The
+                    whole flow (form, proving, result) lives in the wallet. */}
+                <button className="sticky-cta" onClick={() => onNavigate("deploy")}>
                     <span>Launch a token on Aztec</span>
-                    <span className="link">Open ↗</span>
-                </a>
+                    <span className="link">Deploy →</span>
+                </button>
             </div>
         </>
     );
@@ -435,7 +453,9 @@ function FeeJuiceLine({
         >
             <span className="muted">Gas</span>
             <span className="fee-line-amount">
-                {row?.loading ? (
+                {/* No row yet = an account switch is in flight — never show a
+                    placeholder 0 that could read as this account's balance. */}
+                {!row || row.loading ? (
                     <span className="spinner" />
                 ) : (
                     <>
@@ -461,17 +481,38 @@ function TokenRow({
     onRemove: () => void;
 }) {
     const { token, balance } = row;
+    const [addrCopied, setAddrCopied] = useState(false);
     const value = tab === "private" ? balance.private : balance.public;
     const convertTo = tab === "private" ? "public" : "private";
+
+    // Recipients must import a token by its contract address before they can
+    // see it — so the address needs to be one tap away, right on the row.
+    async function copyTokenAddress() {
+        await navigator.clipboard.writeText(token.address);
+        setAddrCopied(true);
+        setTimeout(() => setAddrCopied(false), 1500);
+    }
+
     return (
         <div className="token-row">
-            <div className="token-meta">
+            <button
+                className="token-meta"
+                style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
+                onClick={copyTokenAddress}
+                title={addrCopied ? "Copied" : `Copy ${token.symbol}'s contract address`}
+                aria-label={`Copy ${token.symbol} contract address`}
+            >
                 <div className="token-glyph">{token.symbol.slice(0, 2).toUpperCase()}</div>
                 <div>
-                    <div style={{ fontWeight: 500 }}>{token.symbol}</div>
+                    <div style={{ fontWeight: 500 }}>
+                        {token.symbol}
+                        {addrCopied && (
+                            <span style={{ color: "var(--success)", fontSize: 11 }}> ✓ address copied</span>
+                        )}
+                    </div>
                     <div className="muted">{token.name}</div>
                 </div>
-            </div>
+            </button>
             <div className="balance">
                 {row.loading ? (
                     <span className="spinner" />
@@ -496,6 +537,14 @@ function TokenRow({
                 )}
             </div>
             <div className="token-actions">
+                <button
+                    className="icon-btn"
+                    onClick={copyTokenAddress}
+                    title={addrCopied ? "Copied" : "Copy contract address"}
+                    aria-label={`Copy ${token.symbol} contract address`}
+                >
+                    {addrCopied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
+                </button>
                 <button
                     className="icon-btn"
                     onClick={onConvert}

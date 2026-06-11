@@ -43,7 +43,7 @@ export function Connections({ onBack }: { onBack: () => void }) {
 
                 <div style={{ fontWeight: 600, fontSize: 16 }}>Connected sites</div>
                 <p className="hint">
-                    Sites you've allowed to hand token launches to your wallet. They never see your
+                    Sites you've allowed to talk to your wallet (e.g. the fee-juice bridge). They never see your
                     address or keys, and every deploy is still confirmed here. Disconnect anytime.
                 </p>
 
@@ -52,7 +52,7 @@ export function Connections({ onBack }: { onBack: () => void }) {
                 {conns !== null && conns.length === 0 && (
                     <div className="card hint" style={{ display: "flex", gap: 8, alignItems: "center" }}>
                         <LinkIcon size={16} />
-                        No connected sites yet. When you connect one, like fizzwallet.com/launch,
+                        No connected sites yet. When you connect one, like fizzwallet.com/bridge,
                         it shows up here.
                     </div>
                 )}

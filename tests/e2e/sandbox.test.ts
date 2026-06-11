@@ -68,12 +68,13 @@ async function balances(wallet: AztecWallet, owner: AztecAddress) {
  * so a contact saved for one wallet already exists for the next — in that case
  * run the boot-time sync that pushes stored contacts into THIS wallet's PXE.
  */
+const CONTACT_SCOPE = "e2e-shared-account"; // storage scope only; PXE registration is what the test needs
 async function registerSenderFor(wallet: AztecWallet, addr: AztecAddress, label: string) {
     try {
-        await addContact(network.id, { address: addr.toString(), label, source: "manual" }, wallet);
+        await addContact(network.id, CONTACT_SCOPE, { address: addr.toString(), label, source: "manual" }, wallet);
     } catch (err) {
         if (!(err instanceof Error) || !/already exists/i.test(err.message)) throw err;
-        await syncContactsToPxe(network.id, wallet);
+        await syncContactsToPxe(network.id, wallet, [CONTACT_SCOPE]);
     }
 }
 

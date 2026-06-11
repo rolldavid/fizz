@@ -11,27 +11,30 @@ import {
 } from "../../lib/aztec/contacts";
 
 export function Contacts({ onBack, openAdd = false }: { onBack: () => void; openAdd?: boolean }) {
-    const { wallet, network } = useWallet();
+    const { wallet, network, account, accounts } = useWallet();
     const [contacts, setContacts] = useState<Contact[]>([]);
     // openAdd: arrived from Send's "new contact" — show the dialog immediately.
     const [showAdd, setShowAdd] = useState(openAdd);
     const [loading, setLoading] = useState(true);
 
     const refresh = useCallback(async () => {
+        if (!account) return;
         setLoading(true);
         try {
-            setContacts(await listContacts(network.id));
+            // Contacts are per-account: each account curates its own book.
+            setContacts(await listContacts(network.id, account.address.toString()));
         } finally {
             setLoading(false);
         }
-    }, [network.id]);
+    }, [network.id, account]);
 
     useEffect(() => {
         refresh();
     }, [refresh]);
 
     async function handleAdd(label: string, address: string) {
-        await addContact(network.id, { label, address, source: "manual" }, wallet);
+        if (!account) throw new Error("Wallet not loaded.");
+        await addContact(network.id, account.address.toString(), { label, address, source: "manual" }, wallet);
         // Arrived here to add a contact for a Send: hand control back so Send
         // reloads with the new contact in its picker.
         if (openAdd) return onBack();
@@ -39,8 +42,15 @@ export function Contacts({ onBack, openAdd = false }: { onBack: () => void; open
     }
 
     async function handleRemove(address: string) {
+        if (!account) return;
         if (!confirm("Remove this contact?")) return;
-        await removeContact(network.id, address, wallet);
+        await removeContact(
+            network.id,
+            account.address.toString(),
+            address,
+            wallet,
+            accounts.map((a) => a.address.toString()),
+        );
         await refresh();
     }
 

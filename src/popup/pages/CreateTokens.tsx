@@ -2,12 +2,18 @@ import { Header } from "../components/Header";
 import { useWallet } from "../../lib/state/walletContext";
 
 /**
- * Token creation lives on fizzwallet.com/launch (the wallet stays a wallet) —
- * the launcher hands the deploy to this wallet, which proves it locally. This
- * screen is the in-wallet pointer to it, plus a secondary path to mint more of
- * a token you already deployed.
+ * Token creation hub: deploy a new token (fully in-wallet — form, proving, and
+ * result all live on the Deploy screen) or mint more of one you already own.
  */
-export function CreateTokens({ onBack, onMintMore }: { onBack: () => void; onMintMore: () => void }) {
+export function CreateTokens({
+    onBack,
+    onDeploy,
+    onMintMore,
+}: {
+    onBack: () => void;
+    onDeploy: () => void;
+    onMintMore: () => void;
+}) {
     const { network } = useWallet();
     const isAlpha = network.id === "alpha";
 
@@ -22,7 +28,7 @@ export function CreateTokens({ onBack, onMintMore }: { onBack: () => void; onMin
 
                 <p className="hint">
                     Launch your own token on Aztec: public + private balances and shielding built
-                    in. You design it on the web and confirm the deploy right here in Fizz;
+                    in. Everything happens right here in Fizz;
                     {isAlpha
                         ? " proving runs on your device, and you'll need a little gas (fee juice) to deploy."
                         : " proving runs on your device."}
@@ -34,17 +40,12 @@ export function CreateTokens({ onBack, onMintMore }: { onBack: () => void; onMin
                 >
                     <div style={{ fontWeight: 600 }}>Launch a token</div>
                     <div className="hint" style={{ margin: 0 }}>
-                        Open the launcher, fill in the details, and it hands the deploy to this
-                        wallet to review and confirm.
+                        Name it, pick a supply, and deploy. You can keep using the wallet while it
+                        proves — just keep the window open.
                     </div>
-                    <a
-                        className="btn btn-primary btn-block"
-                        href="https://fizzwallet.com/launch"
-                        target="_blank"
-                        rel="noreferrer"
-                    >
-                        Open fizzwallet.com/launch ↗
-                    </a>
+                    <button className="btn btn-primary btn-block" onClick={onDeploy}>
+                        Deploy a token →
+                    </button>
                 </div>
 
                 <button className="btn btn-ghost btn-block" onClick={onMintMore}>

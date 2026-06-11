@@ -155,7 +155,7 @@ describe.skipIf(!RUN)("testnet e2e — sponsored flows with real proofs", () => 
     }, 1_200_000);
 
     it("sends PRIVATELY to an independent wallet on testnet; receiver discovers", async () => {
-        await addContact(network.id, { address: main.toString(), label: "Main", source: "manual" }, walletB);
+        await addContact(network.id, "e2e-wallet-b", { address: main.toString(), label: "Main", source: "manual" }, walletB);
 
         // DELTA-based: the receiver account is PERSISTENT on testnet, so its
         // balance accumulates across runs — exact-equality assertions pass only

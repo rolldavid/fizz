@@ -10,7 +10,6 @@
  *     constraints.
  */
 
-import { readLastLaunchFor, saveDeployDraft, type DeployDraft } from "../lib/state/opJournal";
 import {
     isConnected,
     removeConnection,
@@ -24,26 +23,24 @@ import {
     savePrepare,
 } from "../lib/state/bridgeHandoff";
 
-/** Minimum gap between wallet windows — anti-spam for connect / launch. */
+/** Minimum gap between wallet windows — anti-spam for connect / bridge. */
 const LAUNCH_WINDOW_COOLDOWN_MS = 8000;
 
 chrome.runtime.onInstalled.addListener(() => {
     // Reserved for future setup (badge text, default action icon, etc.).
 });
 
-// fizzwallet.com/launch is the ONLY external caller. The handshake:
+// fizzwallet.com (the /bridge page) is the ONLY external caller. The handshake:
 //   1. "fizz:ping"              — detect the extension is installed.
 //   2. "fizz:connect"           — open the wallet's #connect window so the USER
 //                                 approves this origin (address-blind: the page
 //                                 never learns who they are).
 //   3. "fizz:connection-status" — poll whether this origin is connected.
-//   4. "fizz:launch-token"      — hand over a token draft (REQUIRES a live
-//                                 connection); the wallet opens its own window
-//                                 where the USER reviews and deploys.
-//   5. "fizz:launch-status"     — poll for the public result (address + tx).
-//   6. "fizz:disconnect"        — drop this origin's connection.
-// None of these carry secrets, none reveal the user's address, and nothing
-// deploys without an explicit in-wallet confirmation.
+//   4. "fizz:bridge-*"          — the fee-juice bridge hand-off (below).
+//   5. "fizz:disconnect"        — drop this origin's connection.
+// None of these carry secrets, and none reveal the user's address. Token
+// deployment is fully in-wallet (Deploy screen) — the old /launch hand-off
+// ("fizz:launch-token" / "fizz:launch-status") was removed with the page.
 //
 // Fee-juice claims from /bridge are NOT delivered over this channel — the user
 // copies the claim ticket and pastes it into the wallet (Need fee juice? →
@@ -75,25 +72,6 @@ async function openWindowRateLimited(key: string): Promise<boolean> {
     return false;
 }
 
-function sanitizeDraft(raw: any): DeployDraft {
-    const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
-    // A token-standard decimals value is an integer 0..18; anything else (NaN,
-    // out-of-range) falls back to 18 so a malformed draft can't pre-fill a value
-    // that surfaces as NaN downstream. Light bounds only — the Deploy page and
-    // deployToken re-validate strictly and the user reviews before anything runs.
-    const decRaw = str(raw?.decimals, 2);
-    const decNum = Number(decRaw);
-    const decimals = decRaw && Number.isInteger(decNum) && decNum >= 0 && decNum <= 18 ? decRaw : "18";
-    return {
-        name: str(raw?.name, 30),
-        symbol: str(raw?.symbol, 8).toUpperCase(),
-        decimals,
-        supply: str(raw?.supply, 30),
-        supplyMode: raw?.supplyMode === "public" ? "public" : "private",
-        keepMinter: raw?.keepMinter !== false,
-    };
-}
-
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
     void (async () => {
         try {
@@ -112,7 +90,7 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
                     return;
                 }
                 case "fizz:connect": {
-                    // Rate-limit connect windows the same way as launch windows.
+                    // Rate-limit connect windows the same way as bridge windows.
                     if (await openWindowRateLimited("fizz.lastConnectWindowAt")) {
                         sendResponse({
                             ok: false,
@@ -132,32 +110,6 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
                 }
                 case "fizz:disconnect": {
                     await removeConnection(origin);
-                    sendResponse({ ok: true });
-                    return;
-                }
-                case "fizz:launch-token": {
-                    // The origin must have an approved, live connection — an
-                    // un-connected (or revoked) site can't open launch windows.
-                    if (!(await isConnected(origin))) {
-                        sendResponse({ ok: false, error: "Connect your Fizz wallet first." });
-                        return;
-                    }
-                    // Rate-limit: one launch window per LAUNCH_WINDOW_COOLDOWN_MS
-                    // so a hostile/XSS'd allowed origin can't spam wallet popups.
-                    if (await openWindowRateLimited("fizz.lastLaunchWindowAt")) {
-                        sendResponse({
-                            ok: false,
-                            error: "A Fizz launch window was just opened — finish or close it first.",
-                        });
-                        return;
-                    }
-                    await saveDeployDraft(sanitizeDraft(message.draft), origin);
-                    await chrome.windows.create({
-                        url: chrome.runtime.getURL("src/popup/index.html#deploy"),
-                        type: "popup",
-                        width: 420,
-                        height: 820,
-                    });
                     sendResponse({ ok: true });
                     return;
                 }
@@ -230,19 +182,6 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
                     }
                     await saveBridgeDeposit(secretHash, l1TxHash);
                     sendResponse({ ok: true });
-                    return;
-                }
-                case "fizz:launch-status": {
-                    // Gated + origin-scoped: only the connected site that
-                    // initiated a launch can read its OWN public result, and
-                    // only within the result's short TTL. A never-connected or
-                    // unrelated page (and any manual in-wallet deploy) is
-                    // invisible here — preserving the address-blind session.
-                    if (!(await isConnected(origin))) {
-                        sendResponse({ ok: false, error: "Connect your Fizz wallet first." });
-                        return;
-                    }
-                    sendResponse({ ok: true, result: await readLastLaunchFor(origin) });
                     return;
                 }
                 default:

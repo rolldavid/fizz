@@ -46,9 +46,10 @@ export function ImportToken({ onBack }: { onBack: () => void }) {
 
     async function add() {
         if (!canonical || !meta) return;
+        if (!account) return setError("Wallet not loaded.");
         setError(null);
         try {
-            await addToken(network.id, {
+            await addToken(network.id, account.address.toString(), {
                 address: canonical,
                 symbol: meta.symbol,
                 name: meta.name,

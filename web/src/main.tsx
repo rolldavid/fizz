@@ -5,7 +5,7 @@ import { ConnectionProvider } from "./connection";
 import { EthProvider } from "./eth/EthProvider";
 import { App } from "./App";
 
-// Recover from stale lazy-chunk loads. The tool pages (/bridge, /launch) are
+// Recover from stale lazy-chunk loads. The tool pages (/bridge) are
 // code-split, so a tab that was open across a redeploy — or one booted from a
 // cached index.html — holds references to hashed chunks the new deploy has
 // already replaced. Importing one then 404s with "Failed to fetch dynamically

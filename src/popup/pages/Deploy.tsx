@@ -2,21 +2,22 @@ import { useEffect, useState } from "react";
 import { Header } from "../components/Header";
 import { ArrowLeftIcon, CheckIcon, CopyIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
-import { trackOp } from "../../lib/state/activity";
 import {
-    clearDeployJournal,
-    recordDeployStart,
-    recordLastLaunch,
-    takeDeployDraft,
-} from "../../lib/state/opJournal";
-import { deployToken } from "../../lib/aztec/deploy";
-import { addToken } from "../../lib/aztec/tokens";
+    clearDeployTask,
+    startTokenDeploy,
+    useDeployTask,
+} from "../../lib/state/deployTask";
 import { parseUnits } from "../../lib/aztec/balances";
 
-type Result = { address: string; txHash: string };
-
+/**
+ * Token deployment, fully in-wallet. The deploy itself runs as a background
+ * task (deployTask.ts) — this page starts it and renders whatever state the
+ * task is in, so the user can leave for Send/Home/etc. mid-deploy and come
+ * back via the Shell's bottom status bar without losing anything.
+ */
 export function Deploy({ onBack }: { onBack: () => void }) {
     const { wallet, network, account, ensureAccountDeployed } = useWallet();
+    const task = useDeployTask();
 
     const [name, setName] = useState("");
     const [symbol, setSymbol] = useState("");
@@ -25,39 +26,16 @@ export function Deploy({ onBack }: { onBack: () => void }) {
     const [supplyMode, setSupplyMode] = useState<"private" | "public">("private");
     const [keepMinter, setKeepMinter] = useState(true);
 
-    // Set only when this Deploy was handed over by a connected site (/launch).
-    // null for a manual in-wallet deploy — which is never reported back to any
-    // page, so an in-wallet deployment stays unlinkable to the browser session.
-    const [launchOrigin, setLaunchOrigin] = useState<string | null>(null);
-
-    const [busy, setBusy] = useState(false);
-    const [stage, setStage] = useState<string | null>(null);
-    const [startedAt, setStartedAt] = useState<number | null>(null);
-    const [elapsed, setElapsed] = useState(0);
     const [error, setError] = useState<string | null>(null);
-    const [result, setResult] = useState<Result | null>(null);
     const [copied, setCopied] = useState(false);
-
-    // Draft hand-off: when the user jumps from the fragile toolbar popup to a
-    // standalone window, their typed form follows them (one-shot).
-    useEffect(() => {
-        void takeDeployDraft().then((handoff) => {
-            if (!handoff) return;
-            const { draft, origin } = handoff;
-            setName(draft.name);
-            setSymbol(draft.symbol);
-            setDecimals(draft.decimals);
-            setSupply(draft.supply);
-            setSupplyMode(draft.supplyMode);
-            setKeepMinter(draft.keepMinter);
-            setLaunchOrigin(origin);
-        });
-    }, []);
 
     // Visible elapsed clock while proving — minutes of silent "Deploying…"
     // read as a hang; a ticking timer reads as work.
+    const startedAt = task?.phase === "running" ? task.startedAt : null;
+    const [elapsed, setElapsed] = useState(0);
     useEffect(() => {
         if (startedAt == null) return;
+        setElapsed(Math.floor((Date.now() - startedAt) / 1000));
         const t = window.setInterval(
             () => setElapsed(Math.floor((Date.now() - startedAt) / 1000)),
             1_000,
@@ -65,7 +43,7 @@ export function Deploy({ onBack }: { onBack: () => void }) {
         return () => window.clearInterval(t);
     }, [startedAt]);
 
-    async function deploy() {
+    function deploy() {
         setError(null);
         // Validate on click instead of disabling the button: a disabled button
         // swallows the click with zero feedback ("nothing happened").
@@ -73,91 +51,101 @@ export function Deploy({ onBack }: { onBack: () => void }) {
             return setError("Give your token a name and a symbol first.");
         }
         if (!wallet || !account) return setError("Wallet not loaded.");
-        setBusy(true);
-        setStartedAt(Date.now());
-        setElapsed(0);
         try {
-            // trackOp: defers the idle auto-lock — first-run proving (CRS
-            // download + ClientIVC) can exceed the 5-min idle window while the
-            // user just watches, and locking mid-flight kills the deploy.
-            await trackOp(async () => {
-                const d = Number(decimals);
-                const supplyValue = supply.trim() ? parseUnits(supply, d) : 0n;
-                if (!account.isDeployed) {
-                    setStage("Activating your account (one-time)…");
-                    await ensureAccountDeployed();
-                }
-                setStage("Proving + publishing the token…");
-                const res = await deployToken({
-                    wallet,
-                    network,
-                    deployer: account.address,
-                    name: name.trim(),
-                    symbol: symbol.trim().toUpperCase(),
-                    decimals: d,
-                    initialSupply: supplyValue,
-                    initialSupplyMode: supplyMode,
-                    keepMinterRole: keepMinter,
-                    // Crash journal: the deploy address is deterministic and
-                    // known pre-send. If this page dies mid-flight (popup
-                    // closed on blur), the next session probes the chain for
-                    // it and recovers the token or explains the interruption.
-                    onPredictedAddress: (address) =>
-                        recordDeployStart({
-                            predictedAddress: address,
-                            name: name.trim(),
-                            symbol: symbol.trim().toUpperCase(),
-                            decimals: d,
-                            networkId: network.id,
-                            hadInitialSupply: supplyValue > 0n,
-                            startedAt: Date.now(),
-                        }),
-                });
-                const addrStr = res.address.toString();
-                await addToken(network.id, {
-                    address: addrStr,
-                    symbol: symbol.trim().toUpperCase(),
-                    name: name.trim(),
-                    decimals: d,
-                });
-                await clearDeployJournal();
-                // /launch round-trip: ONLY when a connected site initiated this
-                // deploy do we stash the public result for it to poll — tagged
-                // with that origin so the background serves it back to that site
-                // alone. A manual in-wallet deploy records nothing, so it can't
-                // be linked to the browser session by any page.
-                if (launchOrigin) {
-                    await recordLastLaunch({
-                        address: addrStr,
-                        txHash: res.txHash,
-                        name: name.trim(),
-                        symbol: symbol.trim().toUpperCase(),
-                        at: Date.now(),
-                        origin: launchOrigin,
-                    });
-                }
-                setResult({ address: addrStr, txHash: res.txHash });
+            const d = Number(decimals);
+            const supplyValue = supply.trim() ? parseUnits(supply, d) : 0n;
+            startTokenDeploy({
+                wallet,
+                network,
+                deployer: account.address,
+                ensureAccountDeployed,
+                accountIsDeployed: account.isDeployed,
+                name: name.trim(),
+                symbol: symbol.trim().toUpperCase(),
+                decimals: d,
+                initialSupply: supplyValue,
+                initialSupplyMode: supplyMode,
+                keepMinterRole: keepMinter,
             });
         } catch (e) {
-            // The failure is visible on screen — the journal would only
-            // produce a stale "interrupted" banner next session.
-            await clearDeployJournal();
             setError(e instanceof Error ? e.message : String(e));
-        } finally {
-            setBusy(false);
-            setStage(null);
-            setStartedAt(null);
         }
     }
 
-    async function copyAddress() {
-        if (!result) return;
-        await navigator.clipboard.writeText(result.address);
+    async function copy(text: string) {
+        await navigator.clipboard.writeText(text);
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
     }
 
-    if (result) {
+    // ── live progress (deploy running, possibly started before this visit) ──
+    if (task?.phase === "running") {
+        return (
+            <>
+                <Header />
+                <div className="content">
+                    <button
+                        className="muted"
+                        style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 4 }}
+                        onClick={onBack}
+                    >
+                        <ArrowLeftIcon size={14} /> Back
+                    </button>
+
+                    <div style={{ fontWeight: 600, fontSize: 16 }}>
+                        Deploying {task.symbol}…
+                    </div>
+
+                    <div className="card" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                fontVariantNumeric: "tabular-nums",
+                            }}
+                        >
+                            <span className="spinner" />
+                            <span style={{ fontWeight: 500 }}>
+                                {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}{" "}
+                                elapsed
+                            </span>
+                            <span className="muted">· usually 2–4 min total</span>
+                        </div>
+                        <div className="muted" style={{ fontSize: 12 }}>{task.stage}</div>
+                        <div className="hint" style={{ margin: 0 }}>
+                            Proofs are generated on your device (the very first transaction also
+                            downloads one-time proving keys). Keep this window open — but feel free
+                            to use the rest of the wallet; the bar at the bottom brings you back
+                            here. It won't auto-lock while working.
+                        </div>
+                    </div>
+
+                    {task.predictedAddress && (
+                        <div className="card">
+                            <div className="muted" style={{ marginBottom: 6 }}>
+                                Your token's address (reserved)
+                            </div>
+                            <div className="address-mono" style={{ marginBottom: 8 }}>
+                                {task.predictedAddress}
+                            </div>
+                            <button
+                                className={`copy-btn ${copied ? "success" : ""}`}
+                                style={{ width: "100%" }}
+                                onClick={() => copy(task.predictedAddress!)}
+                            >
+                                {copied ? <CheckIcon /> : <CopyIcon />}
+                                {copied ? "Copied" : "Copy address"}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </>
+        );
+    }
+
+    // ── result (kept until acknowledged, even across navigation) ────────────
+    if (task?.phase === "done") {
         return (
             <>
                 <Header />
@@ -179,7 +167,7 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                         </div>
                         <div style={{ fontWeight: 600, fontSize: 18 }}>Token deployed</div>
                         <div className="muted" style={{ marginTop: 4 }}>
-                            {symbol.toUpperCase()} is live on {network.name}
+                            {task.symbol} is live on {network.name}
                         </div>
                     </div>
 
@@ -188,12 +176,12 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                             Contract address
                         </div>
                         <div className="address-mono" style={{ marginBottom: 8 }}>
-                            {result.address}
+                            {task.address}
                         </div>
                         <button
                             className={`copy-btn ${copied ? "success" : ""}`}
                             style={{ width: "100%" }}
-                            onClick={copyAddress}
+                            onClick={() => copy(task.address)}
                         >
                             {copied ? <CheckIcon /> : <CopyIcon />}
                             {copied ? "Copied" : "Copy address"}
@@ -201,11 +189,17 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                     </div>
 
                     <div className="hint">
-                        We've imported {symbol.toUpperCase()} into your token list. You can mint,
-                        send, and receive it right away.
+                        We've imported {task.symbol} into your token list. You can mint, send, and
+                        receive it right away.
                     </div>
 
-                    <button className="btn btn-primary btn-block" onClick={onBack}>
+                    <button
+                        className="btn btn-primary btn-block"
+                        onClick={() => {
+                            clearDeployTask();
+                            onBack();
+                        }}
+                    >
                         Back to wallet
                     </button>
                 </div>
@@ -213,6 +207,7 @@ export function Deploy({ onBack }: { onBack: () => void }) {
         );
     }
 
+    // ── form (idle, or showing a failure) ────────────────────────────────────
     return (
         <>
             <Header />
@@ -231,6 +226,15 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                     shielding, and unshielding out of the box. You'll be the admin and (optionally)
                     the minter.
                 </p>
+
+                {task?.phase === "failed" && (
+                    <div className="error">
+                        Deploying {task.symbol} failed: {task.message}{" "}
+                        <button className="muted" style={{ textDecoration: "underline" }} onClick={clearDeployTask}>
+                            Dismiss
+                        </button>
+                    </div>
+                )}
 
                 <div className="field">
                     <label>Name</label>
@@ -316,34 +320,9 @@ export function Deploy({ onBack }: { onBack: () => void }) {
 
                 {error && <div className="error">{error}</div>}
 
-                <button className="btn btn-primary btn-block" disabled={busy} onClick={deploy}>
-                    {busy ? stage ?? "Deploying…" : "Deploy token"}
+                <button className="btn btn-primary btn-block" onClick={deploy}>
+                    Deploy token
                 </button>
-
-                {busy && (
-                    <div className="card" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                                fontVariantNumeric: "tabular-nums",
-                            }}
-                        >
-                            <span className="spinner" />
-                            <span style={{ fontWeight: 500 }}>
-                                {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}{" "}
-                                elapsed
-                            </span>
-                            <span className="muted">· usually 2–4 min total</span>
-                        </div>
-                        <div className="hint" style={{ margin: 0 }}>
-                            Proofs are generated on your device (the very first transaction also
-                            downloads one-time proving keys). Keep this window open until you see
-                            the confirmation. It won't auto-lock while working.
-                        </div>
-                    </div>
-                )}
             </div>
         </>
     );

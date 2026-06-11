@@ -31,12 +31,13 @@ export function Mint({ onBack }: { onBack: () => void }) {
     const [done, setDone] = useState<{ txHash: string } | null>(null);
 
     useEffect(() => {
-        loadTokens(network.id).then((list) => {
+        if (!account) return;
+        loadTokens(network.id, account.address.toString()).then((list) => {
             const real = list.filter((t) => t.kind !== "fee_juice");
             setTokens(real);
             if (real[0]) setTokenAddr(real[0].address);
         });
-    }, [network.id]);
+    }, [network.id, account]);
 
     const token = useMemo(() => tokens.find((t) => t.address === tokenAddr), [tokens, tokenAddr]);
 

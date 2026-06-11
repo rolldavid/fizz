@@ -1,7 +1,7 @@
 /**
  * Post-build for the fizzwallet.com SPA.
  *
- *  1. Emits per-route HTML shells (dist/bridge/index.html, dist/launch/index.html)
+ *  1. Emits per-route HTML shells (dist/bridge/index.html)
  *     by cloning the built dist/index.html and swapping the <head> meta. Every
  *     shell boots the SAME SPA bundle; the router renders the matching route.
  *     This keeps per-page share cards (OG/Twitter) without server rendering, and
@@ -56,12 +56,6 @@ const ROUTES = [
         title: "Bridge fee juice to Aztec — Fizz",
         desc: "Bring your own gas: bridge the AZTEC token from your Ethereum wallet (MetaMask or Rabby) into fee juice on your connected Fizz wallet. The wallet auto-completes the claim — nothing to copy.",
         url: "https://fizzwallet.com/bridge/",
-    },
-    {
-        dir: "launch",
-        title: "Launch a token on Aztec — Fizz",
-        desc: "Design a standard AIP-20 token and deploy it from your Fizz wallet. The page never sees your address or keys — you review and confirm in the wallet.",
-        url: "https://fizzwallet.com/launch/",
     },
 ];
 

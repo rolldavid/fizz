@@ -250,14 +250,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             setAccount(a);
             setAccounts(list);
             setStatus("ready");
-            // Register the known-sender set (named contacts + everyone you've
-            // sent to) into the PXE so incoming private notes from them are
-            // discovered on the fast tagged path. Fire-and-forget so the UI
-            // doesn't block on PXE writes.
-            syncContactsToPxe(net.id, w).catch((err) =>
+            // Register the known-sender set (every account's named contacts +
+            // everyone they've sent to) into the PXE so incoming private notes
+            // are discovered on the fast tagged path. Discovery is wallet-wide
+            // (one PXE serves all accounts) even though the lists themselves
+            // are per-account. Fire-and-forget so the UI doesn't block.
+            const accountAddrs = list.map((a) => a.address.toString());
+            syncContactsToPxe(net.id, w, accountAddrs).catch((err) =>
                 console.warn("Contact sync failed:", err),
             );
-            syncKnownSendersToPxe(net.id, w).catch((err) =>
+            syncKnownSendersToPxe(net.id, w, accountAddrs).catch((err) =>
                 console.warn("Known-sender sync failed:", err),
             );
         } catch (err) {

@@ -18,6 +18,8 @@ import { Connections } from "./pages/Connections";
 import { RevealPhrase } from "./pages/RevealPhrase";
 import { vaultStore } from "../lib/vault/store";
 import { routeFromHash } from "../lib/runtime/standalone";
+import { DeployStatusBar } from "./components/DeployStatusBar";
+import { useDeployTask } from "../lib/state/deployTask";
 
 type Route =
     | "home"
@@ -105,6 +107,10 @@ function LoadingScreen() {
 
 function Shell() {
     const { status, account } = useWallet();
+    // Live token-deploy task: when one exists, every screen (except Deploy
+    // itself) shows the bottom status bar so the user can roam the wallet
+    // freely while proving runs, without losing the way back.
+    const deployTask = useDeployTask();
     // Deep-link support: a standalone window / tab opened at index.html#deploy
     // lands on that page after unlock (the toolbar popup has no hash → home).
     const [route, setRoute] = useState<Route>(() => routeFromHash(window.location.hash));
@@ -161,8 +167,10 @@ function Shell() {
         );
     }
 
+    const showDeployBar = deployTask !== null && route !== "deploy";
+
     return (
-        <div className="app fade-in">
+        <div className={`app fade-in${showDeployBar ? " has-deploy-bar" : ""}`}>
             {route === "home" && <Home onNavigate={go} onConvert={openConvert} />}
             {route === "send" && <Send onBack={() => setRoute("home")} onAddContact={goAddContact} />}
             {route === "receive" && <Receive onNavigate={go} />}
@@ -173,7 +181,11 @@ function Shell() {
             {route === "deploy" && <Deploy onBack={() => setRoute("home")} />}
             {route === "mint" && <Mint onBack={() => setRoute("create")} />}
             {route === "create" && (
-                <CreateTokens onBack={() => setRoute("home")} onMintMore={() => setRoute("mint")} />
+                <CreateTokens
+                    onBack={() => setRoute("home")}
+                    onDeploy={() => setRoute("deploy")}
+                    onMintMore={() => setRoute("mint")}
+                />
             )}
             {route === "import" && <ImportToken onBack={() => setRoute(returnTo)} />}
             {route === "convert" && convertTarget && (
@@ -185,6 +197,7 @@ function Shell() {
             {route === "connect" && <Connect onDone={() => setRoute("home")} />}
             {route === "connections" && <Connections onBack={() => setRoute("home")} />}
             {route === "reveal" && <RevealPhrase onBack={() => setRoute("home")} />}
+            {showDeployBar && <DeployStatusBar onOpen={() => setRoute("deploy")} />}
         </div>
     );
 }

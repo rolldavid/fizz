@@ -35,10 +35,11 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
     const [done, setDone] = useState<{ txHash: string } | null>(null);
 
     useEffect(() => {
-        loadTokens(network.id).then((list) =>
+        if (!account) return;
+        loadTokens(network.id, account.address.toString()).then((list) =>
             setToken(list.find((t) => t.address === target.tokenAddress) ?? null),
         );
-    }, [network.id, target.tokenAddress]);
+    }, [network.id, account, target.tokenAddress]);
 
     useEffect(() => {
         if (!wallet || !account || !token) return;

@@ -15,7 +15,7 @@ import { addToken } from "../../lib/aztec/tokens";
  *                      flight — "Check again" re-probes).
  */
 export function DeployRecovery({ onRecovered }: { onRecovered: () => void }) {
-    const { wallet, network } = useWallet();
+    const { wallet, network, account } = useWallet();
     const [journal, setJournal] = useState<DeployJournal | null>(null);
     const [recovered, setRecovered] = useState(false);
     const [checking, setChecking] = useState(false);
@@ -31,7 +31,12 @@ export function DeployRecovery({ onRecovered }: { onRecovered: () => void }) {
                     AztecAddress.fromString(j.predictedAddress),
                 );
                 if (instance) {
-                    await addToken(j.networkId as any, {
+                    // Older journals lack the deployer — credit the active
+                    // account then (the journal is session-scoped; new ones
+                    // always record it).
+                    const owner = j.deployer ?? account?.address.toString();
+                    if (!owner) throw new Error("No account loaded to credit the recovered token to.");
+                    await addToken(j.networkId as any, owner, {
                         address: j.predictedAddress,
                         symbol: j.symbol,
                         name: j.name,
@@ -47,7 +52,7 @@ export function DeployRecovery({ onRecovered }: { onRecovered: () => void }) {
                 setChecking(false);
             }
         },
-        [wallet, onRecovered],
+        [wallet, account, onRecovered],
     );
 
     useEffect(() => {

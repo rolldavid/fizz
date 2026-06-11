@@ -93,7 +93,6 @@ export function Layout() {
                     </Link>
                     <nav className="site-nav">
                         <NavLink to="/bridge">Get Gas</NavLink>
-                        <NavLink to="/launch">Launch a Token</NavLink>
                         {/* Aztec wallet only — the Ethereum connect lives on /bridge. */}
                         <NavWalletButton />
                     </nav>
@@ -106,8 +105,6 @@ export function Layout() {
                         <Link to="/">fizzwallet.com</Link>
                         <span className="sep">·</span>
                         <Link to="/bridge">Bridge fee juice</Link>
-                        <span className="sep">·</span>
-                        <Link to="/launch">Launch a token</Link>
                         <span className="sep">·</span>
                         <a href="/privacy">Privacy</a>
                         <span className="sep">·</span>

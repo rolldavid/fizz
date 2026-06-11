@@ -144,6 +144,109 @@ input[type="radio"] {
     white-space: nowrap;
 }
 
+/* Shell-level deploy status bar: pinned over every screen while a token deploy
+   runs (or sits finished, unacknowledged). The whole bar is a button that
+   returns to the Deploy page. Fixed (not sticky) — it must survive route
+   changes and scrolling on any page. */
+.deploy-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 16px calc(11px + env(safe-area-inset-bottom, 0px));
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--accent-soft);
+    border: none;
+    border-top: 1px solid var(--accent);
+    backdrop-filter: blur(6px);
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+}
+.deploy-bar .deploy-bar-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.deploy-bar .link {
+    color: var(--accent);
+    font-weight: 700;
+    white-space: nowrap;
+}
+.deploy-bar.success {
+    background: rgba(74, 222, 128, 0.12);
+    border-top-color: var(--success);
+}
+.deploy-bar.success .link {
+    color: var(--success);
+}
+.deploy-bar.failed {
+    background: rgba(248, 113, 113, 0.12);
+    border-top-color: var(--danger);
+}
+.deploy-bar.failed .link {
+    color: var(--danger);
+}
+/* Keep the last content rows reachable under the fixed bar. */
+.app.has-deploy-bar .content {
+    padding-bottom: 64px;
+}
+
+/* Account switcher pill — the PROMINENT dropdown affordance on the account
+   card. Reads as a control (surface + border + chevron), not as a caption. */
+.account-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    padding: 5px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color var(--transition), background var(--transition);
+}
+.account-pill:hover {
+    border-color: var(--accent);
+}
+.account-pill-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.account-pill-chevron {
+    color: var(--accent);
+    font-size: 12px;
+    line-height: 1;
+}
+/* The account address under the pill — tapping it copies. */
+.address-tap {
+    display: block;
+    margin-top: 5px;
+    padding: 0;
+    background: none;
+    border: none;
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+}
+.address-tap:hover {
+    color: var(--accent);
+}
+
 /* Fee juice — one compact tappable line (not a loud card). */
 .fee-line {
     display: flex;

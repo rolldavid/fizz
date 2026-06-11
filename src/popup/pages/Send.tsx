@@ -2,96 +2,98 @@ import { useEffect, useMemo, useState } from "react";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Header, shortAddress } from "../components/Header";
 import { Identicon } from "../components/Identicon";
-import { BookmarkIcon, CheckIcon } from "../components/icons";
+import { CheckIcon, CopyIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
 import { trackOp } from "../../lib/state/activity";
 import { loadTokens, type TokenEntry } from "../../lib/aztec/tokens";
 import { parseUnits } from "../../lib/aztec/balances";
 import { transfer, type TransferMode } from "../../lib/aztec/transfer";
-import {
-    addContact,
-    findContact,
-    listContacts,
-    rememberSentRecipient,
-    type Contact,
-} from "../../lib/aztec/contacts";
+import { listContacts, rememberSentRecipient, type Contact } from "../../lib/aztec/contacts";
 
 /**
- * Send screen — two clearly-separated intents:
- *   • "Send to someone"  → pay another address, with a Private/Public toggle.
- *   • "Convert"          → move YOUR OWN balance between private and public
- *                          (shield / unshield), framed as "Make private / public".
+ * Send screen. Recipients come from CONTACTS ONLY — there is deliberately no
+ * raw address input. Pasting an address at send time is the address-poisoning
+ * vector (look-alike addresses, clipboard swappers); forcing the add-contact
+ * step first means every recipient was reviewed once, calmly, with the full
+ * address on screen — and reuse after that is mistake-proof.
  *
- * Previously these four modes were peer tabs (Private/Public/Shield/Unshield),
- * which mixed "pay someone" with "convert my own funds" and used jargon. The
- * two-level model maps to the same underlying transfer/shield/unshield calls.
+ * After a send, a full confirmation screen helps the sender ONBOARD the
+ * recipient: the token's contract address must be in the recipient's token
+ * list before the transfer shows up — and for private sends, the recipient
+ * must also add the SENDER as a contact or the note is never discovered. One
+ * tap copies ready-to-paste instructions covering both.
  */
 export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContact: () => void }) {
     const { wallet, network, account, ensureAccountDeployed } = useWallet();
     const [tokens, setTokens] = useState<TokenEntry[]>([]);
     const [tokenAddr, setTokenAddr] = useState("");
-    const [to, setTo] = useState("");
+    const [contacts, setContacts] = useState<Contact[]>([]);
+    const [recipient, setRecipient] = useState<Contact | null>(null);
+    const [query, setQuery] = useState("");
     const [amount, setAmount] = useState("");
     const [privacy, setPrivacy] = useState<TransferMode>("private");
     const [busy, setBusy] = useState(false);
     const [busyText, setBusyText] = useState("Proving + sending…");
     const [error, setError] = useState<string | null>(null);
-    const [done, setDone] = useState<{ txHash: string; recipient: string } | null>(null);
-    const [contacts, setContacts] = useState<Contact[]>([]);
-    /** Canonical recipient under review (full-address confirm step), or null. */
-    const [confirming, setConfirming] = useState<string | null>(null);
+    const [confirming, setConfirming] = useState(false);
+    const [done, setDone] = useState<{
+        txHash: string;
+        recipient: Contact;
+        amount: string;
+        token: TokenEntry;
+        privacy: TransferMode;
+    } | null>(null);
 
     useEffect(() => {
-        loadTokens(network.id).then((list) => {
+        if (!account) return;
+        const addr = account.address.toString();
+        loadTokens(network.id, addr).then((list) => {
             const real = list.filter((t) => t.kind !== "fee_juice");
             setTokens(real);
             if (real[0]) setTokenAddr(real[0].address);
         });
-        listContacts(network.id).then(setContacts);
-    }, [network.id]);
+        listContacts(network.id, addr).then(setContacts);
+    }, [network.id, account]);
 
     const token = useMemo(() => tokens.find((t) => t.address === tokenAddr), [tokens, tokenAddr]);
 
-    // Filter contacts by typed input — both label and address are matched.
     const filteredContacts = useMemo(() => {
-        const q = to.trim().toLowerCase();
+        const q = query.trim().toLowerCase();
         if (!q) return contacts;
         return contacts.filter(
             (c) => c.label.toLowerCase().includes(q) || c.address.toLowerCase().includes(q),
         );
-    }, [contacts, to]);
+    }, [contacts, query]);
 
-    /**
-     * Step 1: validate inputs and surface a full-address review screen before
-     * anything signs. Truncated addresses are an address-poisoning vector: the
-     * user must see the COMPLETE recipient.
-     */
+    /** Step 1: validate, then surface the full-address review before signing. */
     function review() {
         setError(null);
-        setDone(null);
         if (!wallet) return setError("Wallet not loaded.");
         if (!account) return setError("Account not loaded.");
         if (!token) return setError("Pick a token.");
+        if (!recipient) return setError("Pick a contact to send to.");
         try {
             const value = parseUnits(amount, token.decimals);
             if (value <= 0n) throw new Error("Amount must be greater than zero.");
-            const recipientAddr = AztecAddress.fromString(to.trim());
-            setConfirming(recipientAddr.toString());
+            setConfirming(true);
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         }
     }
 
-    async function doSubmit(recipient: string) {
+    async function doSubmit() {
         setError(null);
-        if (!wallet || !account || !token) return;
+        if (!wallet || !account || !token || !recipient) return;
+        const sentTo = recipient;
+        const sentToken = token;
+        const sentAmount = amount;
+        const sentPrivacy = privacy;
         setBusy(true);
         try {
             // trackOp: proving + inclusion can exceed the 5-min idle window;
             // the auto-lock defers while this runs instead of killing the tx.
-            await trackOp(async () => {
-                const value = parseUnits(amount, token.decimals);
-                const tokenAddress = AztecAddress.fromString(token.address);
+            const result = await trackOp(async () => {
+                const value = parseUnits(sentAmount, sentToken.decimals);
                 const sender = account.address;
                 if (!account.isDeployed) {
                     // First transaction ever: the account contract must be
@@ -100,21 +102,46 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                     await ensureAccountDeployed();
                 }
                 setBusyText("Proving + sending…");
-                const recipientAddr = AztecAddress.fromString(recipient);
-                const result = await transfer({
-                    wallet, network, sender, tokenAddress, to: recipientAddr, amount: value, mode: privacy,
+                return transfer({
+                    wallet,
+                    network,
+                    sender,
+                    tokenAddress: AztecAddress.fromString(sentToken.address),
+                    to: AztecAddress.fromString(sentTo.address),
+                    amount: value,
+                    mode: sentPrivacy,
                 });
-                // Remember the recipient so a reciprocal private payment from them
-                // is discoverable on the fast tagged path — no naming required.
-                void rememberSentRecipient(network.id, recipient, wallet);
-                setConfirming(null);
-                setDone({ txHash: result.txHash, recipient });
+            });
+            // Remember the recipient so a reciprocal private payment from them
+            // is discoverable on the fast tagged path.
+            void rememberSentRecipient(network.id, account.address.toString(), sentTo.address, wallet);
+            setConfirming(false);
+            setDone({
+                txHash: result.txHash,
+                recipient: sentTo,
+                amount: sentAmount,
+                token: sentToken,
+                privacy: sentPrivacy,
             });
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         } finally {
             setBusy(false);
         }
+    }
+
+    if (done && account) {
+        return (
+            <SentConfirmation
+                done={done}
+                senderAddress={account.address.toString()}
+                onDone={onBack}
+                onSendAnother={() => {
+                    setDone(null);
+                    setAmount("");
+                }}
+            />
+        );
     }
 
     return (
@@ -138,54 +165,73 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                     </select>
                 </div>
 
-                <div className="field">
-                    <label>Recipient address</label>
-                    <input
-                        value={to}
-                        onChange={(e) => setTo(e.target.value)}
-                        placeholder="0x… or pick a contact below"
-                        style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }}
-                    />
+                {/* Recipient — contacts only. */}
+                <div className="field" style={{ marginBottom: 0 }}>
+                    <label>To</label>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div className="muted">Contacts</div>
+                {recipient ? (
+                    <div className="token-row" style={{ width: "100%" }}>
+                        <div className="token-meta" style={{ minWidth: 0 }}>
+                            <Identicon address={recipient.address} size={32} />
+                            <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 600 }}>{recipient.label}</div>
+                                <div className="muted" style={{ fontFamily: "ui-monospace, monospace" }}>
+                                    {shortAddress(recipient.address, 8, 6)}
+                                </div>
+                            </div>
+                        </div>
                         <button
                             className="btn btn-ghost"
                             style={{ padding: "4px 10px", fontSize: 11 }}
+                            onClick={() => setRecipient(null)}
+                        >
+                            Change
+                        </button>
+                    </div>
+                ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <input
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Search your contacts…"
+                        />
+                        {filteredContacts.slice(0, 5).map((c) => (
+                            <button
+                                key={c.address}
+                                className="token-row"
+                                style={{ cursor: "pointer", textAlign: "left", width: "100%" }}
+                                onClick={() => setRecipient(c)}
+                            >
+                                <div className="token-meta" style={{ minWidth: 0 }}>
+                                    <Identicon address={c.address} size={28} />
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontWeight: 500 }}>{c.label}</div>
+                                        <div
+                                            className="muted"
+                                            style={{ fontFamily: "ui-monospace, monospace" }}
+                                        >
+                                            {shortAddress(c.address, 8, 6)}
+                                        </div>
+                                    </div>
+                                </div>
+                            </button>
+                        ))}
+                        {filteredContacts.length === 0 && (
+                            <div className="muted" style={{ fontSize: 12 }}>
+                                {query.trim()
+                                    ? "No contacts match."
+                                    : "No contacts yet. Sending is contacts-only — add the recipient's address once, then reuse it safely."}
+                            </div>
+                        )}
+                        <button
+                            className="btn btn-ghost btn-block"
+                            style={{ fontSize: 12 }}
                             onClick={onAddContact}
                         >
                             + New contact
                         </button>
                     </div>
-                    {filteredContacts.slice(0, 4).map((c) => (
-                        <button
-                            key={c.address}
-                            className="token-row"
-                            style={{ cursor: "pointer", textAlign: "left", width: "100%" }}
-                            onClick={() => setTo(c.address)}
-                        >
-                            <div className="token-meta" style={{ minWidth: 0 }}>
-                                <Identicon address={c.address} size={28} />
-                                <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontWeight: 500 }}>{c.label}</div>
-                                    <div
-                                        className="muted"
-                                        style={{ fontFamily: "ui-monospace, monospace" }}
-                                    >
-                                        {shortAddress(c.address, 8, 6)}
-                                    </div>
-                                </div>
-                            </div>
-                        </button>
-                    ))}
-                    {filteredContacts.length === 0 && (
-                        <div className="muted" style={{ fontSize: 12 }}>
-                            {to.trim() ? "No contacts match." : "No saved contacts yet."} Paste an
-                            address above, or add a contact.
-                        </div>
-                    )}
-                </div>
+                )}
 
                 <div className="field">
                     <label>Amount</label>
@@ -221,21 +267,11 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                         : "Sent publicly. Visible on-chain, like a normal token transfer. Arrives instantly, no setup."}
                 </div>
 
-                {error && <div className="error">{error}</div>}
-
-                {done && (
-                    <SendSuccessCard
-                        txHash={done.txHash}
-                        recipient={done.recipient}
-                        networkId={network.id}
-                        isConvert={false}
-                        onContactSaved={(c) => setContacts((prev) => [c, ...prev])}
-                    />
-                )}
+                {error && !confirming && <div className="error">{error}</div>}
 
                 <button
                     className="btn btn-primary btn-block"
-                    disabled={busy || !token || !amount || !to}
+                    disabled={busy || !token || !amount || !recipient}
                     onClick={review}
                 >
                     {busy ? busyText : "Review send"}
@@ -247,23 +283,23 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                     </div>
                 )}
 
-                {confirming && token && (
+                {confirming && token && recipient && (
                     <ConfirmSendModal
-                        recipient={confirming}
+                        recipient={recipient.address}
                         amount={amount}
                         symbol={token.symbol}
                         privacy={privacy}
-                        contact={contacts.find((c) => c.address === confirming)}
+                        contact={recipient}
                         busy={busy}
                         busyText={busyText}
                         error={error}
                         onCancel={() => {
                             if (!busy) {
-                                setConfirming(null);
+                                setConfirming(false);
                                 setError(null);
                             }
                         }}
-                        onConfirm={() => doSubmit(confirming)}
+                        onConfirm={doSubmit}
                     />
                 )}
             </div>
@@ -368,131 +404,156 @@ function ConfirmSendModal({
     );
 }
 
-function SendSuccessCard({
-    txHash,
-    recipient,
-    networkId,
-    isConvert,
-    onContactSaved,
+/** Ready-to-paste onboarding text for the recipient. */
+function shareInstructions(args: {
+    amount: string;
+    token: TokenEntry;
+    privacy: TransferMode;
+    senderAddress: string;
+}): string {
+    const { amount, token, privacy, senderAddress } = args;
+    const lines = [
+        `I just sent you ${amount} ${token.symbol} on Aztec${privacy === "private" ? " (privately)" : ""} with Fizz (https://fizzwallet.com).`,
+        ``,
+        `To see it in your wallet:`,
+        ``,
+        `1. Import the token (Home → + Import) using this contract address:`,
+        token.address,
+    ];
+    if (privacy === "private") {
+        lines.push(
+            ``,
+            `2. Add me as a contact (Menu → Contacts) so the private transfer is discovered — my address:`,
+            senderAddress,
+        );
+    }
+    return lines.join("\n");
+}
+
+/**
+ * Post-send confirmation. The job here is recipient onboarding: a transfer the
+ * recipient can't SEE might as well not have happened. The token address (and
+ * for private sends, the sender address) is one tap away to share.
+ */
+function SentConfirmation({
+    done,
+    senderAddress,
+    onDone,
+    onSendAnother,
 }: {
-    txHash: string;
-    recipient: string;
-    networkId: import("../../lib/aztec/networks").AztecNetwork["id"];
-    isConvert: boolean;
-    onContactSaved: (c: Contact) => void;
+    done: {
+        txHash: string;
+        recipient: Contact;
+        amount: string;
+        token: TokenEntry;
+        privacy: TransferMode;
+    };
+    senderAddress: string;
+    onDone: () => void;
+    onSendAnother: () => void;
 }) {
-    const { wallet } = useWallet();
-    const [existing, setExisting] = useState<Contact | undefined>(undefined);
-    const [checking, setChecking] = useState(true);
-    const [label, setLabel] = useState("");
-    const [saving, setSaving] = useState(false);
-    const [savedLabel, setSavedLabel] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const { txHash, recipient, amount, token, privacy } = done;
+    const [copied, setCopied] = useState<"address" | "instructions" | null>(null);
 
-    useEffect(() => {
-        // Converts go to your own address — no contact to save.
-        if (isConvert) {
-            setChecking(false);
-            return;
-        }
-        let cancelled = false;
-        setChecking(true);
-        findContact(networkId, recipient).then((c) => {
-            if (cancelled) return;
-            setExisting(c);
-            setChecking(false);
-        });
-        return () => {
-            cancelled = true;
-        };
-    }, [networkId, recipient, isConvert]);
-
-    async function save() {
-        setError(null);
-        setSaving(true);
-        try {
-            const c = await addContact(
-                networkId,
-                { address: recipient, label, source: "sent" },
-                wallet,
-            );
-            onContactSaved(c);
-            setSavedLabel(c.label);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
-        } finally {
-            setSaving(false);
-        }
+    async function copy(kind: "address" | "instructions") {
+        const text =
+            kind === "address"
+                ? token.address
+                : shareInstructions({ amount, token, privacy, senderAddress });
+        await navigator.clipboard.writeText(text);
+        setCopied(kind);
+        setTimeout(() => setCopied(null), 1800);
     }
 
     return (
-        <div className="card" style={{ borderColor: "var(--success)" }}>
-            <div style={{ color: "var(--success)", marginBottom: 4, fontWeight: 500 }}>
-                {isConvert ? "Converted" : "Confirmed"}
-            </div>
-            <div
-                style={{
-                    fontFamily: "ui-monospace, monospace",
-                    fontSize: 11,
-                    wordBreak: "break-all",
-                    marginBottom: 8,
-                    color: "var(--text-dim)",
-                }}
-            >
-                {txHash}
-            </div>
-
-            {!isConvert && !checking && !existing && !savedLabel && (
-                <div
-                    className="fade-in"
-                    style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginTop: 4 }}
-                >
-                    <div className="muted" style={{ marginBottom: 6 }}>
-                        Save {shortAddress(recipient, 8, 6)} as a contact?
+        <>
+            <Header />
+            <div className="content">
+                <div style={{ textAlign: "center", marginTop: 16 }}>
+                    <div
+                        style={{
+                            width: 56,
+                            height: 56,
+                            borderRadius: "50%",
+                            background: "rgba(74, 222, 128, 0.15)",
+                            color: "var(--success)",
+                            display: "grid",
+                            placeItems: "center",
+                            margin: "0 auto 12px",
+                        }}
+                    >
+                        <CheckIcon size={28} />
                     </div>
-                    <div className="hint" style={{ marginBottom: 8 }}>
-                        Optional: gives them a name for quick-pick. They're already on your
-                        known-sender list, so a private payment back to you will be detected
-                        either way.
+                    <div style={{ fontWeight: 600, fontSize: 18 }}>
+                        {amount} {token.symbol} sent
+                    </div>
+                    <div className="muted" style={{ marginTop: 4 }}>
+                        to {recipient.label} · {privacy === "private" ? "🔒 private" : "public"}
+                    </div>
+                </div>
+
+                <div
+                    className="muted"
+                    style={{
+                        fontFamily: "ui-monospace, monospace",
+                        fontSize: 10,
+                        wordBreak: "break-all",
+                        textAlign: "center",
+                    }}
+                    title="Transaction hash"
+                >
+                    {txHash}
+                </div>
+
+                <div className="card card-accent" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ fontWeight: 600 }}>Help {recipient.label} see it</div>
+                    <div className="hint" style={{ margin: 0 }}>
+                        {privacy === "private"
+                            ? `${token.symbol} shows up for them only after they import the token AND add you as a contact (private transfers are invisible until the sender is registered).`
+                            : `${token.symbol} shows up for them only after they import the token's contract address into their list.`}
+                    </div>
+                    <div className="muted" style={{ fontSize: 11 }}>Token contract</div>
+                    <div
+                        style={{
+                            fontFamily: "ui-monospace, monospace",
+                            fontSize: 11,
+                            wordBreak: "break-all",
+                            background: "var(--surface-2)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 8,
+                            padding: 8,
+                        }}
+                    >
+                        {token.address}
                     </div>
                     <div style={{ display: "flex", gap: 6 }}>
-                        <input
-                            value={label}
-                            onChange={(e) => setLabel(e.target.value)}
-                            placeholder="Label (e.g. Alice)"
-                            maxLength={32}
-                            style={{ flex: 1 }}
-                        />
                         <button
-                            className="btn btn-primary"
-                            style={{ padding: "8px 12px" }}
-                            disabled={!label || saving}
-                            onClick={save}
+                            className={`copy-btn ${copied === "address" ? "success" : ""}`}
+                            style={{ flex: 1 }}
+                            onClick={() => copy("address")}
                         >
-                            <BookmarkIcon size={14} />
-                            {saving ? "…" : "Save"}
+                            {copied === "address" ? <CheckIcon /> : <CopyIcon />}
+                            {copied === "address" ? "Copied" : "Copy address"}
+                        </button>
+                        <button
+                            className={`btn btn-primary`}
+                            style={{ flex: 2, fontSize: 12 }}
+                            onClick={() => copy("instructions")}
+                        >
+                            {copied === "instructions"
+                                ? "✓ Copied — paste it to them"
+                                : "Copy instructions to share"}
                         </button>
                     </div>
-                    {error && <div className="error" style={{ marginTop: 6 }}>{error}</div>}
                 </div>
-            )}
 
-            {savedLabel && (
-                <div
-                    className="fade-in"
-                    style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--success)" }}
-                >
-                    <CheckIcon size={14} />
-                    Saved as “{savedLabel}”
-                </div>
-            )}
-
-            {!isConvert && existing && (
-                <div className="muted" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <BookmarkIcon size={12} />
-                    Sent to <b style={{ color: "var(--text)" }}>{existing.label}</b>
-                </div>
-            )}
-        </div>
+                <button className="btn btn-ghost btn-block" onClick={onSendAnother}>
+                    Send another
+                </button>
+                <button className="btn btn-primary btn-block" onClick={onDone}>
+                    Done
+                </button>
+            </div>
+        </>
     );
 }

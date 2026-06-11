@@ -12,15 +12,6 @@ import { EXTENSION_ID } from "./config";
 export type FizzOk = { ok: true };
 export type FizzErr = { ok: false; error?: string };
 
-/** Shape of the wallet's "fizz:launch-status" result (src/lib/state/opJournal.ts). */
-export type LastLaunch = {
-    address: string;
-    txHash: string;
-    name: string;
-    symbol: string;
-    at: number;
-};
-
 export function fizzMessagingAvailable(): boolean {
     return (
         typeof chrome !== "undefined" &&
