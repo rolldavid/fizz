@@ -115,12 +115,15 @@ export function Onboarding() {
                         </p>
                         <p className="hint" style={{ textAlign: "center" }}>
                             Fizz is a lightweight wallet for the Aztec network, made for quick,
-                            low-value transactions. Your keys stay on this device; no server ever
-                            sees them. (Like any light wallet, the Aztec node you connect to does
-                            see your address and IP; you can point Fizz at your own node anytime.)
+                            low-value transactions. Your recovery phrase stays on this device,
+                            encrypted by your passphrase or passkey; no server ever sees it. (Like any
+                            light wallet, the Aztec and Ethereum nodes Fizz queries see your address
+                            and IP.)
                         </p>
                         <p className="hint" style={{ textAlign: "center", fontSize: 11 }}>
-                            🫧 Pocket change, not vaults. Keep only what you'd carry in a pocket.
+                            🫧 Pocket change, not vaults. Your private balances are cached unencrypted
+                            on this device, so keep your computer's disk encrypted and hold only what
+                            you'd carry in a pocket.
                         </p>
                         <button className="btn btn-primary btn-block" onClick={startCreate}>
                             Create new wallet

@@ -54,7 +54,11 @@ function allowedWallets(): EthWallet[] {
         const allowed = c.id in ALLOWED || /meta\s*mask|rabby/i.test(c.name);
         if (!allowed || seen.has(c.id)) continue;
         seen.add(c.id);
-        out.push({ id: c.id, name: ALLOWED[c.id] ?? c.name, icon: c.icon });
+        // Only pass through inline data: icons (what EIP-6963 mandates). A
+        // remote (https:) icon URL would leak the user's IP to that host the
+        // moment the wallet menu renders — drop it rather than fetch it.
+        const icon = c.icon?.startsWith("data:") ? c.icon : undefined;
+        out.push({ id: c.id, name: ALLOWED[c.id] ?? c.name, icon });
     }
     return out;
 }

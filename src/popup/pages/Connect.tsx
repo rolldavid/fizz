@@ -101,7 +101,8 @@ export function Connect({ onDone }: { onDone: () => void }) {
                             <Bullet>It can ask your wallet to open a fee-juice bridge.</Bullet>
                             <Bullet>You review and confirm every action here, in the wallet.</Bullet>
                             <Bullet>
-                                It never sees your address, balances, or keys, and can't move funds.
+                                It never sees your balances or keys and can't move funds. (A fee-juice
+                                bridge shares your address with the page — you approve that separately.)
                             </Bullet>
                         </div>
 

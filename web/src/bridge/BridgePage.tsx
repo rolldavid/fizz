@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     getAccount,
     readContract,
@@ -87,11 +87,23 @@ export function BridgePage() {
     const [balanceNonce, setBalanceNonce] = useState(0);
 
     // ── data loading ─────────────────────────────────────────────────────────
+    // Request generation: only the LATEST node fetch may paint state. Without
+    // this, a slow response from the UNPINNED testnet node (after a
+    // mainnet→testnet→mainnet toggle, or a retry) could resolve last and write
+    // attacker-controlled portal/asset addresses into node.info while the UI
+    // shows Mainnet — which the spend-time pin re-check in run() then refuses,
+    // but we don't even let stale data reach state. Last-requested wins.
+    const nodeReqRef = useRef(0);
     const loadNode = () => {
+        const reqId = ++nodeReqRef.current;
         setNode({ status: "loading" });
         fetchNodeInfo(net.aztecNodeUrl, net.pin)
-            .then((info) => setNode({ status: "ready", info }))
-            .catch((err) => setNode({ status: "error", message: errMessage(err) }));
+            .then((info) => {
+                if (nodeReqRef.current === reqId) setNode({ status: "ready", info });
+            })
+            .catch((err) => {
+                if (nodeReqRef.current === reqId) setNode({ status: "error", message: errMessage(err) });
+            });
     };
     // Re-fetch the node + its L1 contracts whenever the network toggles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -162,6 +174,22 @@ export function BridgePage() {
         if (node.status !== "ready" || asset.status !== "ready") return;
         const info = node.info;
         setError(null);
+        // Re-assert the pinned fee-juice contracts at the moment of spending,
+        // independent of which network's fetch populated node.info. This is the
+        // load-bearing guard: even if a stale/hostile response had painted
+        // attacker addresses into node.info, the deposit refuses unless the
+        // approve spender + portal match the SELECTED network's pin. Mainnet has a
+        // pin (real funds); testnet's is null (no value at risk).
+        if (
+            net.pin &&
+            (info.feeJuicePortalAddress.toLowerCase() !== net.pin.feeJuicePortalAddress.toLowerCase() ||
+                info.feeJuiceAddress.toLowerCase() !== net.pin.feeJuiceAddress.toLowerCase())
+        ) {
+            return setError(
+                `Safety check failed: the fee-juice contracts don't match Fizz's pinned ${net.label} ` +
+                    "addresses. Refusing to deposit.",
+            );
+        }
         if (!config) return setError("Ethereum wallet isn't ready yet — give it a moment and try again.");
         if (aztecStatus !== "connected") return setError("Connect your Aztec wallet with Connect Wallet (top right).");
         if (!isConnected) return setError("Connect your Ethereum wallet (MetaMask or Rabby) in step 2.");

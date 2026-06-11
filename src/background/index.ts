@@ -57,14 +57,24 @@ const ALLOWED_ORIGINS = new Set<string>([
     ...(import.meta.env.PROD ? [] : ["http://localhost"]),
 ]);
 
+// Synchronous in-memory cooldown, checked-and-set with NO await in between, so a
+// same-tick burst of sendMessage calls (each spawning a concurrent handler) can't
+// all read the old timestamp and all open a window. Authoritative within one SW
+// lifetime; the storage.session stamp below covers across SW restarts.
+const lastWindowOpenAt: Record<string, number> = {};
+
 /**
  * Per-action cooldown for opening wallet windows. Returns true if a window was
  * opened under `key` within LAUNCH_WINDOW_COOLDOWN_MS (i.e. the caller should
- * refuse); otherwise stamps `now` and returns false. Stored in storage.session
- * so it survives service-worker restarts within a browser session.
+ * refuse); otherwise stamps `now` and returns false. Uses a synchronous
+ * in-memory latch (burst-safe) plus storage.session (survives SW restarts).
  */
 async function openWindowRateLimited(key: string): Promise<boolean> {
     const now = Date.now();
+    // Atomic synchronous gate FIRST — a burst is serialized here before any await.
+    if (now - (lastWindowOpenAt[key] ?? 0) < LAUNCH_WINDOW_COOLDOWN_MS) return true;
+    lastWindowOpenAt[key] = now;
+    // Cross-restart gate: the SW may have been killed since the last open.
     const got = await chrome.storage.session.get(key);
     const last = typeof got?.[key] === "number" ? got[key] : 0;
     if (now - last < LAUNCH_WINDOW_COOLDOWN_MS) return true;
