@@ -106,10 +106,11 @@ export function getNetwork(id: AztecNetwork["id"]): AztecNetwork {
 
 /**
  * Networks offered in the wallet's picker, in order — Mainnet first (the
- * default). The local `sandbox` stays in NETWORKS (tests/e2e use it) but is
- * hidden here, and custom-node selection was removed: only these three show.
+ * default). The local `sandbox` and `devnet` stay in NETWORKS (tests/e2e and
+ * the registry use them) but are hidden here, and custom-node selection was
+ * removed: only Mainnet and Testnet show.
  */
-export const SELECTABLE_NETWORK_IDS: AztecNetwork["id"][] = ["alpha", "testnet", "devnet"];
+export const SELECTABLE_NETWORK_IDS: AztecNetwork["id"][] = ["alpha", "testnet"];
 export const SELECTABLE_NETWORKS: AztecNetwork[] = SELECTABLE_NETWORK_IDS.map(getNetwork);
 
 // ── Custom node ──────────────────────────────────────────────────────────────

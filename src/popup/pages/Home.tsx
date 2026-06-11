@@ -598,9 +598,7 @@ function FeeJuiceLine({
                         </>
                     )}
                 </span>
-                <span className="fee-line-cta">
-                    {sponsored ? "Sponsored · bridge ↗" : "Need gas? ↗"}
-                </span>
+                <span className="fee-line-cta">Need gas? ↗</span>
             </a>
         );
     }
@@ -619,7 +617,7 @@ function FeeJuiceLine({
                     </>
                 )}
             </span>
-            <span className="fee-line-cta">{sponsored ? "Sponsored · bridge →" : "Need gas? →"}</span>
+            <span className="fee-line-cta">Need gas? →</span>
         </button>
     );
 }

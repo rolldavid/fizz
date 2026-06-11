@@ -230,6 +230,34 @@ input[type="radio"] {
     font-size: 12px;
     line-height: 1;
 }
+/* Header network picker — same pill language as the account switcher, dimmer
+   (it's chrome, not content). The option list is the app's .menu-dropdown
+   instead of the OS-rendered native <select> popup. */
+.network-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color var(--transition), color var(--transition);
+}
+.network-pill:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+.network-pill-chevron {
+    color: var(--accent);
+    font-size: 10px;
+    line-height: 1;
+}
+
 /* The account address under the pill — display only; the clipboard icon is
    the single copy affordance (an accidental tap must not touch the clipboard). */
 .address-display {
