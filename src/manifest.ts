@@ -55,11 +55,13 @@ const buildManifest = (env: ConfigEnv): any => {
 
     return {
         manifest_version: 3,
-        // Pins the extension ID to bapbaajfnjockbcdhjpgpllflnhgogol on EVERY
-        // unpacked install (and the Web Store build). fizzwallet.com/bridge
-        // messages the wallet by this ID — without the pin every dev machine
-        // gets a random one. This is only the PUBLIC key; no private half.
-        key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4Pgg5vyd9mDoO0hrNEqXDziJk3bv3Qg9KBhgkv6UhS2t+/AupeQtv7dUwT7O5jaqPefu/Y1GIwQgVDXDzY/mPyP6Fu1fjTK1dT8tnMRdn8iFzmGd6vBtfBDHSC6hVpVV8mlHEuBx6ZQYq+tAwA10Zjv60+JfbEEn9uG40bEHy+mSmTBtMVEWa9EIRhjdaBJEGbM9SoFbBCeBn0ZcgOOZBYb4pZKTD01NSnwutvkdft4ER7RBR0oztoSPVK4rnceFKtsz3Mair/YAVgLesUn3i9xnNtoeQ56EYK+OMiZAuNEdWyk8ftOGH8HWbTSztzlW6oAuDV2G+08Hu4idzBt+DwIDAQAB",
+        // The Chrome Web Store item's PUBLIC key (no private half) — pins the
+        // extension ID to kadklgafmpoomnhnbjkeajapglmmegfj, the PUBLISHED id,
+        // on every unpacked dev install too, so fizzwallet.com (EXTENSION_ID
+        // in web/src/config.ts, which must match) reaches dev and store builds
+        // alike. NOTE: `yarn package:store` strips this field — the store
+        // rejects uploads carrying `key` and derives the id from its own copy.
+        key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkjwHDrGeKy5GLPwqgN98LObU9loNF1rGha11Y/Pk5kI6CWu4oTBFnualS5jt62Cd4wFM7OUx3ANPAIGgsZ7i56Z0i0TuvK+oqb22C5JToAc4PLLYnVGbIYHaPQJHYpBmjROBHIh4odOU73+6c+4hDrEWIeaXk5V/MhQ5RzMeXyM5nRfiUbc8IvyMyMu3AahKqtH1Cai9n0CG61eGYtZnqIc6t9V5W9R2JGVg6LDeoNS+dNyNXpheqtLtZrOixmBNM6juNzPPjPEGaCwiLlSfCVO3d8RrOK9zDsCp7BlKno8dG6a6El3sD0+tXEAaqY48QJMKzGw3gsbl/n6Ds92x9QIDAQAB",
         name: "Fizz Wallet",
         short_name: "Fizz Wallet",
         description: "A lightweight wallet for the Aztec Network",
