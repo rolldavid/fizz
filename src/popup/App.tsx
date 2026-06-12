@@ -15,6 +15,7 @@ import { Convert, type ConvertTarget } from "./pages/Convert";
 import { Contacts } from "./pages/Contacts";
 import { Connect } from "./pages/Connect";
 import { Connections } from "./pages/Connections";
+import { TransactionHistory } from "./pages/TransactionHistory";
 import { RevealPhrase } from "./pages/RevealPhrase";
 import { vaultStore } from "../lib/vault/store";
 import { routeFromHash } from "../lib/runtime/standalone";
@@ -34,6 +35,7 @@ type Route =
     | "contacts"
     | "connect"
     | "connections"
+    | "history"
     | "reveal";
 
 function LoadingScreen() {
@@ -196,6 +198,7 @@ function Shell() {
                 "fizz:connect"; the user approves the origin here. */}
             {route === "connect" && <Connect onDone={() => setRoute("home")} />}
             {route === "connections" && <Connections onBack={() => setRoute("home")} />}
+            {route === "history" && <TransactionHistory onBack={() => setRoute("home")} />}
             {route === "reveal" && <RevealPhrase onBack={() => setRoute("home")} />}
             {showDeployBar && <DeployStatusBar onOpen={() => setRoute("deploy")} />}
         </div>

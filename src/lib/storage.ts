@@ -41,4 +41,9 @@ export const KEYS = {
     knownSendersPrefix: "aztec.senders.v1",
     // Whether the first-run "private vs public" explainer has been dismissed.
     homeIntroSeen: "aztec.home.intro.v1",
+    // Local, on-device transaction history. Per-account+network lists live under
+    // `${txHistoryPrefix}.${networkId}.${account}`; the dapp-authorization log is
+    // wallet-wide (address-blind) under `${txHistoryPrefix}.auth`; the incoming-
+    // event scan cursor under `${txHistoryPrefix}.${networkId}.${account}.cursor`.
+    txHistoryPrefix: "aztec.txHistory.v1",
 } as const;

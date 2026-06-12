@@ -24,6 +24,8 @@ import {
     type UiFeeEstimate,
 } from "./fee";
 import { assertWithinU128, getTokenContract } from "./tokenContract";
+import { withPxeLock } from "./pxeLock";
+import { recordEntry } from "./txHistory";
 
 export type DeployTokenInput = {
     wallet: AztecWallet;
@@ -83,7 +85,10 @@ export async function estimateDeployTokenFee(input: DeployTokenInput): Promise<U
     return estimateUiFee(input.wallet, input.network, input.deployer, deployTx as any);
 }
 
-export async function deployToken(input: DeployTokenInput): Promise<DeployTokenResult> {
+export function deployToken(input: DeployTokenInput): Promise<DeployTokenResult> {
+    return withPxeLock(() => deployTokenImpl(input));
+}
+async function deployTokenImpl(input: DeployTokenInput): Promise<DeployTokenResult> {
     const Token = await getTokenContract();
 
     const { wallet, network, deployer, name, symbol, decimals } = input;
@@ -190,5 +195,17 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
     // success screen consistent with a pre-confirm "Covered". Sponsored networks
     // sponsor every tx, so the deploy fee's label settles this for all 3.
     const feeJuice = fee.label === "sponsored" ? undefined : haveFee ? totalFee : undefined;
+    // Best-effort local-history record AFTER the deploy succeeded — recordEntry
+    // swallows its own errors, so this can never throw into the deploy.
+    recordEntry(network.id, deployer.toString(), {
+        id: txHash,
+        kind: "deploy",
+        txHash,
+        tokenAddress: address.toString(),
+        amount: input.initialSupply > 0n ? input.initialSupply.toString() : undefined,
+        feeJuice: feeJuice !== undefined ? feeJuice.toString() : undefined,
+        label: input.symbol,
+        at: Date.now(),
+    });
     return { address, txHash, feeJuice };
 }

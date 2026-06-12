@@ -29,20 +29,42 @@ export function describeError(err: unknown): string {
 }
 
 /**
- * Map a raw send/tx error to actionable user-facing text. The node rejects a tx
- * whose anchor block it can't find ("Block header not found" / world-state
- * not-found / reorg) when the PXE's synced tip is out of step with the node it
- * broadcasts to — load-balancer/reorg skew (transient: retry) or a stale local
- * sync store (persistent: reset network sync). Surface that instead of the raw
- * SDK string. Everything else passes through describeError unchanged.
+ * Map a raw send/tx error to actionable user-facing text.
+ *
+ * Two distinct buckets, and the distinction is a SAFETY one:
+ *
+ *  1. Pre-broadcast sync drift — "Block header not found", world-state
+ *     not-found, reorg, "Unknown block" from node_getBlocks /
+ *     node_getCheckpointedBlocks. The tx never left the device; the PXE's synced
+ *     tip was briefly out of step with the node (load-balancer height skew, or a
+ *     node still catching up). Safe to just retry; it clears on its own.
+ *
+ *  2. Post-broadcast receipt failure — node_getTxReceipt. By the time the
+ *     receipt is fetched the tx HAS been broadcast, so it may already have
+ *     landed. Telling the user to "just try again" here risks a DOUBLE-SEND, so
+ *     we steer them to verify first instead.
+ *
+ * Everything else passes through describeError unchanged.
  */
 export function humanizeTxError(err: unknown): string {
     const raw = describeError(err);
-    if (/block header not found|not found when querying world state|reorg/i.test(raw)) {
+    // Bucket 2 first — never tell the user to blindly retry a possibly-landed tx.
+    if (/node_gettxreceipt|get ?tx ?receipt/i.test(raw)) {
         return (
-            "The network moved while preparing your transaction (the node's view is out of step " +
-            "with your wallet's synced state). Wait a few seconds and try again — if it keeps " +
-            "failing, use “Reset network sync” in the menu to re-sync from chain."
+            "Your transaction was submitted, but the node couldn't confirm whether it landed. " +
+            "Check your transaction history (or Aztec Scan) before sending it again — it may " +
+            "have already gone through."
+        );
+    }
+    // Bucket 1 — pre-broadcast sync drift, safe to retry.
+    if (
+        /block header not found|not found when querying world state|reorg|unknown block|node_getblocks|node_getcheckpointedblocks/i.test(
+            raw,
+        )
+    ) {
+        return (
+            "The network was briefly out of sync (the node hadn't caught up to your wallet's " +
+            "synced state). This clears on its own — wait about a minute and try again."
         );
     }
     return raw;

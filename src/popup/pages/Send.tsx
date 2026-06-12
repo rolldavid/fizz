@@ -582,6 +582,7 @@ function SentConfirmation({
     onSendAnother: () => void;
 }) {
     const { txHash, recipient, amount, token, privacy } = done;
+    const { network } = useWallet();
     const [copied, setCopied] = useState<"address" | "instructions" | null>(null);
 
     async function copy(kind: "address" | "instructions") {
@@ -636,6 +637,18 @@ function SentConfirmation({
                 >
                     {txHash}
                 </div>
+
+                {network.id === "alpha" && (
+                    <a
+                        className="fee-line"
+                        href={`https://aztecscan.xyz/tx-effects/${txHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ display: "block", textAlign: "center", fontSize: 12 }}
+                    >
+                        View on Aztec Scan ↗
+                    </a>
+                )}
 
                 <div className="card card-accent" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     <div style={{ fontWeight: 600 }}>Help {recipient.label} see it</div>

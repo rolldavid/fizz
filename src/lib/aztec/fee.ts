@@ -29,6 +29,7 @@ import {
     markBridgeConsumed,
     releaseClaimSpendLock,
 } from "./bridge";
+import { withPxeLock } from "./pxeLock";
 import { getTokenBalance } from "./balances";
 import { FEE_JUICE_ENTRY } from "./tokens";
 import { describeError } from "../errors";
@@ -275,7 +276,20 @@ export type UiFeeEstimate =
  * The single call a confirm/review screen makes: resolves whether the fee is
  * covered, and if not, the estimated amount the user will pay.
  */
-export async function estimateUiFee(
+export function estimateUiFee(
+    wallet: AztecWallet,
+    network: AztecNetwork,
+    sender: AztecAddress,
+    interaction: { simulate(opts: unknown): Promise<unknown> },
+): Promise<UiFeeEstimate> {
+    // Serialized against sends/deploys/boot-sync: the estimate drives a PXE
+    // sync (peekFeeCovered) and a simulate, and if either runs concurrently with
+    // a send's own sync the shared IndexedDB transaction can commit mid-op
+    // ("transaction has finished"). The lock makes the confirm-screen estimate
+    // and the subsequent send strictly sequential.
+    return withPxeLock(() => estimateUiFeeImpl(wallet, network, sender, interaction));
+}
+async function estimateUiFeeImpl(
     wallet: AztecWallet,
     network: AztecNetwork,
     sender: AztecAddress,
@@ -324,7 +338,17 @@ export function feeJuiceFromReceipt(sent: {
     }
 }
 
-export async function assessFeeReadiness(
+export function assessFeeReadiness(
+    wallet: AztecWallet,
+    network: AztecNetwork,
+    sender: AztecAddress,
+): Promise<FeeReadiness> {
+    // Top-level UI gate that reads the PXE (balance simulate + claim list);
+    // serialize it so it never reads through another op's open IndexedDB
+    // transaction ("transaction has finished"). Not called from any locked path.
+    return withPxeLock(() => assessFeeReadinessImpl(wallet, network, sender));
+}
+async function assessFeeReadinessImpl(
     wallet: AztecWallet,
     network: AztecNetwork,
     sender: AztecAddress,

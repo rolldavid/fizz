@@ -16,6 +16,8 @@
  * the page (Disconnect) or in-wallet (Connected sites).
  */
 
+import { recordAuth } from "../aztec/txHistory";
+
 export type Connection = {
     origin: string;
     approvedAt: number;
@@ -66,12 +68,17 @@ export async function saveConnection(origin: string): Promise<Connection> {
     const conn: Connection = { origin, approvedAt: now, expiresAt: now + CONNECTION_TTL_MS };
     const others = (await readAll()).filter((c) => c.origin !== origin);
     await writeAll([...others, conn]);
+    // Best-effort local-history record — recordAuth swallows its own errors, so
+    // it can never throw into the connect flow. Runs while unlocked.
+    recordAuth("approved", origin);
     return conn;
 }
 
 export async function removeConnection(origin: string): Promise<void> {
     const others = (await readAll()).filter((c) => c.origin !== origin);
     await writeAll(others);
+    // Best-effort local-history record (see saveConnection).
+    recordAuth("revoked", origin);
 }
 
 // ── Pending connect request (background → Connect screen hand-off) ───────────

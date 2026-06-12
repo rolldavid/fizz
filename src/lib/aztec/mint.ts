@@ -15,6 +15,7 @@ import { Contract } from "@aztec/aztec.js/contracts";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { ensureTokenRegistered } from "./balances";
+import { withPxeLock } from "./pxeLock";
 import {
     displayFeeForSource,
     estimateUiFee,
@@ -29,6 +30,7 @@ import {
     assertWithinU128,
     getTokenContract,
 } from "./tokenContract";
+import { recordEntry } from "./txHistory";
 
 export type MintMode = "private" | "public";
 
@@ -60,7 +62,10 @@ async function mintMethod(params: MintParams) {
         : contract.methods.mint_to_public(params.to, params.amount);
 }
 
-export async function mintToken(params: MintParams): Promise<{ txHash: string; feeJuice?: bigint }> {
+export function mintToken(params: MintParams): Promise<{ txHash: string; feeJuice?: bigint }> {
+    return withPxeLock(() => mintTokenImpl(params));
+}
+async function mintTokenImpl(params: MintParams): Promise<{ txHash: string; feeJuice?: bigint }> {
     assertPositiveAmount(params.amount);
     assertWithinU128(params.amount);
     assertSpendableRecipient(params.to);
@@ -78,7 +83,23 @@ export async function mintToken(params: MintParams): Promise<{ txHash: string; f
         throw err;
     }
     await markFeeConsumed(fee);
-    return { txHash: txHashOf(sent), feeJuice: displayFeeForSource(fee.label, sent) };
+    const txHash = txHashOf(sent);
+    const feeJuice = displayFeeForSource(fee.label, sent);
+    // Best-effort local-history record AFTER the mint succeeded — recordEntry
+    // swallows its own errors, so this can never throw into the mint.
+    recordEntry(params.network.id, params.minter.toString(), {
+        id: txHash,
+        kind: "mint",
+        direction: "out",
+        privacy: params.mode,
+        txHash,
+        tokenAddress: params.tokenAddress.toString(),
+        amount: params.amount.toString(),
+        counterparty: params.to.toString(),
+        feeJuice: feeJuice !== undefined ? feeJuice.toString() : undefined,
+        at: Date.now(),
+    });
+    return { txHash, feeJuice };
 }
 
 /** Pre-confirm fee estimate for a mint. */

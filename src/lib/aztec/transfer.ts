@@ -16,6 +16,7 @@ import { Contract } from "@aztec/aztec.js/contracts";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { ensureTokenRegistered } from "./balances";
+import { withPxeLock } from "./pxeLock";
 import {
     displayFeeForSource,
     estimateUiFee,
@@ -30,6 +31,7 @@ import {
     assertWithinU128,
     getTokenContract,
 } from "./tokenContract";
+import { recordEntry } from "./txHistory";
 
 export type TransferMode = "private" | "public";
 
@@ -78,7 +80,10 @@ async function transferMethod(params: TransferParams) {
         : contract.methods.transfer_in_public(params.sender, params.to, params.amount, Fr.ZERO);
 }
 
-export async function transfer(params: TransferParams): Promise<{ txHash: string; feeJuice?: bigint }> {
+export function transfer(params: TransferParams): Promise<{ txHash: string; feeJuice?: bigint }> {
+    return withPxeLock(() => transferImpl(params));
+}
+async function transferImpl(params: TransferParams): Promise<{ txHash: string; feeJuice?: bigint }> {
     assertPositiveAmount(params.amount);
     assertWithinU128(params.amount);
     assertSpendableRecipient(params.to);
@@ -93,7 +98,23 @@ export async function transfer(params: TransferParams): Promise<{ txHash: string
         throw err;
     }
     await markFeeConsumed(feeResolution);
-    return { txHash: txHashOf(sent), feeJuice: displayFeeForSource(feeResolution.label, sent) };
+    const txHash = txHashOf(sent);
+    const feeJuice = displayFeeForSource(feeResolution.label, sent);
+    // Best-effort local-history record AFTER the tx succeeded — recordEntry
+    // swallows its own errors, so this can never throw into the send.
+    recordEntry(params.network.id, params.sender.toString(), {
+        id: txHash,
+        kind: "transfer",
+        direction: "out",
+        privacy: params.mode,
+        txHash,
+        tokenAddress: params.tokenAddress.toString(),
+        amount: params.amount.toString(),
+        counterparty: params.to.toString(),
+        feeJuice: feeJuice !== undefined ? feeJuice.toString() : undefined,
+        at: Date.now(),
+    });
+    return { txHash, feeJuice };
 }
 
 /** Pre-confirm fee estimate for a transfer (covered / estimated AZTEC amount). */
@@ -121,7 +142,10 @@ async function unshieldMethod(params: ShieldParams) {
     return contract.methods.transfer_to_public(params.sender, params.sender, params.amount, Fr.ZERO);
 }
 
-export async function shield(params: ShieldParams): Promise<{ txHash: string; feeJuice?: bigint }> {
+export function shield(params: ShieldParams): Promise<{ txHash: string; feeJuice?: bigint }> {
+    return withPxeLock(() => shieldImpl(params));
+}
+async function shieldImpl(params: ShieldParams): Promise<{ txHash: string; feeJuice?: bigint }> {
     assertPositiveAmount(params.amount);
     assertWithinU128(params.amount);
     const method = await shieldMethod(params);
@@ -134,10 +158,27 @@ export async function shield(params: ShieldParams): Promise<{ txHash: string; fe
         throw err;
     }
     await markFeeConsumed(feeResolution);
-    return { txHash: txHashOf(sent), feeJuice: displayFeeForSource(feeResolution.label, sent) };
+    const txHash = txHashOf(sent);
+    const feeJuice = displayFeeForSource(feeResolution.label, sent);
+    // Best-effort local-history record (see transferImpl).
+    recordEntry(params.network.id, params.sender.toString(), {
+        id: txHash,
+        kind: "shield",
+        direction: "self",
+        privacy: "private",
+        txHash,
+        tokenAddress: params.tokenAddress.toString(),
+        amount: params.amount.toString(),
+        feeJuice: feeJuice !== undefined ? feeJuice.toString() : undefined,
+        at: Date.now(),
+    });
+    return { txHash, feeJuice };
 }
 
-export async function unshield(params: ShieldParams): Promise<{ txHash: string; feeJuice?: bigint }> {
+export function unshield(params: ShieldParams): Promise<{ txHash: string; feeJuice?: bigint }> {
+    return withPxeLock(() => unshieldImpl(params));
+}
+async function unshieldImpl(params: ShieldParams): Promise<{ txHash: string; feeJuice?: bigint }> {
     assertPositiveAmount(params.amount);
     assertWithinU128(params.amount);
     const method = await unshieldMethod(params);
@@ -150,7 +191,21 @@ export async function unshield(params: ShieldParams): Promise<{ txHash: string; 
         throw err;
     }
     await markFeeConsumed(feeResolution);
-    return { txHash: txHashOf(sent), feeJuice: displayFeeForSource(feeResolution.label, sent) };
+    const txHash = txHashOf(sent);
+    const feeJuice = displayFeeForSource(feeResolution.label, sent);
+    // Best-effort local-history record (see transferImpl).
+    recordEntry(params.network.id, params.sender.toString(), {
+        id: txHash,
+        kind: "unshield",
+        direction: "self",
+        privacy: "public",
+        txHash,
+        tokenAddress: params.tokenAddress.toString(),
+        amount: params.amount.toString(),
+        feeJuice: feeJuice !== undefined ? feeJuice.toString() : undefined,
+        at: Date.now(),
+    });
+    return { txHash, feeJuice };
 }
 
 /** Pre-confirm fee estimate for shield (make private). */

@@ -175,6 +175,15 @@ export const MenuIcon = (p: Props) => (
     </Svg>
 );
 
+/** Clock with a counter-clockwise arc — transaction history / activity. */
+export const HistoryIcon = (p: Props) => (
+    <Svg {...p}>
+        <path d="M3 3v5h5" />
+        <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+        <path d="M12 7v5l3 2" />
+    </Svg>
+);
+
 /** Chain link — connected sites / dApp connections. */
 export const LinkIcon = (p: Props) => (
     <Svg {...p}>

@@ -42,6 +42,10 @@ const buildManifest = (env: ConfigEnv): any => {
         // strands every bridge at "sent" — the CSP block is indistinguishable
         // from "not mined yet".
         "https://lb.drpc.live",
+        // Self-hosted mainnet Aztec node (networks.ts mainnet nodeUrl). A single
+        // dedicated node — not a load balancer — so the PXE never sees the
+        // inconsistent chain heights that caused "Unknown block" sync failures.
+        "https://aztec.fizzwallet.com",
         // Testnet + devnet nodes — the EXACT hosts used (networks.ts), not a
         // whole-domain wildcard: `https://*.aztec-labs.com` would make any
         // current-or-future subdomain (incl. one obtainable via subdomain
@@ -75,7 +79,7 @@ const buildManifest = (env: ConfigEnv): any => {
         name: "Fizz Wallet",
         short_name: "Fizz Wallet",
         description: "A lightweight wallet for the Aztec Network",
-        version: "0.1.2",
+        version: "0.1.3",
         icons: {
             16: "o.png",
             32: "o.png",
@@ -109,6 +113,7 @@ const buildManifest = (env: ConfigEnv): any => {
         host_permissions: [
             ...(isProd ? [] : ["http://localhost/*", "http://127.0.0.1/*"]),
             "https://lb.drpc.live/*",
+            "https://aztec.fizzwallet.com/*",
             "https://rpc.testnet.aztec-labs.com/*",
             "https://v4-devnet-2.aztec-labs.com/*",
             "https://crs.aztec-cdn.foundation/*",

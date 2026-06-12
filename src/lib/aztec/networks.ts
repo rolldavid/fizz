@@ -46,7 +46,13 @@ export const NETWORKS: AztecNetwork[] = [
         id: "alpha",
         name: "Aztec Mainnet",
         description: "Production · Ethereum L1",
-        nodeUrl: "https://lb.drpc.live/aztec-mainnet/AsSP5jeGMUnUmdsy88mWgdsyXG-SZcwR8ZfEVjewFaCJ",
+        // Self-hosted dedicated mainnet node (single node, NOT a load balancer):
+        // the drpc lb.drpc.live/aztec-mainnet endpoint fronts several backends at
+        // inconsistent heights, which surfaced as "Unknown block" / "Block header
+        // not found" mid-send. One node can't disagree with itself. l1RpcUrl below
+        // stays on drpc — it's only read-only L1 receipt/claim lookups, not the
+        // sequential block sync that the skew broke.
+        nodeUrl: "https://aztec.fizzwallet.com",
         l1ChainId: 1, // Ethereum mainnet
         rollupVersion: 2934756905,
         // Mainnet has NO SponsoredFPC deployed and NO faucet (docs + live node:

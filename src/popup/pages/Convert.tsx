@@ -212,6 +212,17 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
                         <div style={{ marginTop: 6, display: "flex", justifyContent: "center" }}>
                             <ActualFeeRow feeJuice={done.feeJuice} />
                         </div>
+                        {network.id === "alpha" && (
+                            <a
+                                className="fee-line"
+                                href={`https://aztecscan.xyz/tx-effects/${done.txHash}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ display: "block", textAlign: "center", fontSize: 12, marginTop: 8 }}
+                            >
+                                View on Aztec Scan ↗
+                            </a>
+                        )}
                     </div>
                     <button className="btn btn-primary btn-block" onClick={onBack}>
                         Back to wallet

@@ -252,6 +252,18 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                         </button>
                     </div>
 
+                    {network.id === "alpha" && (
+                        <a
+                            className="fee-line"
+                            href={`https://aztecscan.xyz/tx-effects/${task.txHash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ display: "block", textAlign: "center", fontSize: 12 }}
+                        >
+                            View on Aztec Scan ↗
+                        </a>
+                    )}
+
                     <div className="hint">
                         We've imported {task.symbol} into your token list. You can mint, send, and
                         receive it right away.

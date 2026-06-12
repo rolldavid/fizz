@@ -320,6 +320,17 @@ export function Mint({ onBack }: { onBack: () => void }) {
                                 <div style={{ marginTop: 6 }}>
                                     <ActualFeeRow feeJuice={done.feeJuice} />
                                 </div>
+                                {network.id === "alpha" && (
+                                    <a
+                                        className="fee-line"
+                                        href={`https://aztecscan.xyz/tx-effects/${done.txHash}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        style={{ display: "block", textAlign: "center", fontSize: 12, marginTop: 8 }}
+                                    >
+                                        View on Aztec Scan ↗
+                                    </a>
+                                )}
                             </div>
                         )}
 

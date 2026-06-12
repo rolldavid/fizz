@@ -108,6 +108,13 @@ export async function autoClaimTick(args: {
     const { wallet, network, recipient, isDeployed, ensureAccountDeployed } = args;
     const recip = recipient.toString();
 
+    // Never run this background sweep while a user-initiated PXE operation
+    // (send / deploy / fee estimate / boot sender-sync) is in flight: those hold
+    // the PXE lock and bump the activity counter, and the sweep's own PXE reads
+    // would otherwise interleave with theirs and trip the kv-store's
+    // "transaction has finished" race. We simply wait for the next 20s tick.
+    if (hasActiveOps()) return;
+
     // Once per (network, account) per install: scan L1 for seed-derived claims
     // this install doesn't know about (fresh import / reinstall). Marked done
     // only on success, so a failed scan retries next tick.

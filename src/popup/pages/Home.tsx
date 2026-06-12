@@ -6,6 +6,7 @@ import {
     CheckIcon,
     ConvertIcon,
     CopyIcon,
+    HistoryIcon,
     KeyIcon,
     LinkIcon,
     LockIcon,
@@ -23,6 +24,7 @@ import {
 } from "../../lib/aztec/balances";
 import { FEE_JUICE_ENTRY, loadTokens, removeToken, type TokenEntry } from "../../lib/aztec/tokens";
 import { isSponsoredFPCAvailable } from "../../lib/aztec/fee";
+import { withPxeLock } from "../../lib/aztec/pxeLock";
 import { onFeeJuiceLanded } from "../../lib/aztec/autoClaim";
 import { listPendingBridges, markGasNoticeShown } from "../../lib/aztec/bridge";
 import { describeError } from "../../lib/errors";
@@ -38,6 +40,7 @@ type Route =
     | "import"
     | "contacts"
     | "connections"
+    | "history"
     | "reveal";
 type Tab = "private" | "public";
 
@@ -64,7 +67,6 @@ export function Home({
         renameAccount,
         removeAccount,
         lock,
-        resetSyncData,
         network,
     } = useWallet();
     // STRICT rule: rows are tagged with the address they were fetched FOR, and
@@ -132,20 +134,29 @@ export function Home({
             rows: tokens.map((t) => ({ token: t, balance: ZERO_BALANCE, loading: true })),
             incoming,
         });
-        await Promise.all(
-            tokens.map(async (token, i) => {
-                try {
-                    const balance = await getTokenBalance(wallet, account.address, token);
-                    apply((rows) => rows.map((r, j) => (j === i ? { token, balance, loading: false } : r)));
-                } catch (err) {
-                    const error = describeError(err);
-                    apply((rows) =>
-                        rows.map((r, j) =>
-                            j === i ? { token, balance: ZERO_BALANCE, loading: false, error } : r,
-                        ),
-                    );
-                }
-            }),
+        // One PXE lock for the whole refresh: balance reads must not run while a
+        // writer (boot sender-sync, a send/deploy) holds an IndexedDB
+        // transaction open, or a read through that shared store throws
+        // "transaction has finished" and the row shows a spurious error. With no
+        // writer concurrent, the per-token reads are free to run in parallel.
+        await withPxeLock(() =>
+            Promise.all(
+                tokens.map(async (token, i) => {
+                    try {
+                        const balance = await getTokenBalance(wallet, account.address, token);
+                        apply((rows) =>
+                            rows.map((r, j) => (j === i ? { token, balance, loading: false } : r)),
+                        );
+                    } catch (err) {
+                        const error = describeError(err);
+                        apply((rows) =>
+                            rows.map((r, j) =>
+                                j === i ? { token, balance: ZERO_BALANCE, loading: false, error } : r,
+                            ),
+                        );
+                    }
+                }),
+            ),
         );
     }, [wallet, account, network.id]);
 
@@ -178,22 +189,7 @@ export function Home({
         <>
             <Header
                 right={
-                    <HeaderMenu
-                        onNavigate={onNavigate}
-                        onLock={lock}
-                        onResetSync={() => {
-                            if (
-                                confirm(
-                                    "Reset network sync? This clears the local synced state and re-syncs " +
-                                        "from the chain (can take a few minutes). Your funds, keys, and " +
-                                        "recovery phrase are NOT affected. Use this if sends fail with " +
-                                        "“Block header not found”.",
-                                )
-                            ) {
-                                void resetSyncData();
-                            }
-                        }}
-                    />
+                    <HeaderMenu onNavigate={onNavigate} onLock={lock} />
                 }
             />
             <div className="content">
@@ -381,11 +377,9 @@ export function Home({
 function HeaderMenu({
     onNavigate,
     onLock,
-    onResetSync,
 }: {
     onNavigate: (r: Route) => void;
     onLock: () => void;
-    onResetSync: () => void;
 }) {
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
@@ -437,7 +431,7 @@ function HeaderMenu({
                     {item("Contacts", <PeopleIcon size={16} />, () => onNavigate("contacts"))}
                     {item("Connected sites", <LinkIcon size={16} />, () => onNavigate("connections"))}
                     {item("Recovery phrase", <KeyIcon size={16} />, () => onNavigate("reveal"))}
-                    {item("Reset network sync", <ConvertIcon size={16} />, onResetSync)}
+                    {item("Transaction history", <HistoryIcon size={16} />, () => onNavigate("history"))}
                     {item("Lock", <LockIcon size={16} />, onLock)}
                 </div>
             )}

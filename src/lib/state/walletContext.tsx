@@ -42,7 +42,7 @@ import { hasActiveOps, trackOp } from "./activity";
 import { drainClaimInbox } from "../aztec/claimInbox";
 import { autoClaimTick } from "../aztec/autoClaim";
 import { describeError } from "../errors";
-import { resetLocalSyncData } from "../aztec/recovery";
+import { withPxeLock } from "../aztec/pxeLock";
 
 type AccountManager = Awaited<ReturnType<AztecWallet["createSchnorrAccount"]>>;
 
@@ -140,8 +140,6 @@ type Ctx = {
 
     lock: () => void;
     destroy: () => Promise<void>;
-    /** Wipe the local PXE sync cache and re-sync from chain (vault/keys untouched). */
-    resetSyncData: () => Promise<void>;
 };
 
 const WalletCtx = createContext<Ctx | null>(null);
@@ -297,12 +295,20 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             // (one PXE serves all accounts) even though the lists themselves
             // are per-account. Fire-and-forget so the UI doesn't block.
             const accountAddrs = list.map((a) => a.address.toString());
-            syncContactsToPxe(net.id, w, accountAddrs).catch((err) =>
-                console.warn("Contact sync failed:", err),
-            );
-            syncKnownSendersToPxe(net.id, w, accountAddrs).catch((err) =>
-                console.warn("Known-sender sync failed:", err),
-            );
+            // Run the two registerSender sweeps THROUGH the PXE lock and one
+            // after the other — never concurrently with each other or with a
+            // send/estimate. registerSender → addSender does an IndexedDB
+            // read-then-write whose transaction commits early if another PXE op
+            // interleaves, throwing "transaction has finished"; serializing the
+            // whole sweep closes that window. Still fire-and-forget so the UI
+            // doesn't block on a slow address book.
+            void withPxeLock(() => syncContactsToPxe(net.id, w, accountAddrs))
+                .catch((err) => console.warn("Contact sync failed:", err))
+                .then(() =>
+                    withPxeLock(() => syncKnownSendersToPxe(net.id, w, accountAddrs)).catch((err) =>
+                        console.warn("Known-sender sync failed:", err),
+                    ),
+                );
         } catch (err) {
             setBootError(describeError(err));
             // Stay in "loading" so the LoadingScreen renders the error/retry UI.
@@ -743,17 +749,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setStatus("uninitialized");
     }, [stopCurrentWallet]);
 
-    // Recovery for a stale/damaged local PXE sync store (symptom: "Block header
-    // not found" on send). Stop the PXE so its IndexedDB connection closes, wipe
-    // the sync caches, then hard-reload to re-sync from chain. The vault,
-    // contacts and claim secrets (chrome.storage) and the on-chain funds are
-    // untouched — only the re-derivable sync cache is cleared.
-    const resetSyncData = useCallback(async () => {
-        await stopCurrentWallet();
-        await resetLocalSyncData();
-        globalThis.location?.reload();
-    }, [stopCurrentWallet]);
-
     const value = useMemo<Ctx>(
         () => ({
             status,
@@ -777,7 +772,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             createAccountWithPassphrase,
             lock,
             destroy,
-            resetSyncData,
         }),
         [
             status,
@@ -799,7 +793,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             createAccountWithPassphrase,
             lock,
             destroy,
-            resetSyncData,
         ],
     );
 
