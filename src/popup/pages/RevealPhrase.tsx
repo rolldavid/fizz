@@ -155,12 +155,14 @@ export function RevealPhrase({ onBack }: { onBack: () => void }) {
                             onClick={() => copy(revealed.words.join(" "), "phrase")}
                         >
                             {copied === "phrase" ? <CheckIcon /> : <CopyIcon />}{" "}
-                            {copied === "phrase" ? "Copied, clears in 30s" : "Copy phrase"}
+                            {copied === "phrase" ? "Copied — clear it when done" : "Copy phrase"}
                         </button>
                         <div className="hint" style={{ fontSize: 11 }}>
                             ⚠️ Copying puts the phrase on your system clipboard, where other apps,
                             clipboard managers, and OS clipboard sync can read it. Writing the words
-                            down by hand is safer. We auto-clear the clipboard after 30 seconds.
+                            down by hand is safer. We try to clear it after ~30s while this window
+                            stays open, but other apps may already hold a copy — clear your clipboard
+                            yourself when you're done.
                         </div>
 
                         <button
@@ -200,6 +202,11 @@ export function RevealPhrase({ onBack }: { onBack: () => void }) {
                                 >
                                     {copied === "key" ? "Copied" : "Copy account key"}
                                 </button>
+                                <div className="muted" style={{ fontSize: 10, lineHeight: 1.5 }}>
+                                    Goes on your clipboard, where other apps and clipboard managers
+                                    can read it. We try to clear it after ~30s while this window is
+                                    open — clear it yourself when you're done.
+                                </div>
                             </div>
                         )}
 

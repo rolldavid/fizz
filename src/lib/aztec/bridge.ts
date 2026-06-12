@@ -110,25 +110,50 @@ export function isClaimable(b: PendingBridge): boolean {
     );
 }
 
+/**
+ * Serialize every read-modify-write on the single pendingBridges blob.
+ *
+ * All mutators do secureGet → transform → secureSet with awaits in between;
+ * without a latch, two concurrent mutators in THIS context (e.g. the 20s
+ * autoClaim tick interleaving with a user-initiated fee/dismiss action) read the
+ * same snapshot and the second secureSet clobbers the first — silently dropping
+ * a consumedAt / claimTxHash / "pending" transition. This chain forces every
+ * mutation to run start-to-finish before the next begins.
+ *
+ * It does NOT span separate JS realms (a second extension window runs its own
+ * module instance), so terminal flags are ALSO preserved on every write in
+ * upsertBridge — a stale cross-window snapshot can never UNSET a flag another
+ * realm already set. On-chain nullifiers remain the ultimate double-spend gate.
+ */
+let bridgeWriteChain: Promise<unknown> = Promise.resolve();
+function withBridgeLock<T>(fn: () => Promise<T>): Promise<T> {
+    const run = bridgeWriteChain.then(fn, fn);
+    bridgeWriteChain = run.then(
+        () => undefined,
+        () => undefined,
+    );
+    return run;
+}
+
+/** Serialized map over every entry. */
+async function updateBridges(map: (b: PendingBridge) => PendingBridge): Promise<void> {
+    await withBridgeLock(async () => {
+        const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+        await secureSet(KEYS.pendingBridges, all.map(map));
+    });
+}
+
 /** Record the broadcast landing tx for a claim (withholds it from fee use). */
 export async function markClaimTxBroadcast(id: string, txHash: string): Promise<void> {
-    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    await secureSet(
-        KEYS.pendingBridges,
-        all.map((b) =>
-            b.id === id ? { ...b, claimTxHash: txHash, claimTxBroadcastAt: Date.now() } : b,
-        ),
+    await updateBridges((b) =>
+        b.id === id ? { ...b, claimTxHash: txHash, claimTxBroadcastAt: Date.now() } : b,
     );
 }
 
 /** The landing tx died (dropped/reverted) — return the claim to the pool. */
 export async function clearClaimTxBroadcast(id: string): Promise<void> {
-    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    await secureSet(
-        KEYS.pendingBridges,
-        all.map((b) =>
-            b.id === id ? { ...b, claimTxHash: undefined, claimTxBroadcastAt: undefined } : b,
-        ),
+    await updateBridges((b) =>
+        b.id === id ? { ...b, claimTxHash: undefined, claimTxBroadcastAt: undefined } : b,
     );
 }
 
@@ -213,38 +238,63 @@ export async function adoptRecoveredBridge(entry: {
     messageHash: string;
     messageLeafIndex: string;
 }): Promise<boolean> {
-    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    // Dedupe on the message hash AND the secret: a local entry still in
-    // "depositing"/"sent" has no messageHash yet, but it IS the same deposit
-    // (same seed-derived secret) — adopting it again would double-count the
-    // amount in the optimistic gas display, permanently.
     if (!/^0x[0-9a-fA-F]{1,64}$/.test(entry.messageHash)) {
         throw new Error(`Refusing to adopt a claim with a non-hex message hash: ${entry.messageHash}`);
     }
-    if (
-        all.some(
-            (b) =>
-                b.messageHash?.toLowerCase() === entry.messageHash.toLowerCase() ||
-                b.claimSecret?.toLowerCase() === entry.claimSecret.toLowerCase(),
-        )
-    ) {
-        return false;
-    }
-    await upsertBridge({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        ...entry,
-        status: "pending",
-        createdAt: Date.now(),
+    assertWithinU128(BigInt(entry.claimAmount));
+    return withBridgeLock(async () => {
+        const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+        // Dedupe ONLY against LIVE (non-consumed, non-dismissed) entries. A claim
+        // wrongly marked consumed — by a node lie or a transient sweep error —
+        // must be re-adoptable: recoverBridgedClaims only calls us for messages
+        // it has just proven non-nullified on-chain, so resurrecting one can
+        // never double-count a genuinely spent claim, while leaving the stale
+        // consumed entry in place (it stays filtered out of every list).
+        if (
+            all.some(
+                (b) =>
+                    !b.consumedAt &&
+                    !b.dismissedAt &&
+                    (b.messageHash?.toLowerCase() === entry.messageHash.toLowerCase() ||
+                        b.claimSecret?.toLowerCase() === entry.claimSecret.toLowerCase()),
+            )
+        ) {
+            return false;
+        }
+        const adopted: PendingBridge = {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            ...entry,
+            status: "pending",
+            createdAt: Date.now(),
+        };
+        await secureSet(KEYS.pendingBridges, [adopted, ...all]);
+        return true;
     });
-    return true;
 }
 
-/** Insert or replace (by id) and persist. Newest first. */
+/**
+ * Insert or replace (by id) and persist. Newest first. Serialized, and
+ * terminal flags (consumedAt/dismissedAt/noticeShownAt) set on the stored copy
+ * are preserved — a stale in-flight write (or a concurrent window) can never
+ * resurrect a claim another writer already finalized.
+ */
 async function upsertBridge(entry: PendingBridge): Promise<void> {
-    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    const idx = all.findIndex((b) => b.id === entry.id);
-    const next = idx >= 0 ? all.map((b) => (b.id === entry.id ? entry : b)) : [entry, ...all];
-    await secureSet(KEYS.pendingBridges, next);
+    await withBridgeLock(async () => {
+        const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+        const existing = all.find((b) => b.id === entry.id);
+        const merged: PendingBridge = existing
+            ? {
+                  ...entry,
+                  consumedAt: entry.consumedAt ?? existing.consumedAt,
+                  dismissedAt: entry.dismissedAt ?? existing.dismissedAt,
+                  noticeShownAt: entry.noticeShownAt ?? existing.noticeShownAt,
+              }
+            : entry;
+        const next = existing
+            ? all.map((b) => (b.id === entry.id ? merged : b))
+            : [merged, ...all];
+        await secureSet(KEYS.pendingBridges, next);
+    });
 }
 
 const normalizeHex = (v: string | bigint | number) => {
@@ -298,12 +348,20 @@ async function completeFromReceipt(
         // this entry (observed as "Tried to create a Fr from [object Object]").
         throw new Error(`Deposit event decoded a non-hex message key: ${messageHash}`);
     }
+    // Trust the on-chain event for the amount, not any caller-supplied value:
+    // a claim built with the wrong amount would never become spendable. Bound
+    // it to the u128 token range so a tampered/garbage event amount from a lying
+    // L1 RPC is rejected here rather than persisted as an unspendable claim that
+    // wedges every fee-paid tx. (We cannot independently recompute the L1→L2
+    // message key from the amount — the SDK exposes no helper and the reference
+    // bridgeTokensPublic likewise trusts the event — so this bound, plus the
+    // recipient+secretHash binding above, is the available defense.)
+    const claimAmount = (match.args.amount as bigint).toString();
+    assertWithinU128(BigInt(claimAmount));
     return {
         ...entry,
         status: "pending",
-        // Trust the on-chain event for the amount, not any caller-supplied value:
-        // a claim built with the wrong amount would never become spendable.
-        claimAmount: (match.args.amount as bigint).toString(),
+        claimAmount,
         messageHash,
         messageLeafIndex: (match.args.index as bigint).toString(),
     };
@@ -455,16 +513,20 @@ export async function recordBridgeDeposit(args: {
     const { networkId, secretHash, l1TxHash } = args;
     if (!/^0x[0-9a-fA-F]{64}$/.test(l1TxHash)) throw new Error("Invalid L1 transaction hash.");
     const { computeSecretHash } = await lazyHash();
-    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    for (const b of all) {
-        if (b.network !== networkId || (b.status ?? "pending") !== "depositing") continue;
-        const h = (await computeSecretHash(Fr.fromHexString(b.claimSecret))).toString();
-        if (normalizeHex(h) !== normalizeHex(secretHash)) continue;
-        const sent: PendingBridge = { ...b, status: "sent", l1TxHash };
-        await upsertBridge(sent);
-        return sent;
-    }
-    return null;
+    // Match-and-write under the lock so a concurrent mutator can't slip a write
+    // between our read and our secureSet (which would lose this "sent" stamp).
+    return withBridgeLock(async () => {
+        const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+        for (const b of all) {
+            if (b.network !== networkId || (b.status ?? "pending") !== "depositing") continue;
+            const h = (await computeSecretHash(Fr.fromHexString(b.claimSecret))).toString();
+            if (normalizeHex(h) !== normalizeHex(secretHash)) continue;
+            const sent: PendingBridge = { ...b, status: "sent", l1TxHash };
+            await secureSet(KEYS.pendingBridges, all.map((x) => (x.id === b.id ? sent : x)));
+            return sent;
+        }
+        return null;
+    });
 }
 
 /**
@@ -530,20 +592,12 @@ export async function recoverInFlightBridges(
 /** Acknowledge the one-time "gas is on the way" notice for these claims. */
 export async function markGasNoticeShown(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
-    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    await secureSet(
-        KEYS.pendingBridges,
-        all.map((b) => (ids.includes(b.id) ? { ...b, noticeShownAt: Date.now() } : b)),
-    );
+    await updateBridges((b) => (ids.includes(b.id) ? { ...b, noticeShownAt: Date.now() } : b));
 }
 
 /** Hide an unrecoverable entry (interrupted pre-broadcast, or reverted). */
 export async function dismissBridge(id: string): Promise<void> {
-    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    await secureSet(
-        KEYS.pendingBridges,
-        all.map((b) => (b.id === id ? { ...b, dismissedAt: Date.now() } : b)),
-    );
+    await updateBridges((b) => (b.id === id ? { ...b, dismissedAt: Date.now() } : b));
 }
 
 export async function listPendingBridges(networkId: AztecNetwork["id"]): Promise<PendingBridge[]> {
@@ -625,10 +679,17 @@ export async function listReadyClaims(
     try {
         const syncedHeader = await pxe.getSyncedBlockHeader();
         anchorBlockHash = await syncedHeader.hash();
-    } catch {
-        // PXE hasn't anchored its first block yet (fresh wallet, quiet chain).
-        // No claim can be consumed before that point — report none ready.
-        return [];
+    } catch (err) {
+        // The PXE throws a specific "not-yet-synchronized" error before it has
+        // anchored its first block (fresh wallet, quiet chain): no claim can be
+        // consumed before that point, so report none ready. But do NOT swallow a
+        // genuine PXE/IDB fault as "no gas" — that would hide a funded claim and
+        // present a real error as an empty wallet (and violates the no-swallow
+        // rule). Surface anything else.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/not-yet-synchronized|not yet synchronized/i.test(msg)) return [];
+        console.warn("listReadyClaims: unexpected getSyncedBlockHeader failure:", err);
+        throw err;
     }
     // The claim's nullifier is keyed on the FeeJuice protocol contract.
     const feeJuiceAddress = FeeJuiceContract.at(wallet as any).address;
@@ -668,7 +729,5 @@ export async function listReadyClaims(
 }
 
 export async function markBridgeConsumed(id: string): Promise<void> {
-    const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    const next = all.map((b) => (b.id === id ? { ...b, consumedAt: Date.now() } : b));
-    await secureSet(KEYS.pendingBridges, next);
+    await updateBridges((b) => (b.id === id ? { ...b, consumedAt: Date.now() } : b));
 }

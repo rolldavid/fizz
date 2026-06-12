@@ -51,14 +51,21 @@ function allowedWallets(): EthWallet[] {
     const seen = new Set<string>();
     const out: EthWallet[] = [];
     for (const c of getConnectors(config)) {
-        const allowed = c.id in ALLOWED || /meta\s*mask|rabby/i.test(c.name);
-        if (!allowed || seen.has(c.id)) continue;
+        // Gate SOLELY on the structured rdns allowlist — NOT a substring match on
+        // the self-reported c.name. The old name-regex admitted any provider whose
+        // attacker-chosen name merely contained "metamask"/"rabby" (e.g. a
+        // co-resident extension announcing rdns "io.metamask.pro" / name "MetaMask
+        // Secure"), surfacing it as a separate menu entry that, once selected,
+        // would sign every L1 bridge deposit. rdns is still self-reported, so this
+        // is hardening, not a complete fix for EIP-6963 impersonation.
+        if (!(c.id in ALLOWED) || seen.has(c.id)) continue;
         seen.add(c.id);
         // Only pass through inline data: icons (what EIP-6963 mandates). A
         // remote (https:) icon URL would leak the user's IP to that host the
         // moment the wallet menu renders — drop it rather than fetch it.
         const icon = c.icon?.startsWith("data:") ? c.icon : undefined;
-        out.push({ id: c.id, name: ALLOWED[c.id] ?? c.name, icon });
+        // Display name ALWAYS comes from the trusted table, never attacker text.
+        out.push({ id: c.id, name: ALLOWED[c.id], icon });
     }
     return out;
 }

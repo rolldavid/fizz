@@ -15,6 +15,23 @@ import { FeeJuiceContract } from "@aztec/aztec.js/protocol";
 import { readFieldCompressedString } from "@aztec/aztec.js/utils";
 import type { AztecWallet } from "./wallet";
 import type { TokenEntry } from "./tokens";
+import { FEE_JUICE_ENTRY } from "./tokens";
+
+/**
+ * Token name/symbol come straight from an attacker-controlled contract. Strip
+ * control, zero-width, and bidi-override characters (which can hide or reorder
+ * the rendered identity — a fixed token row), collapse interior whitespace, and
+ * hard-cap length. React escapes HTML so this is not XSS; it stops a scam token
+ * from visually impersonating a trusted asset or distorting the wallet's UI.
+ */
+export function sanitizeTokenText(raw: string, maxLen: number): string {
+    return raw
+        .replace(/[\p{Cc}\p{Cf}]/gu, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, maxLen)
+        .trim(); // re-trim: the length cap can sever a word and leave a trailing space
+}
 import { getTokenContract } from "./tokenContract";
 
 export type TokenBalance = {
@@ -115,12 +132,25 @@ export async function fetchTokenMetadata(
         contract.methods.public_get_symbol().simulate({ from }),
         contract.methods.public_get_decimals().simulate({ from }),
     ]);
-    const name = readFieldCompressedString(unwrap(nameRaw)).trim();
-    const symbol = readFieldCompressedString(unwrap(symbolRaw)).trim();
+    const name = sanitizeTokenText(readFieldCompressedString(unwrap(nameRaw)), 30);
+    const symbol = sanitizeTokenText(readFieldCompressedString(unwrap(symbolRaw)), 11);
     const decimals = Number(unwrap<bigint | number>(decimalsRaw));
     if (!symbol) throw new Error("Contract returned an empty symbol — is this an Aztec token?");
     if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
         throw new Error(`Contract returned invalid decimals (${decimals}).`);
+    }
+    // Reject impersonation of the reserved native fee-juice identity: an imported
+    // token row shows only name+symbol (no contract address), so a scam token
+    // reporting JUICE / "Fee Juice" would be visually indistinguishable from the
+    // native gas asset. Refuse it at import rather than render a look-alike row.
+    if (
+        symbol.toLowerCase() === FEE_JUICE_ENTRY.symbol.toLowerCase() ||
+        name.toLowerCase() === FEE_JUICE_ENTRY.name.toLowerCase()
+    ) {
+        throw new Error(
+            "This token reports the native fee-juice identity (JUICE / Fee Juice). " +
+                "Refusing to import an asset that impersonates gas.",
+        );
     }
     return { name: name || symbol, symbol, decimals };
 }

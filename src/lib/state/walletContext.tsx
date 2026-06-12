@@ -26,7 +26,7 @@ import {
     deriveAccount,
     type AztecWallet,
 } from "../aztec/wallet";
-import { markFeeConsumed, resolveFeePaymentMethod } from "../aztec/fee";
+import { markFeeConsumed, releaseFee, resolveFeePaymentMethod } from "../aztec/fee";
 import {
     clearPendingDeploy,
     loadPendingDeploy,
@@ -48,6 +48,18 @@ type Status = "uninitialized" | "locked" | "unlocking" | "loading" | "ready";
 
 /** Re-lock the wallet after this much user inactivity while unlocked. */
 const IDLE_LOCK_MS = 5 * 60_000;
+
+/**
+ * Absolute ceiling on how long the idle auto-lock may be DEFERRED by an
+ * in-flight tracked op, measured from the last user interaction. A tracked op
+ * awaits node-driven tx inclusion over an RPC fetch with no timeout, so a
+ * malicious or unresponsive node can hold it open forever — which would
+ * otherwise re-arm the idle window indefinitely and keep the decrypted seed
+ * resident in memory + session cache past the idle policy, defeating the
+ * control for a later local attacker. Past this ceiling we lock regardless of
+ * active ops (tearing down an op that has clearly hung).
+ */
+const MAX_IDLE_DEFERRAL_MS = 20 * 60_000;
 
 export type Account = {
     address: AztecAddress;
@@ -381,21 +393,41 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                         );
                     }
                 }
-                await deployAccountContract({
-                    wallet: w,
-                    manager,
-                    feeMethod: fee.method,
-                    // Journal at broadcast so a death during the inclusion wait
-                    // resumes this exact tx (and its claim bookkeeping) later.
-                    onBroadcast: (txHash) =>
-                        recordPendingDeploy({
-                            network: net.id,
-                            address: addr,
-                            txHash,
-                            bridgeId: fee.consumesBridgeId,
-                            broadcastAt: Date.now(),
-                        }),
-                });
+                // Re-check liveness immediately before the multi-minute
+                // proving+broadcast: a second extension document (detached
+                // window + toolbar popup) could also have passed the earlier
+                // not-deployed check and already deployed. This shrinks the
+                // cross-context TOCTOU window where both would prove and
+                // broadcast a duplicate (only one lands — the init nullifier is
+                // single-use — but the loser wastes minutes of proving).
+                if (await isInitialized(w, manager.address)) {
+                    releaseFee(fee); // don't strand the claim we locked
+                    const landed = await loadPendingDeploy(net.id, addr);
+                    if (landed?.bridgeId) await markBridgeConsumed(landed.bridgeId);
+                    if (landed) await clearPendingDeploy(landed.network, landed.address);
+                    setAccount((prev) => (prev ? { ...prev, isDeployed: true } : prev));
+                    return;
+                }
+                try {
+                    await deployAccountContract({
+                        wallet: w,
+                        manager,
+                        feeMethod: fee.method,
+                        // Journal at broadcast so a death during the inclusion wait
+                        // resumes this exact tx (and its claim bookkeeping) later.
+                        onBroadcast: (txHash) =>
+                            recordPendingDeploy({
+                                network: net.id,
+                                address: addr,
+                                txHash,
+                                bridgeId: fee.consumesBridgeId,
+                                broadcastAt: Date.now(),
+                            }),
+                    });
+                } catch (err) {
+                    releaseFee(fee); // claim un-consumed — return it to the pool
+                    throw err;
+                }
                 await markFeeConsumed(fee);
                 await clearPendingDeploy(net.id, addr);
                 setAccount((prev) => (prev ? { ...prev, isDeployed: true } : prev));
@@ -439,8 +471,45 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }, [status, wallet, account, ensureAccountDeployed]);
 
     const persistAccountsMeta = useCallback(async (meta: AccountsMeta) => {
-        accountsMetaRef.current = meta;
-        await secureSet(KEYS.accountsMeta, meta);
+        // Re-read the latest persisted meta and merge field-wise so a concurrent
+        // wallet document (detached window + toolbar popup, both unlocked from
+        // the shared session cache) can't clobber a change the other committed.
+        // Conservative: NEVER reduce the account count — that would silently drop
+        // a just-added account from PXE discovery on the next boot — and UNION
+        // labels so a rename in one window survives an add in the other. The
+        // active index and hidden set follow the action the user just took here.
+        const stored = (await secureGet<AccountsMeta>(KEYS.accountsMeta)) ?? meta;
+        const merged: AccountsMeta = {
+            count: Math.max(meta.count, stored.count),
+            activeIndex: meta.activeIndex,
+            labels: { ...stored.labels, ...meta.labels },
+            hidden: meta.hidden,
+        };
+        accountsMetaRef.current = merged;
+        await secureSet(KEYS.accountsMeta, merged);
+    }, []);
+
+    // Keep accountsMetaRef fresh when ANOTHER extension document writes the
+    // meta blob, so the NEXT mutation here builds on the current value instead
+    // of a stale in-memory base. (Cross-window PXE re-registration of a newly
+    // added index is left to the next boot — the merge above ensures the count
+    // is never lost, so the account is always discovered on reload.)
+    useEffect(() => {
+        const onChanged = (
+            changes: Record<string, chrome.storage.StorageChange>,
+            area: string,
+        ) => {
+            if (area !== "local" || !(KEYS.accountsMeta in changes)) return;
+            void secureGet<AccountsMeta>(KEYS.accountsMeta)
+                .then((m) => {
+                    if (m) accountsMetaRef.current = m;
+                })
+                .catch(() => {
+                    /* locked or undecryptable — next boot reconciles */
+                });
+        };
+        chrome.storage.onChanged.addListener(onChanged);
+        return () => chrome.storage.onChanged.removeListener(onChanged);
     }, []);
 
     const switchAccount = useCallback(async (index: number) => {
@@ -627,15 +696,24 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (status !== "ready" && status !== "loading") return;
         let timer: number | undefined;
+        let lastInteractionAt = Date.now();
+        const tick = () => {
+            // Defer for an in-flight op — UNLESS we've already deferred past the
+            // absolute ceiling since the last user interaction. A stalled/hostile
+            // node can keep hasActiveOps() true forever; the ceiling guarantees
+            // the seed is still wiped (vaultStore.lock zeroes it + clears the
+            // session cache) so the idle-lock control can't be bypassed.
+            const idleFor = Date.now() - lastInteractionAt;
+            if (hasActiveOps() && idleFor < MAX_IDLE_DEFERRAL_MS) {
+                timer = window.setTimeout(tick, IDLE_LOCK_MS);
+                return;
+            }
+            lock();
+        };
         const arm = () => {
+            lastInteractionAt = Date.now();
             window.clearTimeout(timer);
-            timer = window.setTimeout(() => {
-                if (hasActiveOps()) {
-                    arm();
-                    return;
-                }
-                lock();
-            }, IDLE_LOCK_MS);
+            timer = window.setTimeout(tick, IDLE_LOCK_MS);
         };
         const events = ["mousedown", "keydown", "pointermove", "wheel", "touchstart"] as const;
         for (const e of events) window.addEventListener(e, arm, { passive: true });

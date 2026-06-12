@@ -19,7 +19,14 @@ const nodePolyfillsFix = (options?: PolyfillOptions): Plugin => {
     };
 };
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode }) => {
+    // FAIL-CLOSED production signal: true for any production build, including
+    // `vite build --mode staging` (where Vite sets NODE_ENV=production but the
+    // mode string isn't "production"). Drives sourcemap + LOG_LEVEL so neither
+    // the full source nor verbose address-leaking logs ever ship by accident,
+    // and stays consistent with the manifest's isProd and the runtime PROD gate.
+    const isProd = mode === "production" || process.env.NODE_ENV === "production";
+    return {
     plugins: [
         react(),
         nodePolyfillsFix({ include: ["buffer", "path", "process", "net", "tty"] }),
@@ -37,7 +44,7 @@ export default defineConfig(({ mode }) => ({
         // No source maps in the shipped extension: they reconstruct the full
         // source (incl. security-design comments) for anyone who installs it,
         // and double the package size. Keep them in dev builds only.
-        sourcemap: mode !== "production",
+        sourcemap: !isProd,
         rollupOptions: {
             // bb.js + noir wasm artifacts are large; bumping warning limit so we don't
             // spam the console on every build.
@@ -53,9 +60,10 @@ export default defineConfig(({ mode }) => ({
             // tx detail to the console — a privacy sink in a shipped wallet
             // (devtools, screen-share, console-scraping extensions). Ship "error"
             // so prod stays quiet; verbose only in dev.
-            LOG_LEVEL: mode === "production" ? "error" : "info",
+            LOG_LEVEL: isProd ? "error" : "info",
         }),
         // Shown on Home so a tester can verify the loaded build is current.
         __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
-    },
-}));
+        },
+    };
+});

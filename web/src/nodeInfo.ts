@@ -39,11 +39,26 @@ export async function fetchNodeInfo(
     nodeUrl: string,
     pin: { feeJuicePortalAddress: string; feeJuiceAddress: string } | null,
 ): Promise<AztecNodeInfo> {
-    const res = await fetch(nodeUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "node_getNodeInfo", params: [] }),
-    });
+    // Bound the request: a hostile or unresponsive node that accepts the
+    // connection but never replies would otherwise pin the bridge UI on
+    // "Reaching the Aztec node…" forever (browsers impose no short body
+    // timeout). A clean timeout→throw routes into the page's error+Retry path.
+    let res: Response;
+    try {
+        res = await fetch(nodeUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "node_getNodeInfo", params: [] }),
+            signal: AbortSignal.timeout(15_000),
+        });
+    } catch (err) {
+        if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+            throw new Error(
+                "The Aztec node didn't respond within 15s. It may be unreachable or overloaded — retry in a moment.",
+            );
+        }
+        throw err;
+    }
     if (!res.ok) {
         throw new Error(`Aztec node returned HTTP ${res.status} for node_getNodeInfo.`);
     }

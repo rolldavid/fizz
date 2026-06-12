@@ -16,7 +16,7 @@ import { Contract } from "@aztec/aztec.js/contracts";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { ensureTokenRegistered } from "./balances";
-import { markFeeConsumed, resolveFeePaymentMethod } from "./fee";
+import { markFeeConsumed, releaseFee, resolveFeePaymentMethod } from "./fee";
 import {
     assertPositiveAmount,
     assertSpendableRecipient,
@@ -74,7 +74,13 @@ export async function transfer(params: TransferParams): Promise<{ txHash: string
             ? contract.methods.transfer(params.to, params.amount)
             : contract.methods.transfer_in_public(params.sender, params.to, params.amount, Fr.ZERO);
 
-    const sent = await method.send(sendOpts as any);
+    let sent;
+    try {
+        sent = await method.send(sendOpts as any);
+    } catch (err) {
+        releaseFee(feeResolution); // claim un-consumed — return it to the pool
+        throw err;
+    }
     await markFeeConsumed(feeResolution);
     return { txHash: txHashOf(sent) };
 }
@@ -91,9 +97,15 @@ export async function shield(params: ShieldParams): Promise<{ txHash: string }> 
     await ensureTokenRegistered(params.wallet, params.tokenAddress);
     const contract = await Contract.at(params.tokenAddress, Token.artifact, params.wallet as any);
     const { feeResolution, ...sendOpts } = await buildSendOptions(params);
-    const sent = await contract.methods
-        .transfer_to_private(params.sender, params.amount)
-        .send(sendOpts as any);
+    let sent;
+    try {
+        sent = await contract.methods
+            .transfer_to_private(params.sender, params.amount)
+            .send(sendOpts as any);
+    } catch (err) {
+        releaseFee(feeResolution);
+        throw err;
+    }
     await markFeeConsumed(feeResolution);
     return { txHash: txHashOf(sent) };
 }
@@ -105,9 +117,15 @@ export async function unshield(params: ShieldParams): Promise<{ txHash: string }
     await ensureTokenRegistered(params.wallet, params.tokenAddress);
     const contract = await Contract.at(params.tokenAddress, Token.artifact, params.wallet as any);
     const { feeResolution, ...sendOpts } = await buildSendOptions(params);
-    const sent = await contract.methods
-        .transfer_to_public(params.sender, params.sender, params.amount, Fr.ZERO)
-        .send(sendOpts as any);
+    let sent;
+    try {
+        sent = await contract.methods
+            .transfer_to_public(params.sender, params.sender, params.amount, Fr.ZERO)
+            .send(sendOpts as any);
+    } catch (err) {
+        releaseFee(feeResolution);
+        throw err;
+    }
     await markFeeConsumed(feeResolution);
     return { txHash: txHashOf(sent) };
 }

@@ -32,6 +32,22 @@ import { bumpClaimIndex, nextClaimIndex, recoverBridgedClaims } from "../../lib/
 type PrepPhase = "confirm" | "awaiting" | "completing" | "done";
 
 /**
+ * Display host for the origin that initiated a bridge-prepare. We render the
+ * REAL initiating origin on this money-consent screen, not a hardcoded brand:
+ * any previously-connected origin can trigger fizz:bridge-prepare, and a
+ * consent surface that always says "fizzwallet.com" would misattribute the
+ * request to the trusted brand. (React escapes the text, so this is purely
+ * about showing the truthful host; falls back to the raw string if unparseable.)
+ */
+function prepOriginHost(origin: string): string {
+    try {
+        return new URL(origin).host;
+    } catch {
+        return origin;
+    }
+}
+
+/**
  * Fee juice (gas) screen. ACQUIRING fee juice happens on fizzwallet.com/bridge:
  * the user does the L1 deposit there from their own Ethereum wallet, and that
  * page opens THIS window (fizz:bridge-prepare) so the wallet can generate the
@@ -83,7 +99,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
     const [refreshError, setRefreshError] = useState<string | null>(null);
 
     // Auto-send prepare flow (this window was opened by the web bridge).
-    const [prep, setPrep] = useState<{ amount: string } | null>(null);
+    const [prep, setPrep] = useState<{ amount: string; origin: string } | null>(null);
     const [prepPhase, setPrepPhase] = useState<PrepPhase>("confirm");
     const [prepBusy, setPrepBusy] = useState(false);
     const [prepError, setPrepError] = useState<string | null>(null);
@@ -127,18 +143,25 @@ export function Bridge({ onBack }: { onBack: () => void }) {
         void (async () => {
             const p = await readPrepare();
             if (p) {
-                setPrep({ amount: p.amount });
+                setPrep({ amount: p.amount, origin: p.origin });
                 return;
             }
             const dep = await readBridgeDeposit();
             if (!dep) return;
             try {
-                await recordBridgeDeposit({
+                // Only clear the (global, cross-network) handoff slot when this
+                // deposit actually matched a "depositing" record on the ACTIVE
+                // network. recordBridgeDeposit returns null (no throw) when the
+                // deposit belongs to a claim prepared on ANOTHER network; clearing
+                // unconditionally would destroy the only {secretHash,l1TxHash}
+                // copy and strand that cross-network deposit (unrecoverable for
+                // random/legacy secrets). Mirrors autoClaim.ts's guarded clear.
+                const sent = await recordBridgeDeposit({
                     networkId: network.id,
                     secretHash: dep.secretHash,
                     l1TxHash: dep.l1TxHash,
                 });
-                await clearBridgeDeposit();
+                if (sent) await clearBridgeDeposit();
                 await refresh(); // recoverInFlightBridges completes the "sent" record
             } catch (e) {
                 setRefreshError(e instanceof Error ? e.message : String(e));
@@ -295,7 +318,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                     {prepPhase === "confirm" && (
                         <>
                             <p className="hint">
-                                fizzwallet.com wants to send{" "}
+                                <strong>{prepOriginHost(prep.origin)}</strong> wants to send{" "}
                                 <strong>{formatUnits(BigInt(prep.amount), 18)} AZTEC</strong> of fee juice to this
                                 account. You'll approve the actual deposit in your Ethereum wallet on the bridge
                                 tab.

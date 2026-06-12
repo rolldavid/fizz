@@ -15,7 +15,7 @@
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
-import { markFeeConsumed, resolveFeePaymentMethod } from "./fee";
+import { markFeeConsumed, releaseFee, resolveFeePaymentMethod } from "./fee";
 import { assertWithinU128, getTokenContract } from "./tokenContract";
 
 export type DeployTokenInput = {
@@ -85,7 +85,13 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
 
     // The default send() waits for mining and resolves to
     // { contract, receipt: { txHash, ... } } (DeployResultMined).
-    const sent = await deployTx.send(sendOptions);
+    let sent;
+    try {
+        sent = await deployTx.send(sendOptions);
+    } catch (err) {
+        releaseFee(fee); // claim un-consumed — return it to the pool
+        throw err;
+    }
     await markFeeConsumed(fee);
 
     const contract: any = sent.contract;
@@ -101,10 +107,15 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
             input.initialSupplyMode === "private"
                 ? contract.methods.mint_to_private(deployer, input.initialSupply)
                 : contract.methods.mint_to_public(deployer, input.initialSupply);
-        await mintFn.send({
-            from: deployer,
-            ...(mintFee.method ? { fee: { paymentMethod: mintFee.method } } : {}),
-        } as any);
+        try {
+            await mintFn.send({
+                from: deployer,
+                ...(mintFee.method ? { fee: { paymentMethod: mintFee.method } } : {}),
+            } as any);
+        } catch (err) {
+            releaseFee(mintFee);
+            throw err;
+        }
         await markFeeConsumed(mintFee);
     }
 
@@ -119,6 +130,7 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
             } as any);
             await markFeeConsumed(revFee);
         } catch (e) {
+            releaseFee(revFee); // claim un-consumed — return it to the pool
             // Don't fail the whole deploy — the token is already live — but never
             // swallow this silently: the user asked to drop their minter role, so
             // surface it loudly. They can retry revocation from token settings.

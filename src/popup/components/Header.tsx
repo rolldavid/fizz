@@ -82,6 +82,10 @@ export function Header({ right }: { right?: React.ReactNode }) {
 }
 
 export function shortAddress(addr: string, head = 6, tail = 4): string {
-    if (addr.length <= head + tail + 3) return addr;
-    return `${addr.slice(0, head)}…${addr.slice(-tail)}`;
+    // Defensive String(): a single non-string value from a corrupted store must
+    // never crash render via .length/.slice (the store is now validated on read,
+    // this is belt-and-suspenders for any path that bypasses it).
+    const s = String(addr);
+    if (s.length <= head + tail + 3) return s;
+    return `${s.slice(0, head)}…${s.slice(-tail)}`;
 }

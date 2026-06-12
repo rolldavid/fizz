@@ -22,7 +22,13 @@ import {
 } from "@aztec/noir-contracts.js/SponsoredFPC";
 import type { AztecNetwork } from "./networks";
 import type { AztecWallet } from "./wallet";
-import { listPendingBridges, listReadyClaims, markBridgeConsumed } from "./bridge";
+import {
+    listPendingBridges,
+    listReadyClaims,
+    lockClaimForSpend,
+    markBridgeConsumed,
+    releaseClaimSpendLock,
+} from "./bridge";
 import { getTokenBalance } from "./balances";
 import { FEE_JUICE_ENTRY } from "./tokens";
 
@@ -52,8 +58,17 @@ async function ensureSponsoredFPCRegistered(wallet: AztecWallet): Promise<AztecA
     );
     try {
         await (wallet as any).registerContract(instance, SponsoredFPCContractArtifact);
-    } catch {
-        // Already registered. Continue.
+    } catch (err) {
+        // Only the expected "already registered" case is a no-op. A genuine
+        // failure (corrupt/incompatible artifact, PXE store fault, SDK shape
+        // change) must NOT be swallowed — otherwise we hand back a payment
+        // method the PXE can't prove against and the tx fails deeper in the SDK
+        // with a far less actionable error (and the no-swallow rule is broken).
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/already\s+(registered|exists)/i.test(msg)) {
+            console.error("SponsoredFPC registration failed:", err);
+            throw err;
+        }
     }
     void SponsoredFPCContract; // keep typings reachable for future direct calls.
     return address;
@@ -106,9 +121,17 @@ export async function resolveFeePaymentMethod(
 ): Promise<ResolvedFee> {
     // Only claims bridged to THIS sender and already synced onto L2 — attaching
     // an unready or wrong-recipient claim would make the tx fail.
+    //
+    // Take the in-memory spend lock on the claim we pick (skipping any a
+    // concurrent in-flight tx already holds). The L1→L2 message nullifies on
+    // first consumption, so two txs attaching the SAME claim both fail; the lock
+    // closes the common same-context double-attach window (double-click, or a
+    // send racing an account-deploy/sweep) that the on-chain witness check —
+    // which only excludes a claim AFTER its nullifier is mined — cannot. The
+    // caller releases it via markFeeConsumed (success) or releaseFee (failure).
     const claims = await listReadyClaims(wallet, network.id, sender);
-    if (claims.length > 0) {
-        const claim = claims[0];
+    for (const claim of claims) {
+        if (!lockClaimForSpend(claim.id)) continue;
         const method = new FeeJuicePaymentMethodWithClaim(sender, {
             claimAmount: BigInt(claim.claimAmount),
             claimSecret: Fr.fromHexString(claim.claimSecret),
@@ -128,8 +151,22 @@ export async function resolveFeePaymentMethod(
     return { method: undefined, label: "fee_juice" };
 }
 
+/** Tx succeeded: mark the attached claim consumed and release its spend lock. */
 export async function markFeeConsumed(fee: ResolvedFee) {
-    if (fee.consumesBridgeId) await markBridgeConsumed(fee.consumesBridgeId);
+    if (fee.consumesBridgeId) {
+        await markBridgeConsumed(fee.consumesBridgeId);
+        releaseClaimSpendLock(fee.consumesBridgeId);
+    }
+}
+
+/**
+ * Tx failed/aborted before consuming the claim: release the spend lock WITHOUT
+ * marking it consumed, so the claim returns to the pool for the next attempt.
+ * Must run in a finally/catch on every fee-paying send path or a failed tx
+ * would strand the claim (locked, unspent) for the rest of the session.
+ */
+export function releaseFee(fee: ResolvedFee) {
+    if (fee.consumesBridgeId) releaseClaimSpendLock(fee.consumesBridgeId);
 }
 
 /**

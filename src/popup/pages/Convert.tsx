@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Header } from "../components/Header";
 import { ArrowLeftIcon, CheckIcon } from "../components/icons";
@@ -38,6 +38,12 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
     const [gasGate, setGasGate] = useState<"incoming" | "none" | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [done, setDone] = useState<{ txHash: string } | null>(null);
+    // Synchronous re-entrancy latch: React state (busy/checking) updates a frame
+    // late, so a fast double-click can pass the button's `disabled` check twice
+    // and build TWO conversions (a burned fee, and for unshield DOUBLED public
+    // exposure). This ref is set before the first await, so the second call
+    // returns immediately.
+    const inFlightRef = useRef(false);
 
     useEffect(() => {
         if (!account) return;
@@ -65,51 +71,57 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
     const toLabel = makingPrivate ? "private" : "public";
 
     async function submit() {
-        setError(null);
-        setGasGate(null);
-        if (!wallet || !account || !token) return setError("Wallet not loaded.");
-        // Gas gate BEFORE building anything (same as Send/Deploy) — covers
-        // both the account's FIRST transaction (which also deploys its account
-        // contract and needs a fee source for that) and subsequent ones.
-        setChecking(true);
+        if (inFlightRef.current) return; // a submit is already running this frame
+        inFlightRef.current = true;
         try {
-            const readiness = await assessFeeReadiness(wallet, network, account.address);
-            if (readiness.kind !== "ready") {
-                setGasGate(readiness.kind);
-                return;
+            setError(null);
+            setGasGate(null);
+            if (!wallet || !account || !token) return setError("Wallet not loaded.");
+            // Gas gate BEFORE building anything (same as Send/Deploy) — covers
+            // both the account's FIRST transaction (which also deploys its account
+            // contract and needs a fee source for that) and subsequent ones.
+            setChecking(true);
+            try {
+                const readiness = await assessFeeReadiness(wallet, network, account.address);
+                if (readiness.kind !== "ready") {
+                    setGasGate(readiness.kind);
+                    return;
+                }
+            } catch (e) {
+                return setError(e instanceof Error ? e.message : String(e));
+            } finally {
+                setChecking(false);
             }
-        } catch (e) {
-            return setError(e instanceof Error ? e.message : String(e));
+            setBusy(true);
+            try {
+                await trackOp(async () => {
+                    const value = parseUnits(amount, token.decimals);
+                    if (value <= 0n) throw new Error("Amount must be greater than zero.");
+                    if (value > fromBal) {
+                        throw new Error(
+                            `Amount exceeds your ${fromLabel} balance of ${fmt(fromBal)} ${token.symbol}.`,
+                        );
+                    }
+                    const tokenAddress = AztecAddress.fromString(token.address);
+                    const sender = account.address;
+                    if (!account.isDeployed) {
+                        setStage("Activating your account — first transaction only (takes a few minutes)…");
+                        await ensureAccountDeployed();
+                    }
+                    setStage("Generating a private proof on your device (~45 seconds)…");
+                    const result = makingPrivate
+                        ? await shield({ wallet, network, sender, tokenAddress, amount: value })
+                        : await unshield({ wallet, network, sender, tokenAddress, amount: value });
+                    setDone({ txHash: result.txHash });
+                    setAmount("");
+                });
+            } catch (e) {
+                setError(e instanceof Error ? e.message : String(e));
+            } finally {
+                setBusy(false);
+            }
         } finally {
-            setChecking(false);
-        }
-        setBusy(true);
-        try {
-            await trackOp(async () => {
-                const value = parseUnits(amount, token.decimals);
-                if (value <= 0n) throw new Error("Amount must be greater than zero.");
-                if (value > fromBal) {
-                    throw new Error(
-                        `Amount exceeds your ${fromLabel} balance of ${fmt(fromBal)} ${token.symbol}.`,
-                    );
-                }
-                const tokenAddress = AztecAddress.fromString(token.address);
-                const sender = account.address;
-                if (!account.isDeployed) {
-                    setStage("Activating your account — first transaction only (takes a few minutes)…");
-                    await ensureAccountDeployed();
-                }
-                setStage("Generating a private proof on your device (~45 seconds)…");
-                const result = makingPrivate
-                    ? await shield({ wallet, network, sender, tokenAddress, amount: value })
-                    : await unshield({ wallet, network, sender, tokenAddress, amount: value });
-                setDone({ txHash: result.txHash });
-                setAmount("");
-            });
-        } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
-        } finally {
-            setBusy(false);
+            inFlightRef.current = false;
         }
     }
 
@@ -209,7 +221,7 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
 
                 <button
                     className="btn btn-primary btn-block"
-                    disabled={busy || !token || !amount}
+                    disabled={busy || checking || !token || !amount}
                     onClick={submit}
                 >
                     {busy ? "Converting…" : checking ? "Checking…" : `Make ${toLabel}`}

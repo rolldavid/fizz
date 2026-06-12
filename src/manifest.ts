@@ -4,16 +4,25 @@ import type { ManifestV3Export } from "@crxjs/vite-plugin";
 /**
  * The manifest is built as a FUNCTION of the Vite env so the production build
  * can shed the dev-only attack surface (localhost trust). `yarn build` runs in
- * mode "production"; `yarn dev` and unpacked dev builds run otherwise. This
- * mirrors the `import.meta.env.PROD` gating in the background worker, so the
- * trust boundary is enforced at BOTH the manifest layer and the runtime.
+ * mode "production"; `yarn dev` and unpacked dev builds run otherwise.
+ *
+ * FAIL-CLOSED gate: `isProd` is true when EITHER the Vite mode is "production"
+ * OR NODE_ENV is "production". This is load-bearing — the background worker's
+ * runtime origin gate keys off `import.meta.env.PROD`, which Vite derives from
+ * NODE_ENV (true for any `vite build`, even `--mode staging`). Keying the
+ * manifest off the mode STRING alone would diverge from that: a
+ * `vite build --mode staging` would re-add localhost to connect-src /
+ * externally_connectable / host_permissions (a real seed-exfil channel) and
+ * ship source maps, while the runtime believed it was production. Honoring
+ * NODE_ENV here keeps all three build-time gates and the runtime gate aligned,
+ * and the dev surface only ever reappears for a genuine dev build.
  *
  * crxjs's `crx({ manifest })` accepts a `(env) => manifest` function; we type it
  * as ManifestV3Export and use `any` for the body since the two cross-origin
  * isolation keys below predate crxjs's ManifestV3 type.
  */
 const buildManifest = (env: ConfigEnv): any => {
-    const isProd = env.mode === "production";
+    const isProd = env.mode === "production" || process.env.NODE_ENV === "production";
 
     // Cross-origin egress allowlist. The decrypted mnemonic lives in the popup
     // while unlocked, so this is the last line of defense against a compromised
@@ -33,8 +42,13 @@ const buildManifest = (env: ConfigEnv): any => {
         // strands every bridge at "sent" — the CSP block is indistinguishable
         // from "not mined yet".
         "https://lb.drpc.live",
-        // Testnet/devnet nodes.
-        "https://*.aztec-labs.com",
+        // Testnet + devnet nodes — the EXACT hosts used (networks.ts), not a
+        // whole-domain wildcard: `https://*.aztec-labs.com` would make any
+        // current-or-future subdomain (incl. one obtainable via subdomain
+        // takeover) a valid seed-exfil egress, undermining the backstop above.
+        // validateCustomNodeUrl is pinned to this same set so the two can't drift.
+        "https://rpc.testnet.aztec-labs.com",
+        "https://v4-devnet-2.aztec-labs.com",
         // Proving parameters (CRS) — fetched by bb.js ONCE at first proof.
         "https://crs.aztec-cdn.foundation",
         ...(isProd ? [] : ["http://localhost:*", "http://127.0.0.1:*"]),
@@ -94,7 +108,8 @@ const buildManifest = (env: ConfigEnv): any => {
         host_permissions: [
             ...(isProd ? [] : ["http://localhost/*", "http://127.0.0.1/*"]),
             "https://lb.drpc.live/*",
-            "https://*.aztec-labs.com/*",
+            "https://rpc.testnet.aztec-labs.com/*",
+            "https://v4-devnet-2.aztec-labs.com/*",
             "https://crs.aztec-cdn.foundation/*",
         ],
         // The Aztec stack (PXE, bb.js prover, Noir ACVM, foundation crypto) runs

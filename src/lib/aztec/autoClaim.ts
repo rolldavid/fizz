@@ -23,7 +23,8 @@
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/foundation/curves/bn254";
 import { FeeJuiceContract } from "@aztec/aztec.js/protocol";
-import { getNonNullifiedL1ToL2MessageWitness } from "@aztec/stdlib/messaging";
+import { computeL1ToL2MessageNullifier } from "@aztec/stdlib/hash";
+import { MerkleTreeId } from "@aztec/stdlib/trees";
 import { TxExecutionResult, TxHash, TxStatus } from "@aztec/stdlib/tx";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
@@ -183,8 +184,19 @@ export async function autoClaimTick(args: {
     // Nullification sweep: a "pending" claim whose message was consumed
     // ELSEWHERE (same seed on another install, or a lost consumed-flag) would
     // sit in the optimistic gas number forever while the balance also holds
-    // its value — a permanent double count. In-tree + nullified ⇒ consumed.
-    // Absent from the tree just means "not synced yet" and is left alone.
+    // its value — a permanent double count.
+    //
+    // We mark consumed ONLY on a POSITIVELY confirmed on-chain nullifier.
+    // markBridgeConsumed is irreversible (and the recovery dedupe then blocks
+    // re-adoption), so it must never fire on ambiguous evidence:
+    // getNonNullifiedL1ToL2MessageWitness throws for THREE indistinguishable
+    // reasons — message absent, nullifier present, OR a transient node error in
+    // its internal Promise.all — and "is the message in the tree right now?" is
+    // ALSO not proof of a spend (a freshly-synced UNspent claim is in-tree).
+    // Inferring consumption from either would let a lying node, or even
+    // ordinary sync/RPC timing, permanently strand a real funded claim. So we
+    // compute the claim's nullifier and look it up in the NULLIFIER_TREE
+    // directly: only a present leaf proves the claim was actually spent.
     const node = (wallet as any).aztecNode;
     const feeJuiceAddress = FeeJuiceContract.at(wallet as any).address;
     for (const b of mine.filter(
@@ -210,20 +222,26 @@ export async function autoClaimTick(args: {
             );
             continue;
         }
+        let nullifier: Fr;
         try {
-            await getNonNullifiedL1ToL2MessageWitness(node, feeJuiceAddress, messageHash, claimSecret);
-        } catch {
-            const membership = await node
-                .getL1ToL2MessageMembershipWitness("latest", messageHash)
-                .catch(() => undefined);
-            if (membership) {
-                // Normal right after the user's own transaction spends the
-                // claim: the sweep checks the LATEST tip, while the tx path
-                // waits for CHECKPOINTED before its own (idempotent) marking —
-                // so this usually just updates the gas display a block sooner.
-                console.info(`Claim ${b.id}: spent on-chain — marking consumed.`);
-                await markBridgeConsumed(b.id);
-            }
+            nullifier = await computeL1ToL2MessageNullifier(feeJuiceAddress, messageHash, claimSecret);
+        } catch (err) {
+            // Can't derive the nullifier (e.g. a malformed field slipped the
+            // parse guard above) — never consume on a derivation failure.
+            console.error(`Claim ${b.id}: could not compute nullifier; left untouched.`, err);
+            continue;
+        }
+        // findLeavesIndexes returns a sparse array: a defined index at [0]
+        // means the nullifier leaf EXISTS, i.e. the claim was provably spent.
+        // Anything else (undefined, or a thrown RPC error that propagates and
+        // ends this tick) leaves the claim pending for a later, cleaner tick —
+        // never a false irreversible consume.
+        const [idx] = await node.findLeavesIndexes("latest", MerkleTreeId.NULLIFIER_TREE, [
+            nullifier,
+        ]);
+        if (idx !== undefined) {
+            console.info(`Claim ${b.id}: nullifier present on-chain — marking consumed.`);
+            await markBridgeConsumed(b.id);
         }
     }
 

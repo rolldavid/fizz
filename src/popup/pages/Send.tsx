@@ -6,7 +6,7 @@ import { CheckIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
 import { trackOp } from "../../lib/state/activity";
 import { loadTokens, type TokenEntry } from "../../lib/aztec/tokens";
-import { parseUnits } from "../../lib/aztec/balances";
+import { formatUnits, getTokenBalance, parseUnits } from "../../lib/aztec/balances";
 import { transfer, type TransferMode } from "../../lib/aztec/transfer";
 import { assessFeeReadiness } from "../../lib/aztec/fee";
 import { listContacts, rememberSentRecipient, type Contact } from "../../lib/aztec/contacts";
@@ -34,6 +34,11 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
     const [query, setQuery] = useState("");
     const [pickerOpen, setPickerOpen] = useState(false);
     const pickerRef = useRef<HTMLDivElement>(null);
+    // Synchronous re-entrancy latch for the confirm→send action: React `busy`
+    // updates a frame late, so a double-tap on the confirm button could build
+    // two transfers that attach the same fee claim (the second then fails after
+    // minutes of proving). Set before the first await; cleared in finally.
+    const sendInFlightRef = useRef(false);
 
     // Close the contact dropdown on outside click / Escape.
     useEffect(() => {
@@ -100,8 +105,9 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
         if (!account) return setError("Account not loaded.");
         if (!token) return setError("Pick a token.");
         if (!recipient) return setError("Pick a contact to send to.");
+        let value: bigint;
         try {
-            const value = parseUnits(amount, token.decimals);
+            value = parseUnits(amount, token.decimals);
             if (value <= 0n) throw new Error("Amount must be greater than zero.");
         } catch (e) {
             return setError(e instanceof Error ? e.message : String(e));
@@ -111,6 +117,20 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
         // mid-flight the answer is "wait", not "go get gas".
         setChecking(true);
         try {
+            // Balance pre-check (Convert already guards this): an over-balance
+            // PUBLIC send reverts during public execution but is STILL mined and
+            // charged for gas — burning a fee for a transfer that moves nothing,
+            // with no early warning. Read the balance fresh (state may be stale)
+            // and reject before building the tx, keyed to the chosen privacy mode.
+            const bal = await getTokenBalance(wallet, account.address, token);
+            const fromBal = privacy === "private" ? bal.private : bal.public;
+            if (value > fromBal) {
+                setError(
+                    `Amount exceeds your ${privacy} balance of ` +
+                        `${formatUnits(fromBal, token.decimals)} ${token.symbol}.`,
+                );
+                return;
+            }
             const readiness = await assessFeeReadiness(wallet, network, account.address);
             if (readiness.kind !== "ready") {
                 setGasGate(readiness.kind);
@@ -125,8 +145,13 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
     }
 
     async function doSubmit() {
+        if (sendInFlightRef.current) return; // a send is already running this frame
+        sendInFlightRef.current = true;
         setError(null);
-        if (!wallet || !account || !token || !recipient) return;
+        if (!wallet || !account || !token || !recipient) {
+            sendInFlightRef.current = false;
+            return;
+        }
         const sentTo = recipient;
         const sentToken = token;
         const sentAmount = amount;
@@ -170,6 +195,7 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
             setError(e instanceof Error ? e.message : String(e));
         } finally {
             setBusy(false);
+            sendInFlightRef.current = false;
         }
     }
 

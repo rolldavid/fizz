@@ -136,16 +136,17 @@ export function validateCustomNodeUrl(raw: string): string {
     }
     // HONESTY over a silent failure: the extension's CSP `connect-src` (locked
     // down so a compromised dependency can't exfiltrate the seed) only permits
-    // localhost and *.aztec-labs.com origins. A custom node on any other remote
-    // host would be blocked by the browser at fetch time with an opaque error.
-    // Reject it up front with an explanation instead. (Running your own node
-    // today means localhost — e.g. via an SSH tunnel — or a self-built
-    // extension with your origin added to connect-src.)
-    const isAztecLabs = url.hostname === "aztec-labs.com" || url.hostname.endsWith(".aztec-labs.com");
-    if (!isLocal && !isAztecLabs) {
+    // localhost and the EXACT Aztec node hosts the manifest pins. A custom node
+    // on any other remote host would be blocked by the browser at fetch time
+    // with an opaque error. Reject it up front with an explanation instead.
+    // This allowlist MUST stay in sync with manifest.ts connect-src — a node the
+    // validator accepts but the CSP blocks is exactly the opaque failure this
+    // check exists to avoid.
+    const ALLOWED_NODE_HOSTS = ["rpc.testnet.aztec-labs.com", "v4-devnet-2.aztec-labs.com"];
+    if (!isLocal && !ALLOWED_NODE_HOSTS.includes(url.hostname)) {
         throw new Error(
-            "For your seed's safety the wallet only permits network egress to localhost and " +
-                "*.aztec-labs.com. A node on " +
+            "For your seed's safety the wallet only permits network egress to localhost and the " +
+                "built-in Aztec node hosts. A node on " +
                 url.hostname +
                 " would be blocked by the extension's content-security policy. Use a localhost " +
                 "node (e.g. an SSH tunnel to your own), or build the extension with your node's " +

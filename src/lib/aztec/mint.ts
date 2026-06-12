@@ -15,7 +15,7 @@ import { Contract } from "@aztec/aztec.js/contracts";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { ensureTokenRegistered } from "./balances";
-import { markFeeConsumed, resolveFeePaymentMethod } from "./fee";
+import { markFeeConsumed, releaseFee, resolveFeePaymentMethod } from "./fee";
 import {
     assertPositiveAmount,
     assertSpendableRecipient,
@@ -58,10 +58,16 @@ export async function mintToken(params: MintParams): Promise<{ txHash: string }>
             ? contract.methods.mint_to_private(params.to, params.amount)
             : contract.methods.mint_to_public(params.to, params.amount);
 
-    const sent = await method.send({
-        from: params.minter,
-        ...(fee.method ? { fee: { paymentMethod: fee.method } } : {}),
-    } as any);
+    let sent;
+    try {
+        sent = await method.send({
+            from: params.minter,
+            ...(fee.method ? { fee: { paymentMethod: fee.method } } : {}),
+        } as any);
+    } catch (err) {
+        releaseFee(fee); // claim un-consumed — return it to the pool
+        throw err;
+    }
     await markFeeConsumed(fee);
     return { txHash: txHashOf(sent) };
 }

@@ -36,10 +36,14 @@ export type ClaimTicket = {
 };
 
 const PREFIX = "fizzclaim1:";
-// Length caps keep a malformed/oversized ticket from bloating storage. Real
-// values are tiny: a field element / tx hash is ≤66 hex chars, and a u128
-// amount / leaf index is ≤39 decimal digits. Generous ceilings, still bounded.
-const HEX = /^0x[0-9a-fA-F]{1,128}$/;
+// Field-element fields (recipient/claimSecret/messageHash) are bn254 elements:
+// at most 32 bytes = 64 hex chars. Accepting more lets an oversized value into
+// the store that later throws in Fr.fromHexString during the sweep — leaving an
+// unspendable, never-cleared "phantom" claim that still inflates the incoming-
+// gas display. Bound them to ≤64 hex (matching bridge.ts adoptRecoveredBridge /
+// completeFromReceipt), and require l1TxHash to be exactly a 32-byte hash.
+const FIELD_HEX = /^0x[0-9a-fA-F]{1,64}$/;
+const TXHASH_HEX = /^0x[0-9a-fA-F]{64}$/;
 const DECIMAL = /^\d{1,78}$/;
 const MAX_NETWORK_ID = 32;
 
@@ -54,10 +58,13 @@ export function validateClaimTicket(t: unknown): ClaimTicket {
     if (typeof x.l1ChainId !== "number" || !Number.isInteger(x.l1ChainId)) {
         throw new Error("Claim ticket: bad l1ChainId.");
     }
-    for (const f of ["recipient", "claimSecret", "messageHash", "l1TxHash"] as const) {
-        if (typeof x[f] !== "string" || !HEX.test(x[f] as string)) {
-            throw new Error(`Claim ticket: ${f} must be 0x-hex (≤128 chars).`);
+    for (const f of ["recipient", "claimSecret", "messageHash"] as const) {
+        if (typeof x[f] !== "string" || !FIELD_HEX.test(x[f] as string)) {
+            throw new Error(`Claim ticket: ${f} must be a 0x-hex field element (≤64 chars).`);
         }
+    }
+    if (typeof x.l1TxHash !== "string" || !TXHASH_HEX.test(x.l1TxHash)) {
+        throw new Error("Claim ticket: l1TxHash must be a 0x 32-byte hash (64 hex chars).");
     }
     for (const f of ["claimAmount", "messageLeafIndex"] as const) {
         if (typeof x[f] !== "string" || !DECIMAL.test(x[f] as string)) {

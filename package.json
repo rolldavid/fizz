@@ -17,7 +17,7 @@
     "verify": "yarn install --frozen-lockfile && yarn typecheck && yarn test && yarn build",
     "package": "yarn verify && cd dist && zip -rq ../aztec-wallet-$npm_package_version.zip . && cd .. && echo \"Packaged: aztec-wallet-$npm_package_version.zip\"",
     "package:store": "yarn verify && node scripts/strip-manifest-key.mjs && cd dist && zip -rq ../fizz-webstore-$npm_package_version.zip . && cd .. && echo \"Packaged for the Web Store (no key): fizz-webstore-$npm_package_version.zip\"",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package --error-on-fail"
   },
   "dependencies": {
     "@aztec/accounts": "4.3.0",

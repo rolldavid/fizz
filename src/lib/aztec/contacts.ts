@@ -53,6 +53,38 @@ function normalizeAddress(value: string): string {
     return AztecAddress.fromString(value.trim()).toString();
 }
 
+/**
+ * Per-entry validation on READ. The claim store was hardened this way
+ * (commits a3ea57c / 9746fd2) so one malformed entry can't poison the whole
+ * list; mirror it here. A non-string / non-parseable address would otherwise
+ * reach Header.shortAddress(addr).slice and white-screen the Contacts page and
+ * Send picker. We FILTER on read (no re-persist — a read-with-side-effect would
+ * race writeContacts); the next normal write flushes the cleaned list.
+ */
+function sanitizeContacts(list: unknown): Contact[] {
+    if (!Array.isArray(list)) return [];
+    const out: Contact[] = [];
+    for (const raw of list) {
+        if (!raw || typeof raw !== "object") continue;
+        const c = raw as Record<string, unknown>;
+        if (typeof c.address !== "string") continue;
+        let address: string;
+        try {
+            address = normalizeAddress(c.address);
+        } catch {
+            continue; // unparseable address — drop the entry, don't crash render
+        }
+        const label = typeof c.label === "string" ? c.label.trim().slice(0, 32) : "";
+        const source: ContactSource =
+            c.source === "sent" || c.source === "received" || c.source === "imported"
+                ? c.source
+                : "manual";
+        const addedAt = typeof c.addedAt === "number" ? c.addedAt : 0;
+        out.push({ address, label, addedAt, source });
+    }
+    return out;
+}
+
 export async function listContacts(
     networkId: AztecNetwork["id"],
     account: string,
@@ -67,7 +99,7 @@ export async function listContacts(
             await secureSet(key(networkId, account), networkLevel);
         }
     }
-    return stored ?? [];
+    return sanitizeContacts(stored);
 }
 
 async function writeContacts(
@@ -251,7 +283,19 @@ export async function listKnownSenders(
             await secureSet(sendersKey(networkId, account), networkLevel);
         }
     }
-    return stored ?? [];
+    // Drop any malformed entry per-entry so one bad value can't break sender
+    // registration (or crash a consumer that assumes string addresses).
+    if (!Array.isArray(stored)) return [];
+    const out: string[] = [];
+    for (const a of stored) {
+        if (typeof a !== "string") continue;
+        try {
+            out.push(normalizeAddress(a));
+        } catch {
+            /* unparseable — skip */
+        }
+    }
+    return out;
 }
 
 /**

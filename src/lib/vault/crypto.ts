@@ -122,7 +122,16 @@ export async function deriveKeyFromPassphrase(
 ): Promise<CryptoKey> {
     // argon2idAsync yields to the event loop (asyncTick) so the popup spinner
     // keeps animating during the ~1.5s derivation instead of freezing.
-    const pw = new TextEncoder().encode(passphrase);
+    //
+    // Normalize to NFKC before encoding so the SAME logical passphrase derives
+    // the SAME key regardless of how it was entered. A non-ASCII passphrase can
+    // arrive as different byte sequences (NFC paste vs NFD type, IME/OS skew);
+    // without this, Argon2id keys on those raw bytes and a visually-identical
+    // passphrase fails AES-GCM and permanently locks the vault. This is the
+    // single choke point for BOTH create and unlock, so the two can never
+    // disagree. Must stay fixed for the life of a vault — changing the form
+    // would brick every existing passphrase-derived vault.
+    const pw = new TextEncoder().encode(passphrase.normalize("NFKC"));
     let raw: Uint8Array;
     try {
         raw = await argon2idAsync(pw, salt, {

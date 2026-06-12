@@ -49,6 +49,10 @@ export type PassStrength = {
 
 export function passwordStrength(pw: string): PassStrength {
     if (!pw) return { score: 0, label: "", ok: false };
+    // Measure the SAME normalized form the KDF keys on (crypto.ts normalizes to
+    // NFKC before Argon2id), so the strength gate and the derived key always
+    // agree on what "the passphrase" is.
+    pw = pw.normalize("NFKC");
 
     const lower = /[a-z]/.test(pw);
     const upper = /[A-Z]/.test(pw);
