@@ -13,6 +13,8 @@ import {
     type TokenBalance,
 } from "../../lib/aztec/balances";
 import { shield, unshield } from "../../lib/aztec/transfer";
+import { assessFeeReadiness } from "../../lib/aztec/fee";
+import { GasGateCards, ProvingProgress } from "../components/ProvingProgress";
 
 /** Which way the conversion goes — set when the user taps Convert on a token row. */
 export type ConvertTarget = { tokenAddress: string; direction: "shield" | "unshield" };
@@ -30,7 +32,10 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
     const [balance, setBalance] = useState<TokenBalance>(ZERO_BALANCE);
     const [amount, setAmount] = useState("");
     const [busy, setBusy] = useState(false);
-    const [busyText, setBusyText] = useState("Proving…");
+    /** Stage line shown above the proving progress bar (NOT on buttons). */
+    const [stage, setStage] = useState("");
+    const [checking, setChecking] = useState(false);
+    const [gasGate, setGasGate] = useState<"incoming" | "none" | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [done, setDone] = useState<{ txHash: string } | null>(null);
 
@@ -61,7 +66,23 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
 
     async function submit() {
         setError(null);
+        setGasGate(null);
         if (!wallet || !account || !token) return setError("Wallet not loaded.");
+        // Gas gate BEFORE building anything (same as Send/Deploy) — covers
+        // both the account's FIRST transaction (which also deploys its account
+        // contract and needs a fee source for that) and subsequent ones.
+        setChecking(true);
+        try {
+            const readiness = await assessFeeReadiness(wallet, network, account.address);
+            if (readiness.kind !== "ready") {
+                setGasGate(readiness.kind);
+                return;
+            }
+        } catch (e) {
+            return setError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setChecking(false);
+        }
         setBusy(true);
         try {
             await trackOp(async () => {
@@ -75,10 +96,10 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
                 const tokenAddress = AztecAddress.fromString(token.address);
                 const sender = account.address;
                 if (!account.isDeployed) {
-                    setBusyText("Activating your account (one-time setup)…");
+                    setStage("Activating your account — first transaction only (takes a few minutes)…");
                     await ensureAccountDeployed();
                 }
-                setBusyText("Proving + converting…");
+                setStage("Generating a private proof on your device (~45 seconds)…");
                 const result = makingPrivate
                     ? await shield({ wallet, network, sender, tokenAddress, amount: value })
                     : await unshield({ wallet, network, sender, tokenAddress, amount: value });
@@ -89,7 +110,6 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
             setError(e instanceof Error ? e.message : String(e));
         } finally {
             setBusy(false);
-            setBusyText("Proving…");
         }
     }
 
@@ -183,12 +203,16 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
 
                 {error && <div className="error">{error}</div>}
 
+                <GasGateCards gate={gasGate} actionLabel="this conversion" onRecheck={() => void submit()} />
+
+                {busy && <ProvingProgress status={stage} />}
+
                 <button
                     className="btn btn-primary btn-block"
                     disabled={busy || !token || !amount}
                     onClick={submit}
                 >
-                    {busy ? busyText : `Make ${toLabel}`}
+                    {busy ? "Converting…" : checking ? "Checking…" : `Make ${toLabel}`}
                 </button>
                 {busy && (
                     <div className="hint">

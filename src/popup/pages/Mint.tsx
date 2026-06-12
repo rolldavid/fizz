@@ -7,6 +7,8 @@ import { trackOp } from "../../lib/state/activity";
 import { loadTokens, type TokenEntry } from "../../lib/aztec/tokens";
 import { parseUnits } from "../../lib/aztec/balances";
 import { getMintAuthority, mintToken, type MintAuthority } from "../../lib/aztec/mint";
+import { assessFeeReadiness } from "../../lib/aztec/fee";
+import { GasGateCards, ProvingProgress } from "../components/ProvingProgress";
 
 /**
  * Mint screen — create new supply on a token where this account holds the
@@ -27,6 +29,10 @@ export function Mint({ onBack }: { onBack: () => void }) {
     const [to, setTo] = useState("");
 
     const [busy, setBusy] = useState(false);
+    /** Stage line shown above the proving progress bar (NOT on buttons). */
+    const [stage, setStage] = useState("");
+    const [checking, setChecking] = useState(false);
+    const [gasGate, setGasGate] = useState<"incoming" | "none" | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [done, setDone] = useState<{ txHash: string } | null>(null);
 
@@ -67,9 +73,25 @@ export function Mint({ onBack }: { onBack: () => void }) {
     async function submit() {
         setError(null);
         setDone(null);
+        setGasGate(null);
         if (!wallet) return setError("Wallet not loaded.");
         if (!account) return setError("Account not loaded.");
         if (!token) return setError("Pick a token.");
+        // Gas gate BEFORE building anything (same as Send/Deploy/Convert) —
+        // covers the account's FIRST transaction (which also deploys its
+        // account contract) and subsequent ones alike.
+        setChecking(true);
+        try {
+            const readiness = await assessFeeReadiness(wallet, network, account.address);
+            if (readiness.kind !== "ready") {
+                setGasGate(readiness.kind);
+                return;
+            }
+        } catch (e) {
+            return setError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setChecking(false);
+        }
         setBusy(true);
         try {
             // trackOp: proving + inclusion can exceed the idle window; the
@@ -78,8 +100,10 @@ export function Mint({ onBack }: { onBack: () => void }) {
                 const value = parseUnits(amount, token.decimals);
                 const recipient = toSelf ? account.address : AztecAddress.fromString(to.trim());
                 if (!account.isDeployed) {
+                    setStage("Activating your account — first transaction only (takes a few minutes)…");
                     await ensureAccountDeployed();
                 }
+                setStage("Generating a private proof on your device (~45 seconds)…");
                 const result = await mintToken({
                     wallet,
                     network,
@@ -210,6 +234,10 @@ export function Mint({ onBack }: { onBack: () => void }) {
 
                         {error && <div className="error">{error}</div>}
 
+                        <GasGateCards gate={gasGate} actionLabel="this mint" onRecheck={() => void submit()} />
+
+                        {busy && <ProvingProgress status={stage} />}
+
                         {done && (
                             <div className="card" style={{ borderColor: "var(--success)" }}>
                                 <div style={{ color: "var(--success)", marginBottom: 4, fontWeight: 500 }}>
@@ -233,7 +261,7 @@ export function Mint({ onBack }: { onBack: () => void }) {
                             disabled={busy || !token || !amount || (!toSelf && !to)}
                             onClick={submit}
                         >
-                            {busy ? "Proving + minting…" : "Mint"}
+                            {busy ? "Minting…" : checking ? "Checking…" : "Mint"}
                         </button>
                         {busy && (
                             <div className="hint">

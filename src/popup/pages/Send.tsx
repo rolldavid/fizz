@@ -10,6 +10,7 @@ import { parseUnits } from "../../lib/aztec/balances";
 import { transfer, type TransferMode } from "../../lib/aztec/transfer";
 import { assessFeeReadiness } from "../../lib/aztec/fee";
 import { listContacts, rememberSentRecipient, type Contact } from "../../lib/aztec/contacts";
+import { GasGateCards, ProvingProgress } from "../components/ProvingProgress";
 
 /**
  * Send screen. Recipients come from CONTACTS ONLY — there is deliberately no
@@ -327,40 +328,7 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
 
                 {error && !confirming && <div className="error">{error}</div>}
 
-                {gasGate === "incoming" && (
-                    <div className="card card-accent" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ fontWeight: 600 }}>Your gas is on the way</div>
-                        <div className="hint" style={{ margin: 0 }}>
-                            A bridge to this account is still landing — the gas usually becomes
-                            usable within a few minutes, and this send will use it automatically.
-                            Check again shortly.
-                        </div>
-                        <button
-                            className="btn btn-ghost"
-                            style={{ fontSize: 12, padding: "6px 12px", alignSelf: "flex-start" }}
-                            onClick={() => void review()}
-                        >
-                            Check again
-                        </button>
-                    </div>
-                )}
-                {gasGate === "none" && (
-                    <div className="card card-accent" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ fontWeight: 600 }}>You need gas first</div>
-                        <div className="hint" style={{ margin: 0 }}>
-                            This account has no fee juice, and every Aztec transaction needs some.
-                            Get gas, wait for it to land (it arrives automatically), then send.
-                        </div>
-                        <a
-                            className="btn btn-primary btn-block"
-                            href="https://fizzwallet.com/bridge"
-                            target="_blank"
-                            rel="noreferrer"
-                        >
-                            Get gas ↗
-                        </a>
-                    </div>
-                )}
+                <GasGateCards gate={gasGate} actionLabel="this send" onRecheck={() => void review()} />
 
                 <button
                     className="btn btn-primary btn-block"
@@ -400,33 +368,6 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
     );
 }
 
-/**
- * Time-based progress for client-side proving. Proof generation is ~45s of
- * silence that reads as a hang; a bar moving toward done reads as work. It
- * eases to 95% over PROVING_ESTIMATE_S and holds there — never claiming done
- * before the receipt actually lands (slow machines / first-run key loading).
- */
-const PROVING_ESTIMATE_S = 45;
-function ProvingProgress({ status }: { status: string }) {
-    const [pct, setPct] = useState(0);
-    useEffect(() => {
-        const started = Date.now();
-        const t = window.setInterval(() => {
-            const elapsed = (Date.now() - started) / 1000;
-            setPct(Math.min(95, (elapsed / PROVING_ESTIMATE_S) * 100));
-        }, 250);
-        return () => window.clearInterval(t);
-    }, []);
-    return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {/* Stage line lives HERE — buttons stay short ("Sending…"). */}
-            <div className="muted" style={{ fontSize: 12 }}>{status}</div>
-            <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${pct}%` }} />
-            </div>
-        </div>
-    );
-}
 
 /**
  * Full-address review before signing. Defends against address poisoning:
