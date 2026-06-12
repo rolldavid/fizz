@@ -190,16 +190,31 @@ export async function autoClaimTick(args: {
     for (const b of mine.filter(
         (x) => (x.status ?? "pending") === "pending" && x.messageHash && !x.consumedAt && !x.claimTxHash,
     )) {
+        // Parse the stored fields ONCE, under a guard: a malformed entry must
+        // never abort the whole tick (one did — its messageHash parsed badly,
+        // and the re-parse inside the old catch threw synchronously, killing
+        // every subsequent tick with "Tried to create a Fr from an invalid
+        // string: [object Object]").
+        let messageHash: Fr;
+        let claimSecret: Fr;
         try {
-            await getNonNullifiedL1ToL2MessageWitness(
-                node,
-                feeJuiceAddress,
-                Fr.fromHexString(b.messageHash!),
-                Fr.fromHexString(b.claimSecret),
+            messageHash = Fr.fromHexString(b.messageHash!);
+            claimSecret = Fr.fromHexString(b.claimSecret);
+        } catch (err) {
+            console.error(
+                `Claim ${b.id} is malformed and was skipped by the sweep. ` +
+                    `messageHash=${JSON.stringify(b.messageHash)} ` +
+                    `claimSecretType=${typeof b.claimSecret} status=${b.status} ` +
+                    `createdAt=${new Date(b.createdAt).toISOString()}`,
+                err,
             );
+            continue;
+        }
+        try {
+            await getNonNullifiedL1ToL2MessageWitness(node, feeJuiceAddress, messageHash, claimSecret);
         } catch {
             const membership = await node
-                .getL1ToL2MessageMembershipWitness("latest", Fr.fromHexString(b.messageHash!))
+                .getL1ToL2MessageMembershipWitness("latest", messageHash)
                 .catch(() => undefined);
             if (membership) {
                 // Normal right after the user's own transaction spends the
