@@ -43,7 +43,7 @@ export function FeeEstimateRow({
 
 /** Post-send ACTUAL network fee (read from the mined receipt). */
 export function ActualFeeRow({ feeJuice }: { feeJuice?: bigint }) {
-    if (feeJuice === undefined) return null;
+    if (feeJuice === undefined || feeJuice <= 0n) return null;
     return (
         <div className="muted" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
             Network fee: {formatFeeAztec(feeJuice)} AZTEC

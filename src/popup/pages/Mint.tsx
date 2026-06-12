@@ -126,6 +126,18 @@ export function Mint({ onBack }: { onBack: () => void }) {
     }
 
     const canMint = authority?.isMinter === true;
+    // True exactly when the estimate effect will actually run, so the fee row
+    // isn't shown stuck on "Estimating…" for "0"/junk or an invalid recipient.
+    const feeEstInput = (() => {
+        if (!canMint || !token || !amount) return false;
+        try {
+            if (parseUnits(amount, token.decimals) <= 0n) return false;
+            if (!toSelf) AztecAddress.fromString(to.trim());
+            return true;
+        } catch {
+            return false;
+        }
+    })();
 
     // Debounced fee estimate as the user fills the mint form.
     useEffect(() => {
@@ -283,7 +295,7 @@ export function Mint({ onBack }: { onBack: () => void }) {
 
                         <GasGateCards gate={gasGate} actionLabel="this mint" onRecheck={() => void submit()} />
 
-                        {!busy && !done && amount && (
+                        {!busy && !done && feeEstInput && (
                             <FeeEstimateRow estimate={feeEst} firstTx={!account?.isDeployed} />
                         )}
 

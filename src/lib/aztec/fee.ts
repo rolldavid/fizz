@@ -295,8 +295,34 @@ export async function estimateUiFee(
     sender: AztecAddress,
     interaction: { simulate(opts: unknown): Promise<unknown> },
 ): Promise<UiFeeEstimate> {
-    if (await peekFeeCovered(wallet, network, sender)) return { covered: true };
+    // Best-effort at THIS boundary too: peekFeeCovered (listReadyClaims → PXE
+    // sync, isSponsoredFPCAvailable) can throw on a PXE/SDK fault, and an
+    // estimate must never throw into a confirm screen. A coverage-check failure
+    // simply means "not known to be covered" — fall through to the amount
+    // estimate, which itself returns null on failure.
+    let covered = false;
+    try {
+        covered = await peekFeeCovered(wallet, network, sender);
+    } catch (err) {
+        console.warn("Fee estimate: coverage check unavailable:", describeErr(err));
+    }
+    if (covered) return { covered: true };
     return { covered: false, feeJuice: await estimateInteractionFee(wallet, sender, interaction) };
+}
+
+/**
+ * Actual fee to DISPLAY post-send, given the resolved fee source. A sponsored
+ * FPC pays the gas, so the receipt's transactionFee reflects what the SPONSOR
+ * covered, not what the user paid — surfacing it would contradict the
+ * pre-confirm "Covered" and read as a phantom charge. Return undefined in that
+ * case (ActualFeeRow renders nothing); a claim/balance-paid tx shows the real
+ * fee that came out of the user's gas.
+ */
+export function displayFeeForSource(
+    label: ResolvedFee["label"],
+    sent: { receipt?: { transactionFee?: bigint | { toString(): string } } },
+): bigint | undefined {
+    return label === "sponsored" ? undefined : feeJuiceFromReceipt(sent);
 }
 
 /** Actual fee paid, read from a mined send receipt (fee-juice base units). */

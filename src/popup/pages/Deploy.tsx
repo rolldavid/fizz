@@ -411,8 +411,16 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                     </div>
                 )}
 
-                {name.trim() && symbol.trim() && (
-                    <FeeEstimateRow estimate={feeEst} firstTx={!account?.isDeployed} />
+                {!task && name.trim() && symbol.trim() && (
+                    <>
+                        <FeeEstimateRow estimate={feeEst} firstTx={!account?.isDeployed} />
+                        {(supply.trim() || !keepMinter) && (
+                            <div className="hint" style={{ fontSize: 11, marginTop: -4 }}>
+                                Estimate covers the deploy only — the initial supply / minter-role
+                                follow-up{supply.trim() && !keepMinter ? "s" : ""} cost a little more.
+                            </div>
+                        )}
+                    </>
                 )}
 
                 <button className="btn btn-primary btn-block" disabled={checking} onClick={() => void deploy()}>

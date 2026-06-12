@@ -16,8 +16,8 @@ import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { ensureTokenRegistered } from "./balances";
 import {
+    displayFeeForSource,
     estimateUiFee,
-    feeJuiceFromReceipt,
     markFeeConsumed,
     releaseFee,
     resolveFeePaymentMethod,
@@ -78,7 +78,7 @@ export async function mintToken(params: MintParams): Promise<{ txHash: string; f
         throw err;
     }
     await markFeeConsumed(fee);
-    return { txHash: txHashOf(sent), feeJuice: feeJuiceFromReceipt(sent) };
+    return { txHash: txHashOf(sent), feeJuice: displayFeeForSource(fee.label, sent) };
 }
 
 /** Pre-confirm fee estimate for a mint. */

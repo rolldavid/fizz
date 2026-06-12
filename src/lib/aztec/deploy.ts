@@ -185,5 +185,10 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
         }
     }
 
-    return { address, txHash, feeJuice: haveFee ? totalFee : undefined };
+    // Suppress the actual-fee display when a sponsored FPC paid (the summed
+    // receipt fees reflect what the SPONSOR covered, not the user) — keeps the
+    // success screen consistent with a pre-confirm "Covered". Sponsored networks
+    // sponsor every tx, so the deploy fee's label settles this for all 3.
+    const feeJuice = fee.label === "sponsored" ? undefined : haveFee ? totalFee : undefined;
+    return { address, txHash, feeJuice };
 }

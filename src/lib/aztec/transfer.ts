@@ -17,8 +17,8 @@ import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { ensureTokenRegistered } from "./balances";
 import {
+    displayFeeForSource,
     estimateUiFee,
-    feeJuiceFromReceipt,
     markFeeConsumed,
     releaseFee,
     resolveFeePaymentMethod,
@@ -93,7 +93,7 @@ export async function transfer(params: TransferParams): Promise<{ txHash: string
         throw err;
     }
     await markFeeConsumed(feeResolution);
-    return { txHash: txHashOf(sent), feeJuice: feeJuiceFromReceipt(sent) };
+    return { txHash: txHashOf(sent), feeJuice: displayFeeForSource(feeResolution.label, sent) };
 }
 
 /** Pre-confirm fee estimate for a transfer (covered / estimated AZTEC amount). */
@@ -134,7 +134,7 @@ export async function shield(params: ShieldParams): Promise<{ txHash: string; fe
         throw err;
     }
     await markFeeConsumed(feeResolution);
-    return { txHash: txHashOf(sent), feeJuice: feeJuiceFromReceipt(sent) };
+    return { txHash: txHashOf(sent), feeJuice: displayFeeForSource(feeResolution.label, sent) };
 }
 
 export async function unshield(params: ShieldParams): Promise<{ txHash: string; feeJuice?: bigint }> {
@@ -150,7 +150,7 @@ export async function unshield(params: ShieldParams): Promise<{ txHash: string; 
         throw err;
     }
     await markFeeConsumed(feeResolution);
-    return { txHash: txHashOf(sent), feeJuice: feeJuiceFromReceipt(sent) };
+    return { txHash: txHashOf(sent), feeJuice: displayFeeForSource(feeResolution.label, sent) };
 }
 
 /** Pre-confirm fee estimate for shield (make private). */

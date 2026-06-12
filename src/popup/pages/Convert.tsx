@@ -113,6 +113,16 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
     const decimals = token?.decimals ?? 18;
     const symbol = token?.symbol ?? "";
     const fmt = (v: bigint) => formatUnits(v, decimals);
+    // True exactly when the estimate effect will actually run (valid positive
+    // amount) — so the fee row isn't shown stuck on "Estimating…" for "0"/junk.
+    const feeEstInput = (() => {
+        if (!token || !amount) return false;
+        try {
+            return parseUnits(amount, token.decimals) > 0n;
+        } catch {
+            return false;
+        }
+    })();
     const fromBal = makingPrivate ? balance.public : balance.private;
     const fromLabel = makingPrivate ? "public" : "private";
     const toLabel = makingPrivate ? "private" : "public";
@@ -267,7 +277,7 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
 
                 <GasGateCards gate={gasGate} actionLabel="this conversion" onRecheck={() => void submit()} />
 
-                {!busy && token && amount && (
+                {!busy && feeEstInput && (
                     <FeeEstimateRow estimate={feeEst} firstTx={!account?.isDeployed} />
                 )}
 
