@@ -195,6 +195,123 @@ export function releaseFee(fee: ResolvedFee) {
  */
 export type FeeReadiness = { kind: "ready" } | { kind: "incoming" } | { kind: "none" };
 
+// ── Fee ESTIMATION (UI) ──────────────────────────────────────────────────────
+//
+// A tx fee (in fee juice, 18 decimals — surfaced to the user as "AZTEC") is
+//   Σ_dimension  gasLimit[dimension] × maxFeePerGas[dimension]
+// over the DA + L2 gas dimensions, for BOTH the main and teardown gas. Gas
+// AMOUNTS come from a gas-estimating simulation; gas PRICES come from the
+// chain's current min fees. We show an estimate (padded, "≈"), never an exact
+// figure — base fees move between estimate and inclusion.
+
+type GasAmount = { daGas: number | bigint; l2Gas: number | bigint };
+type GasPrices = { feePerDaGas: bigint; feePerL2Gas: bigint };
+
+function gasTimesFees(gas: GasAmount, fees: GasPrices): bigint {
+    return BigInt(gas.daGas) * fees.feePerDaGas + BigInt(gas.l2Gas) * fees.feePerL2Gas;
+}
+
+/**
+ * Stringify an error usefully. A DOMException (the PXE/IndexedDB layer throws
+ * these) renders as the useless "[object DOMException]" when interpolated, which
+ * hides the real cause — surface its name + message instead.
+ */
+function describeErr(err: unknown): string {
+    if (err instanceof DOMException) return `${err.name}: ${err.message}`;
+    if (err instanceof Error) return `${err.name}: ${err.message}`;
+    try {
+        return String(err);
+    } catch {
+        return "unknown error";
+    }
+}
+
+/**
+ * Who actually pays this sender's next tx — WITHOUT taking the claim spend lock
+ * (an estimate must never reserve a claim the real send will consume). Mirrors
+ * resolveFeePaymentMethod's preference order: a ready bridge claim is spent
+ * first (the user's own gas), then a sponsored FPC (covered — user pays
+ * nothing), else the user's fee-juice balance (their own gas). Per product
+ * decision, a bridged claim is presented as a NORMAL fee — it does come out of
+ * the user's gas — so only the sponsored case is "covered".
+ */
+export async function peekFeeCovered(
+    wallet: AztecWallet,
+    network: AztecNetwork,
+    sender: AztecAddress,
+): Promise<boolean> {
+    if ((await listReadyClaims(wallet, network.id, sender)).length > 0) return false;
+    if (await isSponsoredFPCAvailable(wallet)) return true;
+    return false;
+}
+
+/**
+ * Estimated fee for an interaction, in fee-juice base units (18 dp), or null if
+ * estimation isn't possible (e.g. an undeployed account that can't be simulated
+ * yet). Best-effort: never throws into the caller — a missing estimate must not
+ * block a send. skipFeeEnforcement so we don't need/lock a real fee source.
+ */
+export async function estimateInteractionFee(
+    wallet: AztecWallet,
+    sender: AztecAddress,
+    interaction: { simulate(opts: unknown): Promise<unknown> },
+): Promise<bigint | null> {
+    let sim: { estimatedGas?: { gasLimits?: GasAmount; teardownGasLimits?: GasAmount } };
+    try {
+        sim = (await interaction.simulate({
+            from: sender,
+            skipFeeEnforcement: true,
+            fee: { estimateGas: true },
+        })) as typeof sim;
+    } catch (err) {
+        console.warn("Fee estimate unavailable (simulation failed):", describeErr(err));
+        return null;
+    }
+    const est = sim?.estimatedGas;
+    if (!est?.gasLimits || !est?.teardownGasLimits) return null;
+    let fees: GasPrices;
+    try {
+        fees = (await (wallet as any).aztecNode.getCurrentMinFees()) as GasPrices;
+    } catch (err) {
+        console.warn("Fee estimate unavailable (no base fees):", describeErr(err));
+        return null;
+    }
+    return gasTimesFees(est.gasLimits, fees) + gasTimesFees(est.teardownGasLimits, fees);
+}
+
+export type UiFeeEstimate =
+    /** A sponsored FPC pays — the user spends nothing. */
+    | { covered: true }
+    /** The user pays from their own gas; feeJuice null = estimate unavailable. */
+    | { covered: false; feeJuice: bigint | null };
+
+/**
+ * The single call a confirm/review screen makes: resolves whether the fee is
+ * covered, and if not, the estimated amount the user will pay.
+ */
+export async function estimateUiFee(
+    wallet: AztecWallet,
+    network: AztecNetwork,
+    sender: AztecAddress,
+    interaction: { simulate(opts: unknown): Promise<unknown> },
+): Promise<UiFeeEstimate> {
+    if (await peekFeeCovered(wallet, network, sender)) return { covered: true };
+    return { covered: false, feeJuice: await estimateInteractionFee(wallet, sender, interaction) };
+}
+
+/** Actual fee paid, read from a mined send receipt (fee-juice base units). */
+export function feeJuiceFromReceipt(sent: {
+    receipt?: { transactionFee?: bigint | { toString(): string } };
+}): bigint | undefined {
+    const f = sent?.receipt?.transactionFee;
+    if (f === undefined || f === null) return undefined;
+    try {
+        return typeof f === "bigint" ? f : BigInt(f.toString());
+    } catch {
+        return undefined;
+    }
+}
+
 export async function assessFeeReadiness(
     wallet: AztecWallet,
     network: AztecNetwork,

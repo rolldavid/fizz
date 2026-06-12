@@ -16,7 +16,14 @@ import { Contract } from "@aztec/aztec.js/contracts";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { ensureTokenRegistered } from "./balances";
-import { markFeeConsumed, releaseFee, resolveFeePaymentMethod } from "./fee";
+import {
+    estimateUiFee,
+    feeJuiceFromReceipt,
+    markFeeConsumed,
+    releaseFee,
+    resolveFeePaymentMethod,
+    type UiFeeEstimate,
+} from "./fee";
 import {
     assertPositiveAmount,
     assertSpendableRecipient,
@@ -60,19 +67,23 @@ export type TransferParams = SendCtx & {
     mode: TransferMode;
 };
 
-export async function transfer(params: TransferParams): Promise<{ txHash: string }> {
-    assertPositiveAmount(params.amount);
-    assertWithinU128(params.amount);
-    assertSpendableRecipient(params.to);
+/** Build the (registered) token contract method for a transfer — shared by the
+ *  send path and the fee-estimate path so both price the IDENTICAL interaction. */
+async function transferMethod(params: TransferParams) {
     const Token = await getTokenContract();
     await ensureTokenRegistered(params.wallet, params.tokenAddress);
     const contract = await Contract.at(params.tokenAddress, Token.artifact, params.wallet as any);
-    const { feeResolution, ...sendOpts } = await buildSendOptions(params);
+    return params.mode === "private"
+        ? contract.methods.transfer(params.to, params.amount)
+        : contract.methods.transfer_in_public(params.sender, params.to, params.amount, Fr.ZERO);
+}
 
-    const method =
-        params.mode === "private"
-            ? contract.methods.transfer(params.to, params.amount)
-            : contract.methods.transfer_in_public(params.sender, params.to, params.amount, Fr.ZERO);
+export async function transfer(params: TransferParams): Promise<{ txHash: string; feeJuice?: bigint }> {
+    assertPositiveAmount(params.amount);
+    assertWithinU128(params.amount);
+    assertSpendableRecipient(params.to);
+    const method = await transferMethod(params);
+    const { feeResolution, ...sendOpts } = await buildSendOptions(params);
 
     let sent;
     try {
@@ -82,7 +93,13 @@ export async function transfer(params: TransferParams): Promise<{ txHash: string
         throw err;
     }
     await markFeeConsumed(feeResolution);
-    return { txHash: txHashOf(sent) };
+    return { txHash: txHashOf(sent), feeJuice: feeJuiceFromReceipt(sent) };
+}
+
+/** Pre-confirm fee estimate for a transfer (covered / estimated AZTEC amount). */
+export async function estimateTransferFee(params: TransferParams): Promise<UiFeeEstimate> {
+    const method = await transferMethod(params);
+    return estimateUiFee(params.wallet, params.network, params.sender, method as any);
 }
 
 export type ShieldParams = SendCtx & {
@@ -90,42 +107,58 @@ export type ShieldParams = SendCtx & {
     amount: bigint;
 };
 
-export async function shield(params: ShieldParams): Promise<{ txHash: string }> {
-    assertPositiveAmount(params.amount);
-    assertWithinU128(params.amount);
+async function shieldMethod(params: ShieldParams) {
     const Token = await getTokenContract();
     await ensureTokenRegistered(params.wallet, params.tokenAddress);
     const contract = await Contract.at(params.tokenAddress, Token.artifact, params.wallet as any);
-    const { feeResolution, ...sendOpts } = await buildSendOptions(params);
-    let sent;
-    try {
-        sent = await contract.methods
-            .transfer_to_private(params.sender, params.amount)
-            .send(sendOpts as any);
-    } catch (err) {
-        releaseFee(feeResolution);
-        throw err;
-    }
-    await markFeeConsumed(feeResolution);
-    return { txHash: txHashOf(sent) };
+    return contract.methods.transfer_to_private(params.sender, params.amount);
 }
 
-export async function unshield(params: ShieldParams): Promise<{ txHash: string }> {
-    assertPositiveAmount(params.amount);
-    assertWithinU128(params.amount);
+async function unshieldMethod(params: ShieldParams) {
     const Token = await getTokenContract();
     await ensureTokenRegistered(params.wallet, params.tokenAddress);
     const contract = await Contract.at(params.tokenAddress, Token.artifact, params.wallet as any);
+    return contract.methods.transfer_to_public(params.sender, params.sender, params.amount, Fr.ZERO);
+}
+
+export async function shield(params: ShieldParams): Promise<{ txHash: string; feeJuice?: bigint }> {
+    assertPositiveAmount(params.amount);
+    assertWithinU128(params.amount);
+    const method = await shieldMethod(params);
     const { feeResolution, ...sendOpts } = await buildSendOptions(params);
     let sent;
     try {
-        sent = await contract.methods
-            .transfer_to_public(params.sender, params.sender, params.amount, Fr.ZERO)
-            .send(sendOpts as any);
+        sent = await method.send(sendOpts as any);
     } catch (err) {
         releaseFee(feeResolution);
         throw err;
     }
     await markFeeConsumed(feeResolution);
-    return { txHash: txHashOf(sent) };
+    return { txHash: txHashOf(sent), feeJuice: feeJuiceFromReceipt(sent) };
+}
+
+export async function unshield(params: ShieldParams): Promise<{ txHash: string; feeJuice?: bigint }> {
+    assertPositiveAmount(params.amount);
+    assertWithinU128(params.amount);
+    const method = await unshieldMethod(params);
+    const { feeResolution, ...sendOpts } = await buildSendOptions(params);
+    let sent;
+    try {
+        sent = await method.send(sendOpts as any);
+    } catch (err) {
+        releaseFee(feeResolution);
+        throw err;
+    }
+    await markFeeConsumed(feeResolution);
+    return { txHash: txHashOf(sent), feeJuice: feeJuiceFromReceipt(sent) };
+}
+
+/** Pre-confirm fee estimate for shield (make private). */
+export async function estimateShieldFee(params: ShieldParams): Promise<UiFeeEstimate> {
+    return estimateUiFee(params.wallet, params.network, params.sender, (await shieldMethod(params)) as any);
+}
+
+/** Pre-confirm fee estimate for unshield (make public). */
+export async function estimateUnshieldFee(params: ShieldParams): Promise<UiFeeEstimate> {
+    return estimateUiFee(params.wallet, params.network, params.sender, (await unshieldMethod(params)) as any);
 }

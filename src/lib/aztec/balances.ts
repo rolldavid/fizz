@@ -170,6 +170,17 @@ export function formatUnits(value: bigint, decimals: number, maxFractionDigits =
     return trimmed ? `${sign}${whole}.${trimmed}` : `${sign}${whole}`;
 }
 
+/**
+ * Format a fee-juice amount (18 dp) for display as an AZTEC fee. Fees are tiny,
+ * so this shows more fractional precision than a balance and never collapses a
+ * nonzero fee to "0" (it floors to a "<0.000001" marker instead).
+ */
+export function formatFeeAztec(feeJuice: bigint): string {
+    if (feeJuice <= 0n) return "0";
+    const s = formatUnits(feeJuice, 18, 6);
+    return s === "0" ? "<0.000001" : s;
+}
+
 export function parseUnits(value: string, decimals: number): bigint {
     if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
         throw new Error(`Invalid decimals: ${decimals}.`);

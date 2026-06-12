@@ -7,8 +7,9 @@ import { useWallet } from "../../lib/state/walletContext";
 import { trackOp } from "../../lib/state/activity";
 import { loadTokens, type TokenEntry } from "../../lib/aztec/tokens";
 import { formatUnits, getTokenBalance, parseUnits } from "../../lib/aztec/balances";
-import { transfer, type TransferMode } from "../../lib/aztec/transfer";
-import { assessFeeReadiness } from "../../lib/aztec/fee";
+import { estimateTransferFee, transfer, type TransferMode } from "../../lib/aztec/transfer";
+import { assessFeeReadiness, type UiFeeEstimate } from "../../lib/aztec/fee";
+import { FeeEstimateRow, ActualFeeRow } from "../components/FeeEstimate";
 import { listContacts, rememberSentRecipient, type Contact } from "../../lib/aztec/contacts";
 import { GasGateCards, ProvingProgress } from "../components/ProvingProgress";
 
@@ -68,12 +69,14 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
     const [gasGate, setGasGate] = useState<"incoming" | "none" | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [confirming, setConfirming] = useState(false);
+    const [feeEst, setFeeEst] = useState<UiFeeEstimate | null>(null);
     const [done, setDone] = useState<{
         txHash: string;
         recipient: Contact;
         amount: string;
         token: TokenEntry;
         privacy: TransferMode;
+        feeJuice?: bigint;
     } | null>(null);
 
     useEffect(() => {
@@ -96,6 +99,37 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
             (c) => c.label.toLowerCase().includes(q) || c.address.toLowerCase().includes(q),
         );
     }, [contacts, query]);
+
+    // Estimate the network fee the moment the confirm review opens, so the user
+    // sees "≈ X AZTEC" (or "Covered") before they sign. Best-effort and async —
+    // the modal shows "Estimating…" until it resolves.
+    useEffect(() => {
+        if (!confirming || !wallet || !account || !token || !recipient) {
+            setFeeEst(null);
+            return;
+        }
+        let cancelled = false;
+        setFeeEst(null);
+        void (async () => {
+            try {
+                const est = await estimateTransferFee({
+                    wallet,
+                    network,
+                    sender: account.address,
+                    tokenAddress: AztecAddress.fromString(token.address),
+                    to: AztecAddress.fromString(recipient.address),
+                    amount: parseUnits(amount, token.decimals),
+                    mode: privacy,
+                });
+                if (!cancelled) setFeeEst(est);
+            } catch {
+                if (!cancelled) setFeeEst({ covered: false, feeJuice: null });
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [confirming, wallet, account, token, recipient, amount, privacy, network]);
 
     /** Step 1: validate + gate on gas, then surface the full-address review. */
     async function review() {
@@ -190,6 +224,7 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                 amount: sentAmount,
                 token: sentToken,
                 privacy: sentPrivacy,
+                feeJuice: result.feeJuice,
             });
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
@@ -363,12 +398,6 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                 >
                     {busy ? "Sending…" : checking ? "Checking…" : "Review send"}
                 </button>
-                {busy && (
-                    <div className="hint">
-                        Proof generation runs locally in your browser. This can take 10-30s the
-                        first time as the proving keys load.
-                    </div>
-                )}
 
                 {confirming && token && recipient && (
                     <ConfirmSendModal
@@ -380,6 +409,8 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                         busy={busy}
                         stage={stage}
                         error={error}
+                        feeEstimate={feeEst}
+                        firstTx={!account?.isDeployed}
                         onCancel={() => {
                             if (!busy) {
                                 setConfirming(false);
@@ -409,6 +440,8 @@ function ConfirmSendModal({
     busy,
     stage,
     error,
+    feeEstimate,
+    firstTx,
     onCancel,
     onConfirm,
 }: {
@@ -420,6 +453,8 @@ function ConfirmSendModal({
     busy: boolean;
     stage: string;
     error: string | null;
+    feeEstimate: UiFeeEstimate | null;
+    firstTx?: boolean;
     onCancel: () => void;
     onConfirm: () => void;
 }) {
@@ -471,6 +506,8 @@ function ConfirmSendModal({
                         {privacy === "private" ? "🔒 Private" : "Public (on-chain)"}
                     </div>
                 </div>
+
+                <FeeEstimateRow estimate={feeEstimate} firstTx={firstTx} />
 
                 <div className="hint">
                     Transfers are irreversible. There is no way to claw back funds sent to the
@@ -537,6 +574,7 @@ function SentConfirmation({
         amount: string;
         token: TokenEntry;
         privacy: TransferMode;
+        feeJuice?: bigint;
     };
     senderAddress: string;
     onDone: () => void;
@@ -579,6 +617,9 @@ function SentConfirmation({
                     </div>
                     <div className="muted" style={{ marginTop: 4 }}>
                         to {recipient.label} · {privacy === "private" ? "🔒 private" : "public"}
+                    </div>
+                    <div style={{ marginTop: 6, display: "flex", justifyContent: "center" }}>
+                        <ActualFeeRow feeJuice={done.feeJuice} />
                     </div>
                 </div>
 

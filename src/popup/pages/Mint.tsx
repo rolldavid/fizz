@@ -6,9 +6,10 @@ import { useWallet } from "../../lib/state/walletContext";
 import { trackOp } from "../../lib/state/activity";
 import { loadTokens, type TokenEntry } from "../../lib/aztec/tokens";
 import { parseUnits } from "../../lib/aztec/balances";
-import { getMintAuthority, mintToken, type MintAuthority } from "../../lib/aztec/mint";
-import { assessFeeReadiness } from "../../lib/aztec/fee";
+import { estimateMintFee, getMintAuthority, mintToken, type MintAuthority } from "../../lib/aztec/mint";
+import { assessFeeReadiness, type UiFeeEstimate } from "../../lib/aztec/fee";
 import { GasGateCards, ProvingProgress } from "../components/ProvingProgress";
+import { ActualFeeRow, FeeEstimateRow } from "../components/FeeEstimate";
 
 /**
  * Mint screen — create new supply on a token where this account holds the
@@ -34,7 +35,8 @@ export function Mint({ onBack }: { onBack: () => void }) {
     const [checking, setChecking] = useState(false);
     const [gasGate, setGasGate] = useState<"incoming" | "none" | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [done, setDone] = useState<{ txHash: string } | null>(null);
+    const [feeEst, setFeeEst] = useState<UiFeeEstimate | null>(null);
+    const [done, setDone] = useState<{ txHash: string; feeJuice?: bigint } | null>(null);
 
     useEffect(() => {
         if (!account) return;
@@ -113,7 +115,7 @@ export function Mint({ onBack }: { onBack: () => void }) {
                     amount: value,
                     mode,
                 });
-                setDone({ txHash: result.txHash });
+                setDone({ txHash: result.txHash, feeJuice: result.feeJuice });
                 setAmount("");
             });
         } catch (e) {
@@ -124,6 +126,51 @@ export function Mint({ onBack }: { onBack: () => void }) {
     }
 
     const canMint = authority?.isMinter === true;
+
+    // Debounced fee estimate as the user fills the mint form.
+    useEffect(() => {
+        if (!wallet || !account || !token || !amount || !canMint) {
+            setFeeEst(null);
+            return;
+        }
+        let value: bigint;
+        let recipient: AztecAddress;
+        try {
+            value = parseUnits(amount, token.decimals);
+            if (value <= 0n) {
+                setFeeEst(null);
+                return;
+            }
+            recipient = toSelf ? account.address : AztecAddress.fromString(to.trim());
+        } catch {
+            setFeeEst(null);
+            return;
+        }
+        let cancelled = false;
+        setFeeEst(null);
+        const timer = setTimeout(() => {
+            void (async () => {
+                try {
+                    const est = await estimateMintFee({
+                        wallet,
+                        network,
+                        minter: account.address,
+                        tokenAddress: AztecAddress.fromString(token.address),
+                        to: recipient,
+                        amount: value,
+                        mode,
+                    });
+                    if (!cancelled) setFeeEst(est);
+                } catch {
+                    if (!cancelled) setFeeEst({ covered: false, feeJuice: null });
+                }
+            })();
+        }, 400);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [wallet, account, token, amount, mode, toSelf, to, canMint, network]);
 
     return (
         <>
@@ -236,6 +283,10 @@ export function Mint({ onBack }: { onBack: () => void }) {
 
                         <GasGateCards gate={gasGate} actionLabel="this mint" onRecheck={() => void submit()} />
 
+                        {!busy && !done && amount && (
+                            <FeeEstimateRow estimate={feeEst} firstTx={!account?.isDeployed} />
+                        )}
+
                         {busy && <ProvingProgress status={stage} />}
 
                         {done && (
@@ -252,6 +303,9 @@ export function Mint({ onBack }: { onBack: () => void }) {
                                     }}
                                 >
                                     {done.txHash}
+                                </div>
+                                <div style={{ marginTop: 6 }}>
+                                    <ActualFeeRow feeJuice={done.feeJuice} />
                                 </div>
                             </div>
                         )}

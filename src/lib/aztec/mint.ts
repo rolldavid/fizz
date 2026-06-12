@@ -15,7 +15,14 @@ import { Contract } from "@aztec/aztec.js/contracts";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { ensureTokenRegistered } from "./balances";
-import { markFeeConsumed, releaseFee, resolveFeePaymentMethod } from "./fee";
+import {
+    estimateUiFee,
+    feeJuiceFromReceipt,
+    markFeeConsumed,
+    releaseFee,
+    resolveFeePaymentMethod,
+    type UiFeeEstimate,
+} from "./fee";
 import {
     assertPositiveAmount,
     assertSpendableRecipient,
@@ -44,19 +51,21 @@ function txHashOf(sent: { receipt?: { txHash?: { toString(): string } } }): stri
     return hash.toString();
 }
 
-export async function mintToken(params: MintParams): Promise<{ txHash: string }> {
-    assertPositiveAmount(params.amount);
-    assertWithinU128(params.amount);
-    assertSpendableRecipient(params.to);
+async function mintMethod(params: MintParams) {
     const Token = await getTokenContract();
     await ensureTokenRegistered(params.wallet, params.tokenAddress);
     const contract = await Contract.at(params.tokenAddress, Token.artifact, params.wallet as any);
-    const fee = await resolveFeePaymentMethod(params.wallet, params.network, params.minter);
+    return params.mode === "private"
+        ? contract.methods.mint_to_private(params.to, params.amount)
+        : contract.methods.mint_to_public(params.to, params.amount);
+}
 
-    const method =
-        params.mode === "private"
-            ? contract.methods.mint_to_private(params.to, params.amount)
-            : contract.methods.mint_to_public(params.to, params.amount);
+export async function mintToken(params: MintParams): Promise<{ txHash: string; feeJuice?: bigint }> {
+    assertPositiveAmount(params.amount);
+    assertWithinU128(params.amount);
+    assertSpendableRecipient(params.to);
+    const method = await mintMethod(params);
+    const fee = await resolveFeePaymentMethod(params.wallet, params.network, params.minter);
 
     let sent;
     try {
@@ -69,7 +78,12 @@ export async function mintToken(params: MintParams): Promise<{ txHash: string }>
         throw err;
     }
     await markFeeConsumed(fee);
-    return { txHash: txHashOf(sent) };
+    return { txHash: txHashOf(sent), feeJuice: feeJuiceFromReceipt(sent) };
+}
+
+/** Pre-confirm fee estimate for a mint. */
+export async function estimateMintFee(params: MintParams): Promise<UiFeeEstimate> {
+    return estimateUiFee(params.wallet, params.network, params.minter, (await mintMethod(params)) as any);
 }
 
 export type MintAuthority = {

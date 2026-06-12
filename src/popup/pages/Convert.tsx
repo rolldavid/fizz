@@ -12,9 +12,10 @@ import {
     ZERO_BALANCE,
     type TokenBalance,
 } from "../../lib/aztec/balances";
-import { shield, unshield } from "../../lib/aztec/transfer";
-import { assessFeeReadiness } from "../../lib/aztec/fee";
+import { estimateShieldFee, estimateUnshieldFee, shield, unshield } from "../../lib/aztec/transfer";
+import { assessFeeReadiness, type UiFeeEstimate } from "../../lib/aztec/fee";
 import { GasGateCards, ProvingProgress } from "../components/ProvingProgress";
+import { ActualFeeRow, FeeEstimateRow } from "../components/FeeEstimate";
 
 /** Which way the conversion goes — set when the user taps Convert on a token row. */
 export type ConvertTarget = { tokenAddress: string; direction: "shield" | "unshield" };
@@ -37,7 +38,8 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
     const [checking, setChecking] = useState(false);
     const [gasGate, setGasGate] = useState<"incoming" | "none" | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [done, setDone] = useState<{ txHash: string } | null>(null);
+    const [feeEst, setFeeEst] = useState<UiFeeEstimate | null>(null);
+    const [done, setDone] = useState<{ txHash: string; feeJuice?: bigint } | null>(null);
     // Synchronous re-entrancy latch: React state (busy/checking) updates a frame
     // late, so a fast double-click can pass the button's `disabled` check twice
     // and build TWO conversions (a burned fee, and for unshield DOUBLED public
@@ -62,6 +64,51 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
             cancelled = true;
         };
     }, [wallet, account, token, done]);
+
+    // Debounced fee estimate as the user types — shows "≈ X AZTEC" / "Covered"
+    // before they tap convert. Best-effort; resets while a new amount settles.
+    useEffect(() => {
+        if (!wallet || !account || !token || !amount) {
+            setFeeEst(null);
+            return;
+        }
+        let value: bigint;
+        try {
+            value = parseUnits(amount, token.decimals);
+            if (value <= 0n) {
+                setFeeEst(null);
+                return;
+            }
+        } catch {
+            setFeeEst(null);
+            return;
+        }
+        let cancelled = false;
+        setFeeEst(null);
+        const timer = setTimeout(() => {
+            void (async () => {
+                const params = {
+                    wallet,
+                    network,
+                    sender: account.address,
+                    tokenAddress: AztecAddress.fromString(token.address),
+                    amount: value,
+                };
+                try {
+                    const est = makingPrivate
+                        ? await estimateShieldFee(params)
+                        : await estimateUnshieldFee(params);
+                    if (!cancelled) setFeeEst(est);
+                } catch {
+                    if (!cancelled) setFeeEst({ covered: false, feeJuice: null });
+                }
+            })();
+        }, 400);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [wallet, account, token, amount, makingPrivate, network]);
 
     const decimals = token?.decimals ?? 18;
     const symbol = token?.symbol ?? "";
@@ -112,7 +159,7 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
                     const result = makingPrivate
                         ? await shield({ wallet, network, sender, tokenAddress, amount: value })
                         : await unshield({ wallet, network, sender, tokenAddress, amount: value });
-                    setDone({ txHash: result.txHash });
+                    setDone({ txHash: result.txHash, feeJuice: result.feeJuice });
                     setAmount("");
                 });
             } catch (e) {
@@ -150,6 +197,9 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
                         </div>
                         <div className="muted" style={{ marginTop: 4 }}>
                             Your {symbol} balance updates in a moment.
+                        </div>
+                        <div style={{ marginTop: 6, display: "flex", justifyContent: "center" }}>
+                            <ActualFeeRow feeJuice={done.feeJuice} />
                         </div>
                     </div>
                     <button className="btn btn-primary btn-block" onClick={onBack}>
@@ -217,6 +267,10 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
 
                 <GasGateCards gate={gasGate} actionLabel="this conversion" onRecheck={() => void submit()} />
 
+                {!busy && token && amount && (
+                    <FeeEstimateRow estimate={feeEst} firstTx={!account?.isDeployed} />
+                )}
+
                 {busy && <ProvingProgress status={stage} />}
 
                 <button
@@ -226,12 +280,6 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
                 >
                     {busy ? "Converting…" : checking ? "Checking…" : `Make ${toLabel}`}
                 </button>
-                {busy && (
-                    <div className="hint">
-                        Proof generation runs locally in your browser. This can take 10-30s the first
-                        time as the proving keys load.
-                    </div>
-                )}
             </div>
         </>
     );

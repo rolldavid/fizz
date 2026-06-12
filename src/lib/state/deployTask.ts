@@ -47,6 +47,8 @@ export type DeployTask =
           symbol: string;
           address: string;
           txHash: string;
+          /** Total actual fee paid across the deploy's txs (fee-juice base units). */
+          feeJuice?: bigint;
       }
     | {
           phase: "failed";
@@ -155,7 +157,7 @@ export function startTokenDeploy(args: {
             decimals,
         });
         await clearDeployJournal();
-        setTask({ phase: "done", ...base, address: addrStr, txHash: res.txHash });
+        setTask({ phase: "done", ...base, address: addrStr, txHash: res.txHash, feeJuice: res.feeJuice });
     }).catch(async (e) => {
         // The failure is shown in the status bar + Deploy page — the journal
         // would only produce a stale "interrupted" banner next session. Keep

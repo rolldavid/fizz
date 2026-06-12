@@ -8,7 +8,9 @@ import {
     useDeployTask,
 } from "../../lib/state/deployTask";
 import { parseUnits } from "../../lib/aztec/balances";
-import { assessFeeReadiness } from "../../lib/aztec/fee";
+import { assessFeeReadiness, type UiFeeEstimate } from "../../lib/aztec/fee";
+import { estimateDeployTokenFee } from "../../lib/aztec/deploy";
+import { ActualFeeRow, FeeEstimateRow } from "../components/FeeEstimate";
 
 /**
  * Token deployment, fully in-wallet. The deploy itself runs as a background
@@ -32,6 +34,7 @@ export function Deploy({ onBack }: { onBack: () => void }) {
     /** Why deploying is blocked: gas is incoming (wait) or absent (go get it). */
     const [gasGate, setGasGate] = useState<"incoming" | "none" | null>(null);
     const [copied, setCopied] = useState(false);
+    const [feeEst, setFeeEst] = useState<UiFeeEstimate | null>(null);
 
     // Visible elapsed clock while proving — minutes of silent "Deploying…"
     // read as a hang; a ticking timer reads as work.
@@ -46,6 +49,42 @@ export function Deploy({ onBack }: { onBack: () => void }) {
         );
         return () => window.clearInterval(t);
     }, [startedAt]);
+
+    // Debounced fee estimate for the deploy tx as the form is filled. Only the
+    // deploy tx is priced (any initial-supply mint / revoke follow-ups are
+    // separate). Best-effort — invalid inputs simply yield no estimate.
+    useEffect(() => {
+        if (!wallet || !account || !name.trim() || !symbol.trim() || task) {
+            setFeeEst(null);
+            return;
+        }
+        let cancelled = false;
+        setFeeEst(null);
+        const timer = setTimeout(() => {
+            void (async () => {
+                try {
+                    const est = await estimateDeployTokenFee({
+                        wallet,
+                        network,
+                        deployer: account.address,
+                        name: name.trim(),
+                        symbol: symbol.trim().toUpperCase(),
+                        decimals: Number(decimals),
+                        initialSupply: 0n,
+                        initialSupplyMode: supplyMode,
+                        keepMinterRole: keepMinter,
+                    });
+                    if (!cancelled) setFeeEst(est);
+                } catch {
+                    if (!cancelled) setFeeEst({ covered: false, feeJuice: null });
+                }
+            })();
+        }, 500);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [wallet, account, name, symbol, decimals, supplyMode, keepMinter, network, task]);
 
     async function deploy() {
         setError(null);
@@ -189,6 +228,9 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                         <div style={{ fontWeight: 600, fontSize: 18 }}>Token deployed</div>
                         <div className="muted" style={{ marginTop: 4 }}>
                             {task.symbol} is live on {network.name}
+                        </div>
+                        <div style={{ marginTop: 6, display: "flex", justifyContent: "center" }}>
+                            <ActualFeeRow feeJuice={task.feeJuice} />
                         </div>
                     </div>
 
@@ -367,6 +409,10 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                             Get gas ↗
                         </a>
                     </div>
+                )}
+
+                {name.trim() && symbol.trim() && (
+                    <FeeEstimateRow estimate={feeEst} firstTx={!account?.isDeployed} />
                 )}
 
                 <button className="btn btn-primary btn-block" disabled={checking} onClick={() => void deploy()}>

@@ -15,7 +15,14 @@
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
-import { markFeeConsumed, releaseFee, resolveFeePaymentMethod } from "./fee";
+import {
+    estimateUiFee,
+    feeJuiceFromReceipt,
+    markFeeConsumed,
+    releaseFee,
+    resolveFeePaymentMethod,
+    type UiFeeEstimate,
+} from "./fee";
 import { assertWithinU128, getTokenContract } from "./tokenContract";
 
 export type DeployTokenInput = {
@@ -42,25 +49,46 @@ export type DeployTokenInput = {
 export type DeployTokenResult = {
     address: AztecAddress;
     txHash: string;
+    /** Total actual fee across the deploy (+ initial supply / revoke) txs. */
+    feeJuice?: bigint;
 };
+
+function validateDeployInput(input: DeployTokenInput): void {
+    if (input.initialSupply < 0n) throw new Error("Initial supply cannot be negative.");
+    assertWithinU128(input.initialSupply);
+    if (!/^[A-Za-z0-9\-_. ]{1,30}$/.test(input.name)) {
+        throw new Error("Name must be 1-30 ASCII characters.");
+    }
+    if (!/^[A-Z0-9]{1,8}$/.test(input.symbol)) {
+        throw new Error("Symbol must be 1-8 uppercase letters or digits.");
+    }
+    if (!Number.isInteger(input.decimals) || input.decimals < 0 || input.decimals > 18) {
+        throw new Error("Decimals must be an integer between 0 and 18.");
+    }
+}
+
+/** Pre-confirm fee estimate for the token-deploy tx (excludes any optional
+ *  initial-supply mint / revoke follow-up txs). Best-effort. */
+export async function estimateDeployTokenFee(input: DeployTokenInput): Promise<UiFeeEstimate> {
+    validateDeployInput(input);
+    const Token = await getTokenContract();
+    const deployTx = Token.deploy(
+        input.wallet as any,
+        input.deployer,
+        input.name,
+        input.symbol,
+        input.decimals,
+        { deployer: input.deployer },
+    );
+    return estimateUiFee(input.wallet, input.network, input.deployer, deployTx as any);
+}
 
 export async function deployToken(input: DeployTokenInput): Promise<DeployTokenResult> {
     const Token = await getTokenContract();
 
     const { wallet, network, deployer, name, symbol, decimals } = input;
 
-    if (input.initialSupply < 0n) throw new Error("Initial supply cannot be negative.");
-    assertWithinU128(input.initialSupply);
-
-    if (!/^[A-Za-z0-9\-_. ]{1,30}$/.test(name)) {
-        throw new Error("Name must be 1-30 ASCII characters.");
-    }
-    if (!/^[A-Z0-9]{1,8}$/.test(symbol)) {
-        throw new Error("Symbol must be 1-8 uppercase letters or digits.");
-    }
-    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
-        throw new Error("Decimals must be an integer between 0 and 18.");
-    }
+    validateDeployInput(input);
 
     const fee = await resolveFeePaymentMethod(wallet, network, deployer);
 
@@ -101,6 +129,17 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
     if (!address) throw new Error("Deployment did not return a contract address.");
     const txHash: string = sent.receipt.txHash.toString();
 
+    // Accumulate the ACTUAL fee across all of the deploy's txs for the receipt.
+    let totalFee = 0n;
+    let haveFee = false;
+    const addFee = (f?: bigint) => {
+        if (f !== undefined) {
+            totalFee += f;
+            haveFee = true;
+        }
+    };
+    addFee(feeJuiceFromReceipt(sent));
+
     // Optional initial supply — separate tx so the deploy can be cheap and any
     // mint failure does not destroy the deployment.
     if (input.initialSupply > 0n) {
@@ -109,8 +148,9 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
             input.initialSupplyMode === "private"
                 ? contract.methods.mint_to_private(deployer, input.initialSupply)
                 : contract.methods.mint_to_public(deployer, input.initialSupply);
+        let mintSent;
         try {
-            await mintFn.send({
+            mintSent = await mintFn.send({
                 from: deployer,
                 ...(mintFee.method ? { fee: { paymentMethod: mintFee.method } } : {}),
             } as any);
@@ -119,6 +159,7 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
             throw err;
         }
         await markFeeConsumed(mintFee);
+        addFee(feeJuiceFromReceipt(mintSent));
     }
 
     // Revoke deployer's minter role if the user didn't want to keep it.
@@ -126,11 +167,12 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
     if (!input.keepMinterRole) {
         const revFee = await resolveFeePaymentMethod(wallet, network, deployer);
         try {
-            await contract.methods.set_minter(deployer, false).send({
+            const revSent = await contract.methods.set_minter(deployer, false).send({
                 from: deployer,
                 ...(revFee.method ? { fee: { paymentMethod: revFee.method } } : {}),
             } as any);
             await markFeeConsumed(revFee);
+            addFee(feeJuiceFromReceipt(revSent));
         } catch (e) {
             releaseFee(revFee); // claim un-consumed — return it to the pool
             // Don't fail the whole deploy — the token is already live — but never
@@ -143,5 +185,5 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
         }
     }
 
-    return { address, txHash };
+    return { address, txHash, feeJuice: haveFee ? totalFee : undefined };
 }
