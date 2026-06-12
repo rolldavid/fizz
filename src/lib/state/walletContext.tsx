@@ -42,6 +42,7 @@ import { hasActiveOps, trackOp } from "./activity";
 import { drainClaimInbox } from "../aztec/claimInbox";
 import { autoClaimTick } from "../aztec/autoClaim";
 import { describeError } from "../errors";
+import { resetLocalSyncData } from "../aztec/recovery";
 
 type AccountManager = Awaited<ReturnType<AztecWallet["createSchnorrAccount"]>>;
 
@@ -139,6 +140,8 @@ type Ctx = {
 
     lock: () => void;
     destroy: () => Promise<void>;
+    /** Wipe the local PXE sync cache and re-sync from chain (vault/keys untouched). */
+    resetSyncData: () => Promise<void>;
 };
 
 const WalletCtx = createContext<Ctx | null>(null);
@@ -740,6 +743,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setStatus("uninitialized");
     }, [stopCurrentWallet]);
 
+    // Recovery for a stale/damaged local PXE sync store (symptom: "Block header
+    // not found" on send). Stop the PXE so its IndexedDB connection closes, wipe
+    // the sync caches, then hard-reload to re-sync from chain. The vault,
+    // contacts and claim secrets (chrome.storage) and the on-chain funds are
+    // untouched — only the re-derivable sync cache is cleared.
+    const resetSyncData = useCallback(async () => {
+        await stopCurrentWallet();
+        await resetLocalSyncData();
+        globalThis.location?.reload();
+    }, [stopCurrentWallet]);
+
     const value = useMemo<Ctx>(
         () => ({
             status,
@@ -763,6 +777,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             createAccountWithPassphrase,
             lock,
             destroy,
+            resetSyncData,
         }),
         [
             status,
@@ -784,6 +799,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             createAccountWithPassphrase,
             lock,
             destroy,
+            resetSyncData,
         ],
     );
 

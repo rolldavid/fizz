@@ -64,6 +64,7 @@ export function Home({
         renameAccount,
         removeAccount,
         lock,
+        resetSyncData,
         network,
     } = useWallet();
     // STRICT rule: rows are tagged with the address they were fetched FOR, and
@@ -175,7 +176,26 @@ export function Home({
 
     return (
         <>
-            <Header right={<HeaderMenu onNavigate={onNavigate} onLock={lock} />} />
+            <Header
+                right={
+                    <HeaderMenu
+                        onNavigate={onNavigate}
+                        onLock={lock}
+                        onResetSync={() => {
+                            if (
+                                confirm(
+                                    "Reset network sync? This clears the local synced state and re-syncs " +
+                                        "from the chain (can take a few minutes). Your funds, keys, and " +
+                                        "recovery phrase are NOT affected. Use this if sends fail with " +
+                                        "“Block header not found”.",
+                                )
+                            ) {
+                                void resetSyncData();
+                            }
+                        }}
+                    />
+                }
+            />
             <div className="content">
                 {/* Surfaces (and recovers) a deploy interrupted by the popup closing. */}
                 <DeployRecovery onRecovered={refresh} />
@@ -358,7 +378,15 @@ export function Home({
 }
 
 /** Header hamburger → Contacts, Connected sites, Recovery phrase, Lock. */
-function HeaderMenu({ onNavigate, onLock }: { onNavigate: (r: Route) => void; onLock: () => void }) {
+function HeaderMenu({
+    onNavigate,
+    onLock,
+    onResetSync,
+}: {
+    onNavigate: (r: Route) => void;
+    onLock: () => void;
+    onResetSync: () => void;
+}) {
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
 
@@ -409,6 +437,7 @@ function HeaderMenu({ onNavigate, onLock }: { onNavigate: (r: Route) => void; on
                     {item("Contacts", <PeopleIcon size={16} />, () => onNavigate("contacts"))}
                     {item("Connected sites", <LinkIcon size={16} />, () => onNavigate("connections"))}
                     {item("Recovery phrase", <KeyIcon size={16} />, () => onNavigate("reveal"))}
+                    {item("Reset network sync", <ConvertIcon size={16} />, onResetSync)}
                     {item("Lock", <LockIcon size={16} />, onLock)}
                 </div>
             )}

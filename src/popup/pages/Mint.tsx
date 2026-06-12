@@ -10,7 +10,7 @@ import { estimateMintFee, getMintAuthority, mintToken, type MintAuthority } from
 import { assessFeeReadiness, type UiFeeEstimate } from "../../lib/aztec/fee";
 import { GasGateCards, ProvingProgress } from "../components/ProvingProgress";
 import { ActualFeeRow, FeeEstimateRow } from "../components/FeeEstimate";
-import { describeError } from "../../lib/errors";
+import { describeError, humanizeTxError } from "../../lib/errors";
 
 /**
  * Mint screen — create new supply on a token where this account holds the
@@ -120,7 +120,7 @@ export function Mint({ onBack }: { onBack: () => void }) {
                 setAmount("");
             });
         } catch (e) {
-            setError(describeError(e));
+            setError(humanizeTxError(e));
         } finally {
             setBusy(false);
         }

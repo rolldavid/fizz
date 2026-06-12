@@ -27,7 +27,7 @@ import { deployToken } from "../aztec/deploy";
 import { addToken } from "../aztec/tokens";
 import { clearDeployJournal, recordDeployStart } from "./opJournal";
 import { trackOp } from "./activity";
-import { describeError } from "../errors";
+import { humanizeTxError } from "../errors";
 
 export type DeployTask =
     | {
@@ -169,7 +169,7 @@ export function startTokenDeploy(args: {
         setTask({
             phase: "failed",
             ...base,
-            message: describeError(e),
+            message: humanizeTxError(e),
         });
     });
 }

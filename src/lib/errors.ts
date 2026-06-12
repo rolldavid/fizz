@@ -27,3 +27,23 @@ export function describeError(err: unknown): string {
     }
     return String(err);
 }
+
+/**
+ * Map a raw send/tx error to actionable user-facing text. The node rejects a tx
+ * whose anchor block it can't find ("Block header not found" / world-state
+ * not-found / reorg) when the PXE's synced tip is out of step with the node it
+ * broadcasts to — load-balancer/reorg skew (transient: retry) or a stale local
+ * sync store (persistent: reset network sync). Surface that instead of the raw
+ * SDK string. Everything else passes through describeError unchanged.
+ */
+export function humanizeTxError(err: unknown): string {
+    const raw = describeError(err);
+    if (/block header not found|not found when querying world state|reorg/i.test(raw)) {
+        return (
+            "The network moved while preparing your transaction (the node's view is out of step " +
+            "with your wallet's synced state). Wait a few seconds and try again — if it keeps " +
+            "failing, use “Reset network sync” in the menu to re-sync from chain."
+        );
+    }
+    return raw;
+}

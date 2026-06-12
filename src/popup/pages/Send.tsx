@@ -12,7 +12,7 @@ import { assessFeeReadiness, type UiFeeEstimate } from "../../lib/aztec/fee";
 import { FeeEstimateRow, ActualFeeRow } from "../components/FeeEstimate";
 import { listContacts, rememberSentRecipient, type Contact } from "../../lib/aztec/contacts";
 import { GasGateCards, ProvingProgress } from "../components/ProvingProgress";
-import { describeError } from "../../lib/errors";
+import { describeError, humanizeTxError } from "../../lib/errors";
 
 /**
  * Send screen. Recipients come from CONTACTS ONLY — there is deliberately no
@@ -228,7 +228,7 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                 feeJuice: result.feeJuice,
             });
         } catch (e) {
-            setError(describeError(e));
+            setError(humanizeTxError(e));
         } finally {
             setBusy(false);
             sendInFlightRef.current = false;
