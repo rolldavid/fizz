@@ -20,7 +20,7 @@
 import { decodeClaimTicket, validateClaimTicket, type ClaimTicket } from "./claimTicket";
 import { KEYS } from "../storage";
 import { secureGet, secureSet } from "../secureStorage";
-import type { PendingBridge } from "./bridge";
+import { withBridgeLock, type PendingBridge } from "./bridge";
 
 export const CLAIM_INBOX_KEY = "fizz.claimInbox.v1";
 
@@ -49,13 +49,18 @@ export function ticketToPendingBridge(t: ClaimTicket): PendingBridge {
 /** Write a validated ticket straight into the encrypted store. Dedupe by messageHash. */
 async function adoptTickets(tickets: ClaimTicket[]): Promise<number> {
     if (tickets.length === 0) return 0;
-    const existing = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    const known = new Set(existing.map((b) => b.messageHash).filter(Boolean));
-    const fresh = tickets.filter((t) => !known.has(t.messageHash));
-    if (fresh.length > 0) {
-        await secureSet(KEYS.pendingBridges, [...fresh.map(ticketToPendingBridge), ...existing]);
-    }
-    return fresh.length;
+    // Serialize through the SAME lock the bridge mutators use, so this
+    // read-modify-write on pendingBridges can't lose a concurrent
+    // markBridgeConsumed/upsert that lands between our read and write.
+    return withBridgeLock(async () => {
+        const existing = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
+        const known = new Set(existing.map((b) => b.messageHash).filter(Boolean));
+        const fresh = tickets.filter((t) => !known.has(t.messageHash));
+        if (fresh.length > 0) {
+            await secureSet(KEYS.pendingBridges, [...fresh.map(ticketToPendingBridge), ...existing]);
+        }
+        return fresh.length;
+    });
 }
 
 /**

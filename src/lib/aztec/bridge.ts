@@ -126,7 +126,7 @@ export function isClaimable(b: PendingBridge): boolean {
  * realm already set. On-chain nullifiers remain the ultimate double-spend gate.
  */
 let bridgeWriteChain: Promise<unknown> = Promise.resolve();
-function withBridgeLock<T>(fn: () => Promise<T>): Promise<T> {
+export function withBridgeLock<T>(fn: () => Promise<T>): Promise<T> {
     const run = bridgeWriteChain.then(fn, fn);
     bridgeWriteChain = run.then(
         () => undefined,

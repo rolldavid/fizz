@@ -43,13 +43,20 @@ export async function fetchNodeInfo(
     // connection but never replies would otherwise pin the bridge UI on
     // "Reaching the Aztec node…" forever (browsers impose no short body
     // timeout). A clean timeout→throw routes into the page's error+Retry path.
+    // AbortSignal.timeout is subtle 2022+; the web bridge runs in arbitrary
+    // browsers (unlike the Chromium-only extension), so feature-check it and
+    // simply skip the timeout where unsupported rather than throwing a TypeError.
+    const timeoutSignal =
+        typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+            ? AbortSignal.timeout(15_000)
+            : undefined;
     let res: Response;
     try {
         res = await fetch(nodeUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "node_getNodeInfo", params: [] }),
-            signal: AbortSignal.timeout(15_000),
+            signal: timeoutSignal,
         });
     } catch (err) {
         if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {

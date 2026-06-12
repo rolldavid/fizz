@@ -132,12 +132,22 @@ export async function resolveFeePaymentMethod(
     const claims = await listReadyClaims(wallet, network.id, sender);
     for (const claim of claims) {
         if (!lockClaimForSpend(claim.id)) continue;
-        const method = new FeeJuicePaymentMethodWithClaim(sender, {
-            claimAmount: BigInt(claim.claimAmount),
-            claimSecret: Fr.fromHexString(claim.claimSecret),
-            // listReadyClaims only returns claimable entries (field guaranteed).
-            messageLeafIndex: BigInt(claim.messageLeafIndex!),
-        });
+        let method: FeePaymentMethod;
+        try {
+            method = new FeeJuicePaymentMethodWithClaim(sender, {
+                claimAmount: BigInt(claim.claimAmount),
+                claimSecret: Fr.fromHexString(claim.claimSecret),
+                // listReadyClaims only returns claimable entries (field guaranteed).
+                messageLeafIndex: BigInt(claim.messageLeafIndex!),
+            });
+        } catch (err) {
+            // A malformed claim slipped through (shouldn't — listReadyClaims gates
+            // on-chain): release the lock we just took so it isn't stranded, and
+            // try the next ready claim rather than wedging fee resolution.
+            releaseClaimSpendLock(claim.id);
+            console.error(`Skipping unbuildable claim ${claim.id}:`, err);
+            continue;
+        }
         return { method, label: "claim", consumesBridgeId: claim.id };
     }
 

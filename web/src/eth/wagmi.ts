@@ -38,7 +38,12 @@ export const config = createConfig({
     multiInjectedProviderDiscovery: true,
 });
 
-/** rdns (EIP-6963) → display name for the only wallets we offer. */
+/**
+ * rdns (EIP-6963) → display name for the only wallets we offer. Variant builds
+ * (MetaMask Flask "io.metamask.flask", MMI "io.metamask.mmi") are intentionally
+ * NOT trusted — add their exact rdns here if that support is ever wanted; do not
+ * widen back to a name substring match (that was the impersonation hole).
+ */
 const ALLOWED: Record<string, string> = {
     "io.metamask": "MetaMask",
     "io.rabby": "Rabby",

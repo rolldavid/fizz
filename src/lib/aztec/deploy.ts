@@ -80,13 +80,15 @@ export async function deployToken(input: DeployTokenInput): Promise<DeployTokenR
         ...(fee.method ? { fee: { paymentMethod: fee.method } } : {}),
     } as any;
 
-    const instance = await deployTx.getInstance();
-    await input.onPredictedAddress?.(instance.address.toString());
-
     // The default send() waits for mining and resolves to
-    // { contract, receipt: { txHash, ... } } (DeployResultMined).
+    // { contract, receipt: { txHash, ... } } (DeployResultMined). getInstance()
+    // and the onPredictedAddress journal write are inside the try too, so the
+    // fee-claim spend lock taken above is released on ANY failure before mining,
+    // not only a send() throw.
     let sent;
     try {
+        const instance = await deployTx.getInstance();
+        await input.onPredictedAddress?.(instance.address.toString());
         sent = await deployTx.send(sendOptions);
     } catch (err) {
         releaseFee(fee); // claim un-consumed — return it to the pool

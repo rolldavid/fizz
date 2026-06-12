@@ -16,6 +16,7 @@ import { readFieldCompressedString } from "@aztec/aztec.js/utils";
 import type { AztecWallet } from "./wallet";
 import type { TokenEntry } from "./tokens";
 import { FEE_JUICE_ENTRY } from "./tokens";
+import { getTokenContract } from "./tokenContract";
 
 /**
  * Token name/symbol come straight from an attacker-controlled contract. Strip
@@ -32,7 +33,6 @@ export function sanitizeTokenText(raw: string, maxLen: number): string {
         .slice(0, maxLen)
         .trim(); // re-trim: the length cap can sever a word and leave a trailing space
 }
-import { getTokenContract } from "./tokenContract";
 
 export type TokenBalance = {
     public: bigint;

@@ -119,6 +119,10 @@ export async function deriveKeyFromPassphrase(
     passphrase: string,
     salt: Uint8Array,
     params: Argon2Params = ARGON2_DEFAULTS,
+    // `false` derives from the RAW (un-normalized) bytes — used ONLY as the
+    // unlock fallback for a vault created before NFKC normalization existed.
+    // New vaults and the normal unlock path always normalize.
+    normalize = true,
 ): Promise<CryptoKey> {
     // argon2idAsync yields to the event loop (asyncTick) so the popup spinner
     // keeps animating during the ~1.5s derivation instead of freezing.
@@ -129,9 +133,9 @@ export async function deriveKeyFromPassphrase(
     // without this, Argon2id keys on those raw bytes and a visually-identical
     // passphrase fails AES-GCM and permanently locks the vault. This is the
     // single choke point for BOTH create and unlock, so the two can never
-    // disagree. Must stay fixed for the life of a vault — changing the form
-    // would brick every existing passphrase-derived vault.
-    const pw = new TextEncoder().encode(passphrase.normalize("NFKC"));
+    // disagree. (`normalize=false` reproduces the pre-normalization raw-byte key
+    // for the legacy unlock fallback only — see store.ts.)
+    const pw = new TextEncoder().encode(normalize ? passphrase.normalize("NFKC") : passphrase);
     let raw: Uint8Array;
     try {
         raw = await argon2idAsync(pw, salt, {

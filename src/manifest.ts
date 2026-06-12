@@ -99,9 +99,10 @@ const buildManifest = (env: ConfigEnv): any => {
         permissions: ["storage"],
         externally_connectable: { matches: externallyConnectableMatches },
         // Host patterns ignore ports — localhost covers the sandbox node (8080)
-        // + anvil (8545); *.aztec-labs.com covers testnet/devnet; the CRS CDN
-        // serves proving params; the publicnode hosts are the read-only L1
-        // RPCs the bridge uses to verify deposit receipts (see connectSrc).
+        // + anvil (8545); lb.drpc.live is the mainnet Aztec node AND the read-only
+        // L1 RPCs the bridge uses to verify deposit receipts; rpc.testnet and
+        // v4-devnet-2.aztec-labs.com are the testnet/devnet nodes (pinned, not a
+        // wildcard); crs.aztec-cdn.foundation serves proving params (see connectSrc).
         // localhost is DEV-ONLY: prod drops it to mirror the connect-src /
         // externally_connectable gates, minimize the install-time permission
         // footprint, and avoid a Web Store review flag.

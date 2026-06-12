@@ -53,6 +53,18 @@ describe("vault: passphrase Unicode normalization", () => {
         const blob = await encrypt(k1, new TextEncoder().encode("x"));
         await expect(decrypt(k2, blob)).rejects.toThrow();
     });
+
+    it("normalize=false reproduces the raw-byte key (legacy unlock fallback)", async () => {
+        // A vault created BEFORE normalization with a NON-ASCII (decomposed)
+        // passphrase keyed on the raw bytes. The normalized key must NOT open it,
+        // but the raw-byte fallback MUST — so the change can't brick old vaults.
+        const normalized = await deriveKeyFromPassphrase(NFD, SALT, FAST, true);
+        const raw = await deriveKeyFromPassphrase(NFD, SALT, FAST, false);
+        const legacyBlob = await encrypt(raw, new TextEncoder().encode("legacy vault secret"));
+        await expect(decrypt(normalized, legacyBlob)).rejects.toThrow(); // NFKC key can't open it
+        const out = await decrypt(raw, legacyBlob); // raw fallback opens it
+        expect(Buffer.from(out).toString()).toBe("legacy vault secret");
+    });
 });
 
 describe("vault: AES-GCM IV uniqueness", () => {

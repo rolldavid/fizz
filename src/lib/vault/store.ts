@@ -300,7 +300,23 @@ class VaultStore {
             );
             pt = await decrypt(key, this.envelope.blob, vaultAAD(this.envelope));
         } catch (err) {
-            throw decryptFailure(err);
+            // Legacy fallback: a vault created BEFORE NFKC normalization keyed on
+            // the RAW passphrase bytes. For an ASCII passphrase NFKC is identity,
+            // so this never runs; for a pre-existing NON-ASCII passphrase, retry
+            // with raw bytes so introducing normalization can't brick an existing
+            // vault. (Only this failure path pays the second Argon2 derivation.)
+            try {
+                const salt = b64.decode(this.envelope.salt);
+                const rawKey = await deriveKeyFromPassphrase(
+                    passphrase,
+                    salt,
+                    this.envelope.kdf ?? ARGON2_DEFAULTS,
+                    false,
+                );
+                pt = await decrypt(rawKey, this.envelope.blob, vaultAAD(this.envelope));
+            } catch {
+                throw decryptFailure(err);
+            }
         }
         const mnemonic = new TextDecoder().decode(pt);
         pt.fill(0); // wipe the decrypted plaintext bytes

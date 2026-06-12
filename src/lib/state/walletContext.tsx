@@ -371,44 +371,49 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 }
 
                 const fee = await resolveFeePaymentMethod(w, net, manager.address);
-                if (!fee.method) {
-                    // No claim and no sponsor — but the account may already
-                    // HOLD fee juice (e.g. a prior deploy reverted after its
-                    // claim-paid setup landed the balance). method: undefined
-                    // means exactly "pay from balance", so only a truly empty
-                    // account is an error.
-                    const balance = await getTokenBalance(w, manager.address, FEE_JUICE_ENTRY);
-                    if (balance.public === 0n) {
-                        const guidance =
-                            net.id === "sandbox"
-                                ? "Bridge fee juice from the local L1 (Need fee juice?), then try again."
-                                : net.id === "alpha"
-                                  ? "Aztec mainnet has no sponsored fees — bridge AZTEC → fee juice on " +
-                                    "fizzwallet.com/bridge first (tap “Need fee juice?”), then try again."
-                                  : "Use the testnet faucet or bridge fee juice (Need fee juice?), then try again.";
-                        throw new Error(
-                            net.hasSponsoredFPC
-                                ? "Couldn't resolve a fee payment method to activate the account."
-                                : `Your account needs fee juice before its first transaction. ${guidance}`,
-                        );
-                    }
-                }
-                // Re-check liveness immediately before the multi-minute
-                // proving+broadcast: a second extension document (detached
-                // window + toolbar popup) could also have passed the earlier
-                // not-deployed check and already deployed. This shrinks the
-                // cross-context TOCTOU window where both would prove and
-                // broadcast a duplicate (only one lands — the init nullifier is
-                // single-use — but the loser wastes minutes of proving).
-                if (await isInitialized(w, manager.address)) {
-                    releaseFee(fee); // don't strand the claim we locked
-                    const landed = await loadPendingDeploy(net.id, addr);
-                    if (landed?.bridgeId) await markBridgeConsumed(landed.bridgeId);
-                    if (landed) await clearPendingDeploy(landed.network, landed.address);
-                    setAccount((prev) => (prev ? { ...prev, isDeployed: true } : prev));
-                    return;
-                }
+                // Single try from here so the fee-claim spend lock taken above is
+                // released on ANY failure before it's consumed — the balance check,
+                // the liveness re-check, or the deploy itself — not just a
+                // deployAccountContract throw. releaseFee/markFeeConsumed are
+                // idempotent, so the early-return release below is safe too.
                 try {
+                    if (!fee.method) {
+                        // No claim and no sponsor — but the account may already
+                        // HOLD fee juice (e.g. a prior deploy reverted after its
+                        // claim-paid setup landed the balance). method: undefined
+                        // means exactly "pay from balance", so only a truly empty
+                        // account is an error.
+                        const balance = await getTokenBalance(w, manager.address, FEE_JUICE_ENTRY);
+                        if (balance.public === 0n) {
+                            const guidance =
+                                net.id === "sandbox"
+                                    ? "Bridge fee juice from the local L1 (Need fee juice?), then try again."
+                                    : net.id === "alpha"
+                                      ? "Aztec mainnet has no sponsored fees — bridge AZTEC → fee juice on " +
+                                        "fizzwallet.com/bridge first (tap “Need fee juice?”), then try again."
+                                      : "Use the testnet faucet or bridge fee juice (Need fee juice?), then try again.";
+                            throw new Error(
+                                net.hasSponsoredFPC
+                                    ? "Couldn't resolve a fee payment method to activate the account."
+                                    : `Your account needs fee juice before its first transaction. ${guidance}`,
+                            );
+                        }
+                    }
+                    // Re-check liveness immediately before the multi-minute
+                    // proving+broadcast: a second extension document (detached
+                    // window + toolbar popup) could also have passed the earlier
+                    // not-deployed check and already deployed. This shrinks the
+                    // cross-context TOCTOU window where both would prove and
+                    // broadcast a duplicate (only one lands — the init nullifier is
+                    // single-use — but the loser wastes minutes of proving).
+                    if (await isInitialized(w, manager.address)) {
+                        releaseFee(fee); // don't strand the claim we locked
+                        const landed = await loadPendingDeploy(net.id, addr);
+                        if (landed?.bridgeId) await markBridgeConsumed(landed.bridgeId);
+                        if (landed) await clearPendingDeploy(landed.network, landed.address);
+                        setAccount((prev) => (prev ? { ...prev, isDeployed: true } : prev));
+                        return;
+                    }
                     await deployAccountContract({
                         wallet: w,
                         manager,
@@ -425,7 +430,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                             }),
                     });
                 } catch (err) {
-                    releaseFee(fee); // claim un-consumed — return it to the pool
+                    releaseFee(fee); // any failure before consume — return the claim to the pool
                     throw err;
                 }
                 await markFeeConsumed(fee);
