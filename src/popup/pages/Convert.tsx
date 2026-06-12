@@ -16,6 +16,7 @@ import { estimateShieldFee, estimateUnshieldFee, shield, unshield } from "../../
 import { assessFeeReadiness, type UiFeeEstimate } from "../../lib/aztec/fee";
 import { GasGateCards, ProvingProgress } from "../components/ProvingProgress";
 import { ActualFeeRow, FeeEstimateRow } from "../components/FeeEstimate";
+import { describeError } from "../../lib/errors";
 
 /** Which way the conversion goes — set when the user taps Convert on a token row. */
 export type ConvertTarget = { tokenAddress: string; direction: "shield" | "unshield" };
@@ -145,7 +146,7 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
                     return;
                 }
             } catch (e) {
-                return setError(e instanceof Error ? e.message : String(e));
+                return setError(describeError(e));
             } finally {
                 setChecking(false);
             }
@@ -173,7 +174,7 @@ export function Convert({ target, onBack }: { target: ConvertTarget; onBack: () 
                     setAmount("");
                 });
             } catch (e) {
-                setError(e instanceof Error ? e.message : String(e));
+                setError(describeError(e));
             } finally {
                 setBusy(false);
             }

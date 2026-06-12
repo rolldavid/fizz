@@ -41,6 +41,7 @@ import { secureGet, secureSet, setMetaKeyProvider } from "../secureStorage";
 import { hasActiveOps, trackOp } from "./activity";
 import { drainClaimInbox } from "../aztec/claimInbox";
 import { autoClaimTick } from "../aztec/autoClaim";
+import { describeError } from "../errors";
 
 type AccountManager = Awaited<ReturnType<AztecWallet["createSchnorrAccount"]>>;
 
@@ -300,7 +301,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 console.warn("Known-sender sync failed:", err),
             );
         } catch (err) {
-            setBootError(err instanceof Error ? err.message : String(err));
+            setBootError(describeError(err));
             // Stay in "loading" so the LoadingScreen renders the error/retry UI.
         }
     }, [stopCurrentWallet]);

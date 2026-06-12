@@ -9,6 +9,7 @@ import {
     removeContact,
     type Contact,
 } from "../../lib/aztec/contacts";
+import { describeError } from "../../lib/errors";
 
 export function Contacts({ onBack, openAdd = false }: { onBack: () => void; openAdd?: boolean }) {
     const { wallet, network, account, accounts } = useWallet();
@@ -160,7 +161,7 @@ function AddContactDialog({
             await onAdd(label, address);
             onClose();
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(describeError(e));
         } finally {
             setBusy(false);
         }

@@ -3,6 +3,7 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { useWallet } from "../../lib/state/walletContext";
 import { clearDeployJournal, readDeployJournal, type DeployJournal } from "../../lib/state/opJournal";
 import { addToken } from "../../lib/aztec/tokens";
+import { describeError } from "../../lib/errors";
 
 /**
  * Shown on Home when a previous session left a deploy journal behind — i.e.
@@ -47,7 +48,7 @@ export function DeployRecovery({ onRecovered }: { onRecovered: () => void }) {
                     onRecovered();
                 }
             } catch (e) {
-                setProbeError(e instanceof Error ? e.message : String(e));
+                setProbeError(describeError(e));
             } finally {
                 setChecking(false);
             }

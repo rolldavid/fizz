@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useWallet } from "../../lib/state/walletContext";
 import { vaultStore } from "../../lib/vault/store";
+import { describeError } from "../../lib/errors";
 
 export function Unlock() {
     const { unlockWithPasskey, unlockWithPassphrase, destroy } = useWallet();
@@ -15,7 +16,7 @@ export function Unlock() {
         try {
             await fn();
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(describeError(e));
         } finally {
             setBusy(false);
         }

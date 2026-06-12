@@ -28,6 +28,7 @@ import { formatUnits } from "../../lib/aztec/balances";
 import { vaultStore } from "../../lib/vault/store";
 import { deriveBridgeClaimSecret } from "../../lib/aztec/wallet";
 import { bumpClaimIndex, nextClaimIndex, recoverBridgedClaims } from "../../lib/aztec/claimRecovery";
+import { describeError } from "../../lib/errors";
 
 type PrepPhase = "confirm" | "awaiting" | "completing" | "done";
 
@@ -90,7 +91,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
             );
             await refresh();
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(describeError(e));
         } finally {
             setRescanning(false);
         }
@@ -118,14 +119,14 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                 if (portal) await recoverInFlightBridges(network.id, network.l1RpcUrl, portal);
             }
         } catch (e) {
-            setRefreshError(e instanceof Error ? e.message : String(e));
+            setRefreshError(describeError(e));
         }
         // List even when recovery failed: the in-flight cards must stay visible
         // next to the error, not vanish behind it.
         try {
             setPending(await listPendingBridges(network.id));
         } catch (e) {
-            setRefreshError(e instanceof Error ? e.message : String(e));
+            setRefreshError(describeError(e));
         }
     }, [network, wallet]);
 
@@ -164,7 +165,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                 if (sent) await clearBridgeDeposit();
                 await refresh(); // recoverInFlightBridges completes the "sent" record
             } catch (e) {
-                setRefreshError(e instanceof Error ? e.message : String(e));
+                setRefreshError(describeError(e));
             }
         })();
         // Mount-only recovery; refresh/network are stable for this purpose.
@@ -207,7 +208,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                 setDone(true);
                 await refresh();
             })
-            .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+            .catch((e) => setError(describeError(e)))
             .finally(() => setBusy(false));
     }
 
@@ -240,7 +241,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
             setPrepPhase("awaiting");
             startDepositPoll(secretHash);
         } catch (e) {
-            setPrepError(e instanceof Error ? e.message : String(e));
+            setPrepError(describeError(e));
         } finally {
             prepBusyRef.current = false;
             setPrepBusy(false);
@@ -287,7 +288,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                     // Keep the deposit slot so the next open recovers it; surface
                     // and return to awaiting (no tight retry loop).
                     setPrepError(
-                        (e instanceof Error ? e.message : String(e)) +
+                        (describeError(e)) +
                             ". Reopen Fizz to finish if you completed the deposit.",
                     );
                     setPrepPhase("awaiting");

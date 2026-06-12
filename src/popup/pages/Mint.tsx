@@ -10,6 +10,7 @@ import { estimateMintFee, getMintAuthority, mintToken, type MintAuthority } from
 import { assessFeeReadiness, type UiFeeEstimate } from "../../lib/aztec/fee";
 import { GasGateCards, ProvingProgress } from "../components/ProvingProgress";
 import { ActualFeeRow, FeeEstimateRow } from "../components/FeeEstimate";
+import { describeError } from "../../lib/errors";
 
 /**
  * Mint screen — create new supply on a token where this account holds the
@@ -62,7 +63,7 @@ export function Mint({ onBack }: { onBack: () => void }) {
             );
             setAuthority(auth);
         } catch (e) {
-            setAuthError(e instanceof Error ? e.message : String(e));
+            setAuthError(describeError(e));
         } finally {
             setCheckingAuth(false);
         }
@@ -90,7 +91,7 @@ export function Mint({ onBack }: { onBack: () => void }) {
                 return;
             }
         } catch (e) {
-            return setError(e instanceof Error ? e.message : String(e));
+            return setError(describeError(e));
         } finally {
             setChecking(false);
         }
@@ -119,7 +120,7 @@ export function Mint({ onBack }: { onBack: () => void }) {
                 setAmount("");
             });
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(describeError(e));
         } finally {
             setBusy(false);
         }

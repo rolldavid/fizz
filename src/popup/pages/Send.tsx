@@ -12,6 +12,7 @@ import { assessFeeReadiness, type UiFeeEstimate } from "../../lib/aztec/fee";
 import { FeeEstimateRow, ActualFeeRow } from "../components/FeeEstimate";
 import { listContacts, rememberSentRecipient, type Contact } from "../../lib/aztec/contacts";
 import { GasGateCards, ProvingProgress } from "../components/ProvingProgress";
+import { describeError } from "../../lib/errors";
 
 /**
  * Send screen. Recipients come from CONTACTS ONLY — there is deliberately no
@@ -144,7 +145,7 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
             value = parseUnits(amount, token.decimals);
             if (value <= 0n) throw new Error("Amount must be greater than zero.");
         } catch (e) {
-            return setError(e instanceof Error ? e.message : String(e));
+            return setError(describeError(e));
         }
         // Gas gate BEFORE building anything: a send with no fee source dies
         // deep in the SDK with an unhelpful schema error. If a bridge claim is
@@ -172,7 +173,7 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
             }
             setConfirming(true);
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(describeError(e));
         } finally {
             setChecking(false);
         }
@@ -227,7 +228,7 @@ export function Send({ onBack, onAddContact }: { onBack: () => void; onAddContac
                 feeJuice: result.feeJuice,
             });
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(describeError(e));
         } finally {
             setBusy(false);
             sendInFlightRef.current = false;

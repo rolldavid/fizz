@@ -11,6 +11,7 @@ import { parseUnits } from "../../lib/aztec/balances";
 import { assessFeeReadiness, type UiFeeEstimate } from "../../lib/aztec/fee";
 import { estimateDeployTokenFee } from "../../lib/aztec/deploy";
 import { ActualFeeRow, FeeEstimateRow } from "../components/FeeEstimate";
+import { describeError } from "../../lib/errors";
 
 /**
  * Token deployment, fully in-wallet. The deploy itself runs as a background
@@ -107,7 +108,7 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                 return;
             }
         } catch (e) {
-            return setError(e instanceof Error ? e.message : String(e));
+            return setError(describeError(e));
         } finally {
             setChecking(false);
         }
@@ -128,7 +129,7 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                 keepMinterRole: keepMinter,
             });
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(describeError(e));
         }
     }
 

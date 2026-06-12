@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { vaultStore, type RevealedSecret } from "../../lib/vault/store";
 import { exportAccountSecretHex } from "../../lib/aztec/wallet";
 import { ArrowLeftIcon, CheckIcon, CopyIcon } from "../components/icons";
+import { describeError } from "../../lib/errors";
 
 type Revealed = { words: string[]; secretHex: string };
 
@@ -45,7 +46,7 @@ export function RevealPhrase({ onBack }: { onBack: () => void }) {
             const secretHex = await exportAccountSecretHex(secret.seed, 0);
             setRevealed({ words: secret.mnemonic.split(/\s+/), secretHex });
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(describeError(e));
         } finally {
             setBusy(false);
         }

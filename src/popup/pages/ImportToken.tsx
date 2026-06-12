@@ -5,6 +5,7 @@ import { ArrowLeftIcon } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
 import { addToken } from "../../lib/aztec/tokens";
 import { fetchTokenMetadata, type TokenMetadata } from "../../lib/aztec/balances";
+import { describeError } from "../../lib/errors";
 
 /**
  * Import a token by contract address. Name, symbol and decimals are read from
@@ -37,7 +38,7 @@ export function ImportToken({ onBack }: { onBack: () => void }) {
         setBusy(true);
         fetchTokenMetadata(wallet, AztecAddress.fromString(canonical), account.address)
             .then((m) => !cancelled && setMeta(m))
-            .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)))
+            .catch((e) => !cancelled && setError(describeError(e)))
             .finally(() => !cancelled && setBusy(false));
         return () => {
             cancelled = true;
@@ -57,7 +58,7 @@ export function ImportToken({ onBack }: { onBack: () => void }) {
             });
             setAdded(true);
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(describeError(e));
         }
     }
 

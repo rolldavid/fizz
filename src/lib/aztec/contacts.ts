@@ -24,6 +24,7 @@
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { KEYS } from "../storage";
 import { secureGet, secureSet } from "../secureStorage";
+import { describeError } from "../errors";
 import type { AztecNetwork } from "./networks";
 import type { AztecWallet } from "./wallet";
 
@@ -162,7 +163,7 @@ export async function addContact(
         } catch (err) {
             // Surface but don't roll back: the contact is saved locally; PXE
             // registration will retry on next boot via syncContactsToPxe.
-            console.warn("registerSender failed for", redact(canon), err);
+            console.warn("registerSender failed for", redact(canon), describeError(err));
         }
     }
     return contact;
@@ -207,7 +208,7 @@ export async function removeContact(
             } catch (err) {
                 // Local copy is already gone; PXE will simply keep syncing this tag
                 // stream until next wipe. Log, don't fail the removal.
-                console.warn("removeSender failed for", redact(canon), err);
+                console.warn("removeSender failed for", redact(canon), describeError(err));
             }
         }
     }
@@ -248,7 +249,7 @@ export async function syncContactsToPxe(
             try {
                 await wallet.registerSender(AztecAddress.fromString(c.address), c.label);
             } catch (err) {
-                console.warn("registerSender failed during sync for", redact(c.address), err);
+                console.warn("registerSender failed during sync for", redact(c.address), describeError(err));
             }
         }
     }
@@ -321,7 +322,7 @@ export async function rememberSentRecipient(
             // discovery primitive without an address-book entry.
             await (wallet as any).pxe.registerSender(AztecAddress.fromString(canon));
         } catch (err) {
-            console.warn("registerSender (sent recipient) failed for", redact(canon), err);
+            console.warn("registerSender (sent recipient) failed for", redact(canon), describeError(err));
         }
     }
 }
@@ -344,7 +345,7 @@ export async function syncKnownSendersToPxe(
             try {
                 await (wallet as any).pxe.registerSender(AztecAddress.fromString(addr));
             } catch (err) {
-                console.warn("registerSender (known-sender sync) failed for", redact(addr), err);
+                console.warn("registerSender (known-sender sync) failed for", redact(addr), describeError(err));
             }
         }
     }

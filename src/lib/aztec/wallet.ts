@@ -30,6 +30,7 @@ import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { Fr } from "@aztec/foundation/curves/bn254";
 import { Buffer } from "buffer";
 import type { AztecNetwork } from "./networks";
+import { describeError } from "../errors";
 
 export type AztecWallet = Awaited<ReturnType<typeof EmbeddedWallet.create>>;
 
@@ -142,7 +143,7 @@ async function checkNodeReachable(nodeUrl: string, timeoutMs = 6000): Promise<vo
             );
         }
         throw new Error(
-            `Cannot reach Aztec node at ${nodeUrl}: ${err instanceof Error ? err.message : String(err)}`,
+            `Cannot reach Aztec node at ${nodeUrl}: ${describeError(err)}`,
         );
     } finally {
         clearTimeout(timer);

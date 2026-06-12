@@ -22,6 +22,7 @@ import {
     saveBridgeDeposit,
     savePrepare,
 } from "../lib/state/bridgeHandoff";
+import { describeError } from "../lib/errors";
 
 /** Minimum gap between wallet windows — anti-spam for connect / bridge. */
 const LAUNCH_WINDOW_COOLDOWN_MS = 8000;
@@ -198,7 +199,7 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
                     throw new Error("Unknown message.");
             }
         } catch (err) {
-            sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) });
+            sendResponse({ ok: false, error: describeError(err) });
         }
     })();
     return true; // keep the message channel open for the async response

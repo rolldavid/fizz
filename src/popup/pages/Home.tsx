@@ -25,6 +25,7 @@ import { FEE_JUICE_ENTRY, loadTokens, removeToken, type TokenEntry } from "../..
 import { isSponsoredFPCAvailable } from "../../lib/aztec/fee";
 import { onFeeJuiceLanded } from "../../lib/aztec/autoClaim";
 import { listPendingBridges, markGasNoticeShown } from "../../lib/aztec/bridge";
+import { describeError } from "../../lib/errors";
 
 type Route =
     | "home"
@@ -136,7 +137,7 @@ export function Home({
                     const balance = await getTokenBalance(wallet, account.address, token);
                     apply((rows) => rows.map((r, j) => (j === i ? { token, balance, loading: false } : r)));
                 } catch (err) {
-                    const error = err instanceof Error ? err.message : String(err);
+                    const error = describeError(err);
                     apply((rows) =>
                         rows.map((r, j) =>
                             j === i ? { token, balance: ZERO_BALANCE, loading: false, error } : r,
@@ -446,7 +447,7 @@ function AccountSwitcher({
         try {
             await fn();
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(describeError(e));
         } finally {
             setBusy(false);
         }

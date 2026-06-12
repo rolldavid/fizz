@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useWallet } from "../../lib/state/walletContext";
 import { isValidMnemonic, newMnemonic } from "../../lib/vault/mnemonic";
 import { passwordStrength, type PassStrength } from "../../lib/vault/passwordStrength";
+import { describeError } from "../../lib/errors";
 
 /**
  * Onboarding.
@@ -57,7 +58,7 @@ export function Onboarding() {
                 await createAccountWithPassphrase(mnemonic.trim(), pass);
             }
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(describeError(e));
         } finally {
             setBusy(false);
         }
@@ -79,7 +80,7 @@ export function Onboarding() {
                 await createAccountWithPassphrase(phrase, pass);
             }
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(describeError(e));
         } finally {
             setBusy(false);
         }

@@ -31,6 +31,7 @@ import {
 } from "./bridge";
 import { getTokenBalance } from "./balances";
 import { FEE_JUICE_ENTRY } from "./tokens";
+import { describeError } from "../errors";
 
 let sponsoredAddressPromise: Promise<AztecAddress> | null = null;
 export async function getSponsoredFPCAddress(): Promise<AztecAddress> {
@@ -64,7 +65,7 @@ async function ensureSponsoredFPCRegistered(wallet: AztecWallet): Promise<AztecA
         // change) must NOT be swallowed — otherwise we hand back a payment
         // method the PXE can't prove against and the tx fails deeper in the SDK
         // with a far less actionable error (and the no-swallow rule is broken).
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = describeError(err);
         if (!/already\s+(registered|exists)/i.test(msg)) {
             console.error("SponsoredFPC registration failed:", err);
             throw err;
@@ -212,21 +213,6 @@ function gasTimesFees(gas: GasAmount, fees: GasPrices): bigint {
 }
 
 /**
- * Stringify an error usefully. A DOMException (the PXE/IndexedDB layer throws
- * these) renders as the useless "[object DOMException]" when interpolated, which
- * hides the real cause — surface its name + message instead.
- */
-function describeErr(err: unknown): string {
-    if (err instanceof DOMException) return `${err.name}: ${err.message}`;
-    if (err instanceof Error) return `${err.name}: ${err.message}`;
-    try {
-        return String(err);
-    } catch {
-        return "unknown error";
-    }
-}
-
-/**
  * Who actually pays this sender's next tx — WITHOUT taking the claim spend lock
  * (an estimate must never reserve a claim the real send will consume). Mirrors
  * resolveFeePaymentMethod's preference order: a ready bridge claim is spent
@@ -264,7 +250,7 @@ export async function estimateInteractionFee(
             fee: { estimateGas: true },
         })) as typeof sim;
     } catch (err) {
-        console.warn("Fee estimate unavailable (simulation failed):", describeErr(err));
+        console.warn("Fee estimate unavailable (simulation failed):", describeError(err));
         return null;
     }
     const est = sim?.estimatedGas;
@@ -273,7 +259,7 @@ export async function estimateInteractionFee(
     try {
         fees = (await (wallet as any).aztecNode.getCurrentMinFees()) as GasPrices;
     } catch (err) {
-        console.warn("Fee estimate unavailable (no base fees):", describeErr(err));
+        console.warn("Fee estimate unavailable (no base fees):", describeError(err));
         return null;
     }
     return gasTimesFees(est.gasLimits, fees) + gasTimesFees(est.teardownGasLimits, fees);
@@ -304,7 +290,7 @@ export async function estimateUiFee(
     try {
         covered = await peekFeeCovered(wallet, network, sender);
     } catch (err) {
-        console.warn("Fee estimate: coverage check unavailable:", describeErr(err));
+        console.warn("Fee estimate: coverage check unavailable:", describeError(err));
     }
     if (covered) return { covered: true };
     return { covered: false, feeJuice: await estimateInteractionFee(wallet, sender, interaction) };

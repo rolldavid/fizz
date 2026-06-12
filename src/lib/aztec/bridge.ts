@@ -35,6 +35,7 @@ import type { AztecNetwork } from "./networks";
 import { KEYS } from "../storage";
 import { secureGet, secureSet } from "../secureStorage";
 import { assertWithinU128 } from "./tokenContract";
+import { describeError } from "../errors";
 
 // LAZY by necessity, not style: pulling @aztec/aztec.js/ethereum + the
 // l1-artifacts ABIs into the popup's STATIC graph (the straightforward
@@ -562,7 +563,7 @@ export async function recoverInFlightBridges(
             if ((err as { name?: string })?.name === "TransactionReceiptNotFoundError") continue;
             throw new Error(
                 `Could not reach the L1 RPC (${l1RpcUrl}) to verify bridge deposit ${b.l1TxHash}: ` +
-                    (err instanceof Error ? err.message : String(err)),
+                    (describeError(err)),
             );
         }
         try {
@@ -686,7 +687,7 @@ export async function listReadyClaims(
         // genuine PXE/IDB fault as "no gas" — that would hide a funded claim and
         // present a real error as an empty wallet (and violates the no-swallow
         // rule). Surface anything else.
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = describeError(err);
         if (/not-yet-synchronized|not yet synchronized/i.test(msg)) return [];
         console.warn("listReadyClaims: unexpected getSyncedBlockHeader failure:", err);
         throw err;
@@ -715,7 +716,7 @@ export async function listReadyClaims(
             // anchor block hash (reorg, or a load-balanced node instance behind
             // the one the PXE synced from). Transient — the PXE re-anchors on
             // the next sync — but silent "not ready" here was undiagnosable.
-            const msg = err instanceof Error ? err.message : String(err);
+            const msg = describeError(err);
             if (/not found when querying world state|reorg/i.test(msg)) {
                 console.warn(
                     `Claim ${b.id}: node did not recognize the PXE anchor block ` +
