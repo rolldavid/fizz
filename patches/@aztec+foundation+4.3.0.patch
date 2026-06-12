@@ -16,7 +16,7 @@ index 867a42d..fbe56aa 100644
              throw new NoRetryError(errorMessage);
          } else {
 diff --git a/node_modules/@aztec/foundation/dest/json-rpc/client/safe_json_rpc_client.js b/node_modules/@aztec/foundation/dest/json-rpc/client/safe_json_rpc_client.js
-index 07c93b1..b977380 100644
+index 07c93b1..2bb6b1c 100644
 --- a/node_modules/@aztec/foundation/dest/json-rpc/client/safe_json_rpc_client.js
 +++ b/node_modules/@aztec/foundation/dest/json-rpc/client/safe_json_rpc_client.js
 @@ -9,7 +9,10 @@ import { defaultFetch } from './fetch.js';
@@ -31,17 +31,19 @@ index 07c93b1..b977380 100644
  // 10 mb
  const DEFAULT_MAX_REQUESTY_BODY_SIZE = 10 * 1024 * 1024;
  // expose helpful information on the RPC clients such that we can recognize them later
-@@ -165,7 +168,8 @@ const clients = new Map();
+@@ -165,7 +168,10 @@ const clients = new Map();
          const response = await deferred.promise;
          log.debug(format(`result`, method, response));
          if ('error' in response) {
 -            throw new Error(response.error.message, {
-+            // PATCHED (fizz): `error` can be present but null/malformed.
-+            throw new Error(response.error?.message ?? JSON.stringify(response.error), {
++            // PATCHED (fizz): `error` can be present but null/malformed — and
++            // server-side validation messages ("Expected string, received
++            // object (0)") are useless without the method that triggered them.
++            throw new Error(`[${method}] ${response.error?.message ?? JSON.stringify(response.error)}`, {
                  cause: response.error
              });
          }
-@@ -178,7 +182,26 @@ const clients = new Map();
+@@ -178,7 +184,26 @@ const clients = new Map();
          ].includes(response.result)) {
              return;
          }

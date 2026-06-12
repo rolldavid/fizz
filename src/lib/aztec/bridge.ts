@@ -218,6 +218,9 @@ export async function adoptRecoveredBridge(entry: {
     // "depositing"/"sent" has no messageHash yet, but it IS the same deposit
     // (same seed-derived secret) — adopting it again would double-count the
     // amount in the optimistic gas display, permanently.
+    if (!/^0x[0-9a-fA-F]{1,64}$/.test(entry.messageHash)) {
+        throw new Error(`Refusing to adopt a claim with a non-hex message hash: ${entry.messageHash}`);
+    }
     if (
         all.some(
             (b) =>
@@ -289,13 +292,19 @@ async function completeFromReceipt(
         (err as Error & { unverifiable?: boolean }).unverifiable = true;
         throw err;
     }
+    const messageHash = String(match.args.key);
+    if (!/^0x[0-9a-fA-F]{1,64}$/.test(messageHash)) {
+        // Never persist junk: a malformed hash poisons every later parse of
+        // this entry (observed as "Tried to create a Fr from [object Object]").
+        throw new Error(`Deposit event decoded a non-hex message key: ${messageHash}`);
+    }
     return {
         ...entry,
         status: "pending",
         // Trust the on-chain event for the amount, not any caller-supplied value:
         // a claim built with the wrong amount would never become spendable.
         claimAmount: (match.args.amount as bigint).toString(),
-        messageHash: match.args.key as string,
+        messageHash,
         messageLeafIndex: (match.args.index as bigint).toString(),
     };
 }
