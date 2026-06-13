@@ -172,7 +172,28 @@ async function loadNetwork(): Promise<AztecNetwork> {
 }
 
 async function loadAccountsMeta(): Promise<AccountsMeta> {
-    const stored = await secureGet<AccountsMeta>(KEYS.accountsMeta);
+    let stored = await secureGet<AccountsMeta>(KEYS.accountsMeta);
+    if (!stored) {
+        // STORAGE-38: migrate a legacy v1 accountMeta → v2, once. The v1 schema
+        // is undocumented, so we trust ONLY a numeric count (>1 means the user
+        // had added accounts that would otherwise vanish from PXE discovery).
+        // Defensive: any failure falls through to the default below.
+        try {
+            const v1 = await secureGet<{ count?: number }>(KEYS.accountMeta);
+            if (v1 && Number.isInteger(v1.count) && (v1.count as number) > 1) {
+                const migrated: AccountsMeta = {
+                    count: Math.min(v1.count as number, MAX_ACCOUNTS),
+                    activeIndex: 0,
+                    labels: {},
+                    hidden: [],
+                };
+                await secureSet(KEYS.accountsMeta, migrated);
+                stored = migrated;
+            }
+        } catch {
+            // ignore — fall through to the default
+        }
+    }
     if (!stored || !Number.isInteger(stored.count) || stored.count < 1) {
         return DEFAULT_ACCOUNTS_META;
     }
@@ -267,7 +288,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const accountsMetaRef = useRef<AccountsMeta>(DEFAULT_ACCOUNTS_META);
     const activeIndexRef = useRef(0);
     // Single-flight guard so two concurrent sends can't double-deploy.
-    const deployInFlightRef = useRef<Promise<void> | null>(null);
+    // Keyed by account ADDRESS (LIFECYCLE-15): a single shared promise let an
+    // in-flight deploy for account A wrongly satisfy ensureAccountDeployed for
+    // account B (B would await A's deploy and return without deploying).
+    const deployInFlightRef = useRef<Map<string, Promise<void>>>(new Map());
 
     useEffect(() => {
         networkRef.current = network;
@@ -365,6 +389,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         const w = walletInstanceRef.current;
         const manager = managersRef.current.get(activeIndexRef.current);
         if (!w || !manager) throw new Error("Wallet not loaded.");
+        const addr = manager.address.toString();
 
         // Re-check live status — another popup/tab may have deployed already.
         if (await isInitialized(w, manager.address)) {
@@ -383,10 +408,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             return;
         }
 
-        if (!deployInFlightRef.current) {
-            deployInFlightRef.current = trackOp(async () => {
+        let inflight = deployInFlightRef.current.get(addr);
+        if (!inflight) {
+            inflight = trackOp(async () => {
                 const net = networkRef.current;
-                const addr = manager.address.toString();
 
                 // A deployment broadcast earlier — possibly by a session that
                 // died mid-wait — may still be settling. Resume THAT tx instead
@@ -466,10 +491,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 await clearPendingDeploy(net.id, addr);
                 setAccount((prev) => (prev ? { ...prev, isDeployed: true } : prev));
             }).finally(() => {
-                deployInFlightRef.current = null;
+                deployInFlightRef.current.delete(addr);
             });
+            deployInFlightRef.current.set(addr, inflight);
         }
-        await deployInFlightRef.current;
+        await inflight;
     }, []);
 
     // Background fee-juice landing: while the popup is open, a confirmed
