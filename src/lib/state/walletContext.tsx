@@ -292,6 +292,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     // in-flight deploy for account A wrongly satisfy ensureAccountDeployed for
     // account B (B would await A's deploy and return without deploying).
     const deployInFlightRef = useRef<Map<string, Promise<void>>>(new Map());
+    // Single-flight token for switchAccount (LIFECYCLE-06): a monotonic counter
+    // bumped on entry; each await re-checks it and bails if a later switch has
+    // superseded this one, so a rapid A→B→A can't land B's account on the UI.
+    const switchSeqRef = useRef(0);
 
     useEffect(() => {
         networkRef.current = network;
@@ -581,12 +585,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         const w = walletInstanceRef.current;
         const manager = managersRef.current.get(index);
         if (!w || !manager) throw new Error(`No account at index ${index}.`);
+        // Single-flight (LIFECYCLE-06): a rapid double-switch (A then B) could
+        // otherwise resolve A's isInitialized AFTER B's and paint account A's
+        // state under B. A monotonic token makes only the LATEST switch win.
+        const seq = ++switchSeqRef.current;
         const meta = accountsMetaRef.current;
         await persistAccountsMeta({ ...meta, activeIndex: index });
+        if (seq !== switchSeqRef.current) return; // superseded by a later switch
         activeIndexRef.current = index;
+        const isDeployed = await isInitialized(w, manager.address);
+        if (seq !== switchSeqRef.current) return; // superseded during the await
         setAccount({
             address: manager.address,
-            isDeployed: await isInitialized(w, manager.address),
+            isDeployed,
             index,
             label: accountLabel(accountsMetaRef.current, index),
         });
