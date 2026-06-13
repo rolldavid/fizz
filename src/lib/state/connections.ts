@@ -14,6 +14,14 @@
  * PERSISTENT + REVOCABLE. Stored in chrome.storage.local so a connection
  * survives browser restarts; capped by CONNECTION_TTL_MS; and removable from
  * the page (Disconnect) or in-wallet (Connected sites).
+ *
+ * INTEGRITY — ACCEPTED RESIDUAL (AUTH-23): the store is NOT HMAC-tamper-evident.
+ * A connection grants no spending authority (every action is still confirmed
+ * in-wallet from the active account), so the worst a tampered/injected record
+ * can do is surface a spurious "site connected" state or an extra Approve
+ * dialog — never move funds or leak the address. An attacker who can write
+ * chrome.storage already owns the device (out of scope, same as CRYPTO-48).
+ * Per-entry validation (below) handles corruption; full integrity is deferred.
  */
 
 import { recordAuth } from "../aztec/txHistory";
@@ -134,17 +142,22 @@ export async function removeConnection(origin: string): Promise<void> {
 // (storage.session) and short-lived — an abandoned request shouldn't linger
 // and silently pre-authorize a later, unrelated approval click.
 
-export type PendingConnect = { origin: string; requestedAt: number };
+export type PendingConnect = { origin: string; requestedAt: number; token?: string };
 
 const PENDING_KEY = "fizz.pendingConnect.v1";
 const PENDING_TTL_MS = 5 * 60_000;
 
-export async function savePendingConnect(origin: string): Promise<void> {
-    await sessionArea()?.set({ [PENDING_KEY]: { origin, requestedAt: Date.now() } });
+export async function savePendingConnect(origin: string, token?: string): Promise<void> {
+    await sessionArea()?.set({ [PENDING_KEY]: { origin, requestedAt: Date.now(), token } });
 }
 
-/** Read-and-clear the pending request. Returns null if absent or expired. */
-export async function takePendingConnect(): Promise<PendingConnect | null> {
+/**
+ * Read-and-clear the pending request. Returns null if absent, expired, or — when
+ * the record carries a nonce — if the caller's `token` doesn't match it
+ * (AUTH-27): an already-open extension page must not be able to claim a pending
+ * connect it didn't open within the 5-min window.
+ */
+export async function takePendingConnect(token?: string): Promise<PendingConnect | null> {
     const area = sessionArea();
     if (!area) return null;
     const got = await area.get(PENDING_KEY);
@@ -152,5 +165,6 @@ export async function takePendingConnect(): Promise<PendingConnect | null> {
     if (stored) await area.remove(PENDING_KEY);
     if (!stored) return null;
     if (Date.now() - stored.requestedAt > PENDING_TTL_MS) return null;
+    if (stored.token && stored.token !== token) return null;
     return stored;
 }

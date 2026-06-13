@@ -109,9 +109,13 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
                         });
                         return;
                     }
-                    await savePendingConnect(origin);
+                    // Nonce-bind the window to this pending record (AUTH-27).
+                    const connectToken = crypto.randomUUID();
+                    await savePendingConnect(origin, connectToken);
                     await chrome.windows.create({
-                        url: chrome.runtime.getURL("src/popup/index.html#connect"),
+                        url: chrome.runtime.getURL(
+                            `src/popup/index.html#connect?token=${connectToken}`,
+                        ),
                         type: "popup",
                         width: 420,
                         height: 820,
@@ -171,9 +175,15 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
                         return;
                     }
                     const params = await readBridgeParams();
+                    // Bind to the requesting origin (AUTH-26): a different
+                    // connected origin (e.g. www. vs apex) must not poll params
+                    // the user approved for THIS one.
+                    const matches = params && params.origin === origin;
                     sendResponse({
                         ok: true,
-                        params: params ? { recipient: params.recipient, secretHash: params.secretHash } : null,
+                        params: matches
+                            ? { recipient: params!.recipient, secretHash: params!.secretHash }
+                            : null,
                     });
                     return;
                 }

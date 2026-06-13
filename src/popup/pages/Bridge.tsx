@@ -238,8 +238,9 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                 amount: BigInt(prep.amount),
                 claimSecret: await deriveBridgeClaimSecret(seed, account.index, claimIndex),
             });
-            // Hand the page the two PUBLIC values it needs to deposit.
-            await saveBridgeParams(account.address.toString(), secretHash);
+            // Hand the page the two PUBLIC values it needs to deposit, bound to
+            // the origin that requested the bridge (AUTH-26).
+            await saveBridgeParams(prep.origin, account.address.toString(), secretHash);
             setPrepPhase("awaiting");
             startDepositPoll(secretHash);
         } catch (e) {

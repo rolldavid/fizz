@@ -10,9 +10,11 @@
  */
 
 const mem = new Map<string, unknown>();
+const sessionMem = new Map<string, unknown>();
 
 export function resetChromeStorage(): void {
     mem.clear();
+    sessionMem.clear();
 }
 
 export function chromeStorageSnapshot(): Record<string, unknown> {
@@ -25,37 +27,42 @@ function structuredCloneish<T>(v: T): T {
     return v === undefined ? v : JSON.parse(JSON.stringify(v));
 }
 
-const local = {
-    async get(key: string | string[] | Record<string, unknown> | null) {
-        if (key === null || key === undefined) {
-            return Object.fromEntries(mem.entries());
-        }
-        if (typeof key === "string") {
-            return mem.has(key) ? { [key]: structuredCloneish(mem.get(key)) } : {};
-        }
-        if (Array.isArray(key)) {
-            const out: Record<string, unknown> = {};
-            for (const k of key) if (mem.has(k)) out[k] = structuredCloneish(mem.get(k));
-            return out;
-        }
-        throw new Error("chrome-stub: unsupported get() arg shape");
-    },
-    async set(items: Record<string, unknown>) {
-        for (const [k, v] of Object.entries(items)) {
-            if (v === undefined) {
-                throw new Error(`chrome-stub: refusing to store undefined for key ${k}`);
+function makeArea(store: Map<string, unknown>) {
+    return {
+        async get(key: string | string[] | Record<string, unknown> | null) {
+            if (key === null || key === undefined) {
+                return Object.fromEntries(store.entries());
             }
-            mem.set(k, structuredCloneish(v));
-        }
-    },
-    async remove(key: string | string[]) {
-        for (const k of Array.isArray(key) ? key : [key]) mem.delete(k);
-    },
-};
+            if (typeof key === "string") {
+                return store.has(key) ? { [key]: structuredCloneish(store.get(key)) } : {};
+            }
+            if (Array.isArray(key)) {
+                const out: Record<string, unknown> = {};
+                for (const k of key) if (store.has(k)) out[k] = structuredCloneish(store.get(k));
+                return out;
+            }
+            throw new Error("chrome-stub: unsupported get() arg shape");
+        },
+        async set(items: Record<string, unknown>) {
+            for (const [k, v] of Object.entries(items)) {
+                if (v === undefined) {
+                    throw new Error(`chrome-stub: refusing to store undefined for key ${k}`);
+                }
+                store.set(k, structuredCloneish(v));
+            }
+        },
+        async remove(key: string | string[]) {
+            for (const k of Array.isArray(key) ? key : [key]) store.delete(k);
+        },
+    };
+}
+
+const local = makeArea(mem);
+const session = makeArea(sessionMem);
 
 (globalThis as any).chrome = {
     ...(globalThis as any).chrome,
-    storage: { local },
+    storage: { local, session },
 };
 
 // Sensitive metadata (contacts, known senders, bridge claims) is encrypted at

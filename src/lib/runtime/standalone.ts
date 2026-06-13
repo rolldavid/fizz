@@ -18,7 +18,9 @@ export type AppRoute = (typeof ROUTES)[number];
 
 /** Parse a deep-link hash ("#deploy") to a known route; anything else → home. */
 export function routeFromHash(hash: string): AppRoute {
-    const candidate = hash.replace(/^#/, "");
+    // Strip any query suffix: the connect window carries a nonce as
+    // "#connect?token=…" (AUTH-27), and other routes may gain params later.
+    const candidate = hash.replace(/^#/, "").split("?")[0];
     return (ROUTES as readonly string[]).includes(candidate) ? (candidate as AppRoute) : "home";
 }
 

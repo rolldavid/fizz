@@ -20,7 +20,7 @@
  */
 
 export type BridgePrepare = { origin: string; amount: string; at: number };
-export type BridgeParams = { recipient: string; secretHash: string; at: number };
+export type BridgeParams = { origin: string; recipient: string; secretHash: string; at: number };
 export type BridgeDeposit = { secretHash: string; l1TxHash: string; at: number };
 
 const PREPARE_KEY = "fizz.bridge.prepare.v1";
@@ -65,8 +65,10 @@ export const savePrepare = (origin: string, amount: string) =>
 export const readPrepare = () => read<BridgePrepare>(PREPARE_KEY);
 export const clearPrepare = () => drop(PREPARE_KEY);
 
-export const saveBridgeParams = (recipient: string, secretHash: string) =>
-    write(PARAMS_KEY, { recipient, secretHash, at: Date.now() });
+// origin BINDS the params to the site that requested the bridge (AUTH-26) so
+// e.g. fizzwallet.com and www.fizzwallet.com can't poll each other's params.
+export const saveBridgeParams = (origin: string, recipient: string, secretHash: string) =>
+    write(PARAMS_KEY, { origin, recipient, secretHash, at: Date.now() });
 export const readBridgeParams = () => read<BridgeParams>(PARAMS_KEY);
 export const clearBridgeParams = () => drop(PARAMS_KEY);
 

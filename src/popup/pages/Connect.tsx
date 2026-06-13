@@ -26,7 +26,11 @@ export function Connect({ onDone }: { onDone: () => void }) {
     const [busy, setBusy] = useState(false);
 
     useEffect(() => {
-        void takePendingConnect().then((req) => {
+        // The opening token rides in the hash: "#connect?token=…" (AUTH-27).
+        // Only the window the background actually opened presents the matching
+        // token, so a stray already-open page can't claim the pending connect.
+        const token = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("token");
+        void takePendingConnect(token ?? undefined).then((req) => {
             if (req) {
                 setOrigin(req.origin);
                 setPhase("review");
