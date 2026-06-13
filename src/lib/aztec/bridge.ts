@@ -279,6 +279,31 @@ export async function adoptRecoveredBridge(entry: {
  * are preserved — a stale in-flight write (or a concurrent window) can never
  * resurrect a claim another writer already finalized.
  */
+// Terminal-entry retention (STORAGE-41): without pruning, the array grows
+// unbounded (listPendingBridges only filters the VIEW) and can eventually trip
+// QuotaExceeded, which fails-closed on new bridging. Drop consumed/dismissed
+// entries older than the window, keeping a recent cap for audit. Safe because
+// recoverBridgedClaims dedupes against LIVE entries only, so a pruned terminal
+// entry can be re-adopted from L1 (and the nullifier sweep re-consumes it).
+const TERMINAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_TERMINAL_BRIDGES = 200;
+
+function pruneTerminalBridges(list: PendingBridge[]): PendingBridge[] {
+    const now = Date.now();
+    const live: PendingBridge[] = [];
+    const terminal: PendingBridge[] = [];
+    for (const b of list) {
+        const term = b.consumedAt ?? b.dismissedAt;
+        if (term === undefined) live.push(b);
+        else if (now - term <= TERMINAL_RETENTION_MS) terminal.push(b);
+        // else: older than the window → dropped
+    }
+    terminal.sort(
+        (a, b) => (b.consumedAt ?? b.dismissedAt ?? 0) - (a.consumedAt ?? a.dismissedAt ?? 0),
+    );
+    return [...live, ...terminal.slice(0, MAX_TERMINAL_BRIDGES)];
+}
+
 async function upsertBridge(entry: PendingBridge): Promise<void> {
     await withBridgeLock(async () => {
         const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
@@ -294,7 +319,7 @@ async function upsertBridge(entry: PendingBridge): Promise<void> {
         const next = existing
             ? all.map((b) => (b.id === entry.id ? merged : b))
             : [merged, ...all];
-        await secureSet(KEYS.pendingBridges, next);
+        await secureSet(KEYS.pendingBridges, pruneTerminalBridges(next));
     });
 }
 

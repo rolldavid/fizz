@@ -66,6 +66,13 @@ export async function bumpClaimIndex(
 function doneKey(networkId: AztecNetwork["id"], account: string): string {
     return `${KEYS.bridgeRecoveryDonePrefix}.${networkId}.${account}`;
 }
+function emptyScanKey(networkId: AztecNetwork["id"], account: string): string {
+    return `${KEYS.bridgeRecoveryDonePrefix}.${networkId}.${account}.empty`;
+}
+// Latch recovery-done only after this many CONSECUTIVE confirmed-empty L1 scans
+// (BRIDGE-47): a single [] from a load-balancer backend behind the chain head
+// must not permanently disable the auto-scan and strand a real on-chain deposit.
+const REQUIRED_EMPTY_SCANS = 2;
 
 export async function isClaimRecoveryDone(
     networkId: AztecNetwork["id"],
@@ -155,9 +162,21 @@ export async function recoverBridgedClaims(args: {
         deployedAt,
     );
     if (logs.length === 0) {
-        await markClaimRecoveryDone(network.id, recipient.toString());
+        // Don't latch done on a SINGLE empty scan — a load balancer behind the
+        // chain head returns [] without error, which would permanently disable
+        // future scans (autoClaim gates on isClaimRecoveryDone). Require N
+        // consecutive confirmed-empty scans first (BRIDGE-47).
+        const acct = recipient.toString();
+        const empties = ((await storage.get<number>(emptyScanKey(network.id, acct))) ?? 0) + 1;
+        if (empties >= REQUIRED_EMPTY_SCANS) {
+            await markClaimRecoveryDone(network.id, acct);
+        } else {
+            await storage.set(emptyScanKey(network.id, acct), empties);
+        }
         return { scanned: 0, recovered: 0 };
     }
+    // A non-empty scan resets the empty-streak.
+    await storage.remove(emptyScanKey(network.id, recipient.toString()));
 
     // Candidate secrets: indices 0 .. counter+GAP (the counter may be 0 on a
     // fresh import even though many claims exist on-chain).

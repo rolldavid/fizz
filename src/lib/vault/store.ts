@@ -71,6 +71,32 @@ const RETIRED_VAULT_VERSIONS = new Set<number>([1]);
 const SESSION_KEY = "fizz.unlock.session.v1";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+// Exponential backoff on repeated FAILED passphrase unlocks (CRYPTO-44): slows
+// an offline/automated guesser. Session-backed so closing+reopening the popup
+// can't reset it; a browser restart does (by design). The passkey path is
+// already authenticator-gated and is left unthrottled.
+const ATTEMPTS_KEY = "fizz.unlock.attempts.v1";
+const MAX_BACKOFF_MS = 30_000;
+
+async function readUnlockAttempts(): Promise<number> {
+    const got = await sessionArea()?.get(ATTEMPTS_KEY);
+    const n = got?.[ATTEMPTS_KEY]?.count;
+    return typeof n === "number" && n > 0 ? n : 0;
+}
+async function bumpUnlockAttempts(): Promise<void> {
+    const count = (await readUnlockAttempts()) + 1;
+    await sessionArea()?.set({ [ATTEMPTS_KEY]: { count, lastAt: Date.now() } });
+}
+async function clearUnlockAttempts(): Promise<void> {
+    await sessionArea()?.remove(ATTEMPTS_KEY);
+}
+async function applyUnlockBackoff(): Promise<void> {
+    const count = await readUnlockAttempts();
+    if (count <= 0) return;
+    const delay = Math.min(500 * 2 ** count, MAX_BACKOFF_MS);
+    await new Promise((r) => setTimeout(r, delay));
+}
+
 function sessionArea(): { get: Function; set: Function; remove: Function } | null {
     return (globalThis as any).chrome?.storage?.session ?? null;
 }
@@ -368,6 +394,9 @@ class VaultStore {
         if (!this.envelope.salt) {
             throw new Error("Vault envelope is missing salt.");
         }
+        // Throttle repeated failed attempts BEFORE the (expensive) derivation
+        // (CRYPTO-44). Cleared on success below; persists across popup reopens.
+        await applyUnlockBackoff();
         let pt: Uint8Array;
         try {
             // Decode salt INSIDE the try so a tampered/non-base64 salt surfaces
@@ -396,12 +425,14 @@ class VaultStore {
                 );
                 pt = await decrypt(rawKey, this.envelope.blob, vaultAAD(this.envelope));
             } catch {
+                await bumpUnlockAttempts(); // wrong passphrase → grow the backoff
                 throw decryptFailure(err);
             }
         }
         const mnemonic = new TextDecoder().decode(pt);
         pt.fill(0); // wipe the decrypted plaintext bytes
         this.unlocked = { seed: mnemonicToSeed(mnemonic) };
+        await clearUnlockAttempts(); // success → reset the backoff
         void this.persistSession();
         return { mnemonic, seed: this.unlocked.seed };
     }

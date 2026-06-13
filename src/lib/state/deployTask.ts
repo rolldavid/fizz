@@ -33,6 +33,7 @@ export type DeployTask =
     | {
           phase: "running";
           networkId: AztecNetwork["id"];
+          networkName: string;
           name: string;
           symbol: string;
           decimals: number;
@@ -44,6 +45,7 @@ export type DeployTask =
     | {
           phase: "done";
           networkId: AztecNetwork["id"];
+          networkName: string;
           name: string;
           symbol: string;
           address: string;
@@ -54,6 +56,7 @@ export type DeployTask =
     | {
           phase: "failed";
           networkId: AztecNetwork["id"];
+          networkName: string;
           name: string;
           symbol: string;
           message: string;
@@ -102,7 +105,9 @@ export function startTokenDeploy(args: {
         throw new Error("A token deploy is already in progress — one at a time.");
     }
     const { name, symbol, decimals } = args;
-    const base = { networkId: args.network.id, name, symbol };
+    // networkName captured at start so the result/status screens show the network
+    // the deploy RAN on, not the active network after a mid-deploy switch (UI-27).
+    const base = { networkId: args.network.id, networkName: args.network.name, name, symbol };
     setTask({
         phase: "running",
         ...base,

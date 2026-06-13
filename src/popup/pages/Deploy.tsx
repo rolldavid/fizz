@@ -228,7 +228,7 @@ export function Deploy({ onBack }: { onBack: () => void }) {
                         </div>
                         <div style={{ fontWeight: 600, fontSize: 18 }}>Token deployed</div>
                         <div className="muted" style={{ marginTop: 4 }}>
-                            {task.symbol} is live on {network.name}
+                            {task.symbol} is live on {task.networkName}
                         </div>
                         <div style={{ marginTop: 6, display: "flex", justifyContent: "center" }}>
                             <ActualFeeRow feeJuice={task.feeJuice} />
