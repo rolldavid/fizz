@@ -18,6 +18,7 @@ import { Connections } from "./pages/Connections";
 import { TransactionHistory } from "./pages/TransactionHistory";
 import { RevealPhrase } from "./pages/RevealPhrase";
 import { vaultStore } from "../lib/vault/store";
+import { describeError } from "../lib/errors";
 import { routeFromHash } from "../lib/runtime/standalone";
 import { DeployStatusBar } from "./components/DeployStatusBar";
 import { useDeployTask } from "../lib/state/deployTask";
@@ -207,10 +208,45 @@ function Shell() {
 
 export default function App() {
     const [ready, setReady] = useState(false);
+    const [initError, setInitError] = useState<string | null>(null);
 
     useEffect(() => {
-        vaultStore.init().then(() => setReady(true));
+        // A rejected init() (e.g. "Extension context invalidated" after an
+        // update, or a corrupt vault read) must NOT leave the user on an
+        // infinite spinner (LIFECYCLE-34). Surface an actionable reload — never
+        // suggest resetting the wallet, which would imply data loss.
+        vaultStore
+            .init()
+            .then(() => setReady(true))
+            .catch((err) => {
+                setInitError(describeError(err));
+                setReady(true);
+            });
     }, []);
+
+    if (initError) {
+        return (
+            <div className="app">
+                <div className="content">
+                    <div className="card" style={{ borderColor: "var(--danger)" }}>
+                        <div style={{ fontWeight: 600, marginBottom: 6 }}>Couldn't start the wallet</div>
+                        <div className="muted" style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>
+                            {initError}
+                        </div>
+                        <div className="muted" style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>
+                            Your wallet data is safe. Reloading the extension usually fixes this.
+                        </div>
+                        <button
+                            className="btn btn-primary btn-block"
+                            onClick={() => (globalThis as any).chrome?.runtime?.reload?.()}
+                        >
+                            Reload extension
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     if (!ready) {
         return (

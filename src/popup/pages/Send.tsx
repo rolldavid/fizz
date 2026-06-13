@@ -639,15 +639,23 @@ function SentConfirmation({
                 </div>
 
                 {network.id === "alpha" && (
-                    <a
-                        className="fee-line"
-                        href={`https://aztecscan.xyz/tx-effects/${txHash}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ display: "block", textAlign: "center", fontSize: 12 }}
-                    >
-                        View on Aztec Scan ↗
-                    </a>
+                    <>
+                        <a
+                            className="fee-line"
+                            href={`https://aztecscan.xyz/tx-effects/${txHash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ display: "block", textAlign: "center", fontSize: 12 }}
+                        >
+                            View on Aztec Scan ↗
+                        </a>
+                        <div
+                            className="muted"
+                            style={{ textAlign: "center", fontSize: 10, marginTop: 2 }}
+                        >
+                            Opening this link shares your IP address with Aztec Scan.
+                        </div>
+                    </>
                 )}
 
                 <div className="card card-accent" style={{ display: "flex", flexDirection: "column", gap: 8 }}>

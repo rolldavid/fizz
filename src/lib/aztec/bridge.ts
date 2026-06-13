@@ -601,9 +601,22 @@ export async function dismissBridge(id: string): Promise<void> {
     await updateBridges((b) => (b.id === id ? { ...b, dismissedAt: Date.now() } : b));
 }
 
-export async function listPendingBridges(networkId: AztecNetwork["id"]): Promise<PendingBridge[]> {
+export async function listPendingBridges(
+    networkId: AztecNetwork["id"],
+    recipient?: string,
+): Promise<PendingBridge[]> {
     const all = (await secureGet<PendingBridge[]>(KEYS.pendingBridges)) ?? [];
-    return all.filter((b) => b.network === networkId && !b.consumedAt && !b.dismissedAt);
+    return all.filter(
+        (b) =>
+            b.network === networkId &&
+            !b.consumedAt &&
+            !b.dismissedAt &&
+            // Optional recipient scope (BRIDGE-38): the Bridge UI passes the
+            // active account so account B's cards don't show under account A. The
+            // security paths (listReadyClaims, the sweep) already filter by
+            // recipient downstream, so omitting it preserves their behavior.
+            (recipient === undefined || b.recipient === recipient),
+    );
 }
 
 /**

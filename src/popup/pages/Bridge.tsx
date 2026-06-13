@@ -124,7 +124,9 @@ export function Bridge({ onBack }: { onBack: () => void }) {
         // List even when recovery failed: the in-flight cards must stay visible
         // next to the error, not vanish behind it.
         try {
-            setPending(await listPendingBridges(network.id));
+            // Scope to the active account so account B's cards don't show under
+            // A (BRIDGE-38); falls back to all if account is momentarily null.
+            setPending(await listPendingBridges(network.id, account?.address.toString()));
         } catch (e) {
             setRefreshError(describeError(e));
         }
@@ -328,6 +330,11 @@ export function Bridge({ onBack }: { onBack: () => void }) {
                                 To do this, the bridge page is given <strong>this account's Aztec address</strong>{" "}
                                 (a deposit has to name where it lands; it's public on Ethereum either way). Your
                                 keys and the claim secret never leave the wallet.
+                            </p>
+                            <p className="hint">
+                                Note: your Ethereum wallet address (the depositor) and this Aztec address
+                                will be <strong>permanently linked</strong> in the L1 transaction — visible to
+                                anyone reading the Ethereum chain.
                             </p>
                             {prepError && <div className="error">{prepError}</div>}
                             <button

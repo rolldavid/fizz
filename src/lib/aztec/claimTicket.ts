@@ -71,6 +71,14 @@ export function validateClaimTicket(t: unknown): ClaimTicket {
             throw new Error(`Claim ticket: ${f} must be a decimal string (≤78 digits).`);
         }
     }
+    // claimAmount is a TOKEN amount and must fit u128 (TRUST-17). The recovery
+    // path (bridge.ts) already guards this; the ticket-import path did not.
+    // messageLeafIndex is a tree index (not a token amount), so it is NOT bounded
+    // here — an out-of-range amount would overflow downstream u128 handling.
+    const MAX_U128 = (1n << 128n) - 1n;
+    if (BigInt(x.claimAmount as string) > MAX_U128) {
+        throw new Error("Claim ticket: claimAmount exceeds the u128 token maximum.");
+    }
     if (typeof x.createdAt !== "number") throw new Error("Claim ticket: missing createdAt.");
     return x as unknown as ClaimTicket;
 }

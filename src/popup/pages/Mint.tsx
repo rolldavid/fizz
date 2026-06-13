@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Header } from "../components/Header";
 import { ArrowLeftIcon } from "../components/icons";
@@ -31,6 +31,10 @@ export function Mint({ onBack }: { onBack: () => void }) {
     const [to, setTo] = useState("");
 
     const [busy, setBusy] = useState(false);
+    // Synchronous double-tap guard (UI-15): fires BEFORE the async busy-state
+    // update lands, so two same-frame clicks can't submit two mint txs. Mirrors
+    // Send/Convert.
+    const mintInFlightRef = useRef(false);
     /** Stage line shown above the proving progress bar (NOT on buttons). */
     const [stage, setStage] = useState("");
     const [checking, setChecking] = useState(false);
@@ -74,6 +78,15 @@ export function Mint({ onBack }: { onBack: () => void }) {
     }, [checkAuthority]);
 
     async function submit() {
+        if (mintInFlightRef.current) return; // a mint is already running this frame
+        mintInFlightRef.current = true;
+        try {
+            await runMint();
+        } finally {
+            mintInFlightRef.current = false;
+        }
+    }
+    async function runMint() {
         setError(null);
         setDone(null);
         setGasGate(null);

@@ -94,6 +94,12 @@ const stateKey = (mine: PendingBridge[]) =>
  * One bookkeeping pass. Cheap when idle: no node traffic until a deposit
  * report or a local pending entry exists.
  */
+// In-flight latch (CONCURRENCY-06/31): a slow tick (sluggish node, long
+// recovery scan) must not overlap the next scheduled one — overlapping ticks
+// race the same bridge storage and PXE reads. If a tick is still running we skip
+// this one; the recursive scheduler fires again after it settles.
+let _tickInFlight = false;
+
 export async function autoClaimTick(args: {
     wallet: AztecWallet;
     network: AztecNetwork;
@@ -102,6 +108,27 @@ export async function autoClaimTick(args: {
     /** walletContext's deploy — used only to RESUME an interrupted deployment. */
     ensureAccountDeployed: () => Promise<void>;
     /** For the once-per-install seed recovery scan (claimRecovery). */
+    seed?: Uint8Array;
+    accountIndex?: number;
+}): Promise<void> {
+    if (_tickInFlight) {
+        console.info("autoClaimTick: previous tick still running — skipping this one.");
+        return;
+    }
+    _tickInFlight = true;
+    try {
+        await autoClaimTickImpl(args);
+    } finally {
+        _tickInFlight = false;
+    }
+}
+
+async function autoClaimTickImpl(args: {
+    wallet: AztecWallet;
+    network: AztecNetwork;
+    recipient: AztecAddress;
+    isDeployed: boolean;
+    ensureAccountDeployed: () => Promise<void>;
     seed?: Uint8Array;
     accountIndex?: number;
 }): Promise<void> {

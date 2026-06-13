@@ -37,6 +37,18 @@ describe("claim ticket encode/decode", () => {
         expect(decodeClaimTicket(encodeClaimTicket(t))).toEqual(t);
     });
 
+    // TRUST-17 — claimAmount must fit u128.
+    it("rejects a claimAmount above u128", () => {
+        expect(() => validateClaimTicket(ticket({ claimAmount: (1n << 128n).toString() }))).toThrow(
+            /u128/i,
+        );
+    });
+    it("accepts claimAmount exactly at the u128 max", () => {
+        expect(() =>
+            validateClaimTicket(ticket({ claimAmount: ((1n << 128n) - 1n).toString() })),
+        ).not.toThrow();
+    });
+
     it("survives surrounding whitespace (copy-paste reality)", () => {
         const text = `  \n${encodeClaimTicket(ticket())}\n  `;
         expect(decodeClaimTicket(text).recipient).toBe("0x1234abcd");

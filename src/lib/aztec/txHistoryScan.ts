@@ -100,21 +100,23 @@ export async function scanIncoming(
                 event: { from: { toString(): string }; to: { toString(): string }; amount: bigint | number };
                 metadata: { txHash?: { toString(): string } };
             };
-            const toEntry = (ev: RawEvent, token: string, i: number) => {
+            const toEntry = (ev: RawEvent, token: string, _i: number) => {
                 const toAddr = addrStr(ev.event.to);
                 const fromAddr = addrStr(ev.event.from);
                 if (toAddr !== account || fromAddr === account) return null; // incoming only
                 const txHash = ev.metadata.txHash?.toString();
+                const amount = BigInt(ev.event.amount).toString();
                 return {
-                    // logIndex is not exposed per-event; the array index within
-                    // (txHash, token) is a stable dedupe key.
-                    id: `${txHash}:${token}:${i}`,
+                    // Content-stable dedupe key (HISTORY-14): invariant to RPC
+                    // event ordering, unlike the old array-index key. (A per-event
+                    // logIndex would be better if the SDK exposes one later.)
+                    id: `${txHash ?? "nohash"}:${token}:${amount}:${fromAddr}:${toAddr}`,
                     kind: "transfer" as const,
                     direction: "in" as const,
                     privacy: "private" as const,
                     counterparty: fromAddr,
                     tokenAddress: token,
-                    amount: BigInt(ev.event.amount).toString(),
+                    amount,
                     txHash,
                     // No per-block wall clock is available here, so we use scan
                     // time. Ordering against outgoing (also Date.now at send)

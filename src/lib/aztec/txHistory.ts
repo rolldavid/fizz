@@ -44,7 +44,14 @@ export type TxHistoryEntry = {
     authAction?: "approved" | "revoked";
     /** Free-form label, e.g. the token symbol for a deploy. */
     label?: string;
+    /** Token decimals at record time — fallback when the token was later removed (UI-12). */
+    decimals?: number;
+    /** Schema version (HISTORY-29). Absent = v1 (pre-versioning); future bumps are detectable. */
+    _v?: number;
 };
+
+/** Current history-entry schema version (HISTORY-29). */
+export const TX_HISTORY_SCHEMA_VERSION = 1;
 
 /** Most recent N kept per list — older entries are dropped (a local view, not an archive). */
 const MAX_ACCOUNT_ENTRIES = 500;
@@ -110,7 +117,8 @@ export async function recordEntry(
         try {
             const list = await readList(key);
             if (list.some((e) => e.id === entry.id)) return; // already recorded
-            const next = [entry, ...list].slice(0, MAX_ACCOUNT_ENTRIES);
+            const stamped = { ...entry, _v: entry._v ?? TX_HISTORY_SCHEMA_VERSION };
+            const next = [stamped, ...list].slice(0, MAX_ACCOUNT_ENTRIES);
             await secureSet(key, next);
         } catch (err) {
             // Best-effort: recording is non-load-bearing convenience — never let

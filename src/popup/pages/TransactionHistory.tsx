@@ -87,11 +87,21 @@ export function TransactionHistory({ onBack }: { onBack: () => void }) {
         address ? tokens.find((t) => t.address.toLowerCase() === address.toLowerCase()) : undefined;
 
     function amountText(entry: TxHistoryEntry): string {
-        if (entry.amount === undefined) return "";
+        // Crash-proof (UI-37, HISTORY-20): a null / decimal / garbage amount must
+        // not throw through titleFor at the JSX call site.
+        if (entry.amount == null || entry.amount === "") return "";
+        let parsed: bigint;
+        try {
+            parsed = BigInt(entry.amount);
+        } catch {
+            return String(entry.amount);
+        }
         const token = tokenFor(entry.tokenAddress);
-        const decimals = token?.decimals ?? 0;
+        // Default to 18 dp for a since-removed token (UI-12) — far closer than 0,
+        // which would render 1.0 as 1e18.
+        const decimals = token?.decimals ?? entry.decimals ?? 18;
         const sym = token?.symbol ?? (entry.tokenAddress ? shortAddress(entry.tokenAddress, 6, 4) : "");
-        return `${formatUnits(BigInt(entry.amount), decimals)} ${sym}`.trim();
+        return `${formatUnits(parsed, decimals)} ${sym}`.trim();
     }
 
     function titleFor(entry: TxHistoryEntry): string {
@@ -149,14 +159,33 @@ export function TransactionHistory({ onBack }: { onBack: () => void }) {
                     </div>
                 )}
 
-                {entries.map((entry) => {
-                    const linkable = entry.txHash && network.id === "alpha";
-                    const counterparty =
-                        entry.counterparty && entry.kind === "transfer"
-                            ? shortAddress(entry.counterparty, 6, 4)
-                            : null;
-                    return (
-                        <div key={entry.id} className="token-row">
+                {entries.map((entry) => renderRow(entry))}
+            </div>
+        </>
+    );
+
+    // One corrupt entry must not white-screen the whole list (UI-37): render a
+    // fallback row instead of throwing through the map.
+    function renderRow(entry: TxHistoryEntry) {
+        try {
+            return renderRowUnsafe(entry);
+        } catch {
+            return (
+                <div key={entry.id ?? Math.random()} className="token-row muted" style={{ fontSize: 12 }}>
+                    [corrupted entry]
+                </div>
+            );
+        }
+    }
+
+    function renderRowUnsafe(entry: TxHistoryEntry) {
+        const linkable = entry.txHash && network.id === "alpha";
+        const counterparty =
+            entry.counterparty && entry.kind === "transfer"
+                ? shortAddress(entry.counterparty, 6, 4)
+                : null;
+        return (
+            <div key={entry.id} className="token-row">
                             <div className="token-meta" style={{ minWidth: 0, flex: 1, gap: 10 }}>
                                 <span
                                     aria-hidden
@@ -222,8 +251,5 @@ export function TransactionHistory({ onBack }: { onBack: () => void }) {
                             )}
                         </div>
                     );
-                })}
-            </div>
-        </>
-    );
+    }
 }
