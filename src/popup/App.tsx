@@ -58,6 +58,13 @@ function LoadingScreen() {
                         <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
                             {bootError}
                         </div>
+                        {network.id === "alpha" && (
+                            <div className="muted" style={{ fontSize: 12, lineHeight: 1.5, marginTop: 8 }}>
+                                Mainnet runs through a single dedicated node — there's no automatic
+                                failover. Try again shortly, or switch to Testnet to verify the wallet
+                                meanwhile.
+                            </div>
+                        )}
                     </div>
                     <div className="field">
                         <label>Switch network</label>

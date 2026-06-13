@@ -27,7 +27,7 @@ import {
 import { formatUnits } from "../../lib/aztec/balances";
 import { vaultStore } from "../../lib/vault/store";
 import { deriveBridgeClaimSecret } from "../../lib/aztec/wallet";
-import { bumpClaimIndex, nextClaimIndex, recoverBridgedClaims } from "../../lib/aztec/claimRecovery";
+import { allocateClaimIndex, recoverBridgedClaims } from "../../lib/aztec/claimRecovery";
 import { describeError } from "../../lib/errors";
 
 type PrepPhase = "confirm" | "awaiting" | "completing" | "done";
@@ -194,8 +194,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
             // Allocate-then-use: bump BEFORE the secret can reach a deposit. A
             // crash after the bump wastes an index (a gap, covered by the
             // recovery scan's window); reuse would make a deposit unclaimable.
-            const claimIndex = await nextClaimIndex(network.id, addr);
-            await bumpClaimIndex(network.id, addr, claimIndex);
+            const claimIndex = await allocateClaimIndex(network.id, addr);
             await bridgeFeeJuice({
                 wallet,
                 network,
@@ -230,8 +229,7 @@ export function Bridge({ onBack }: { onBack: () => void }) {
             const addr = account.address.toString();
             // Allocate-then-use: a crash after the bump leaves a harmless gap;
             // reusing an index would make the second deposit unclaimable.
-            const claimIndex = await nextClaimIndex(network.id, addr);
-            await bumpClaimIndex(network.id, addr, claimIndex);
+            const claimIndex = await allocateClaimIndex(network.id, addr);
             const { secretHash } = await prepareBridgeClaim({
                 network,
                 recipient: account.address,

@@ -61,6 +61,32 @@ export async function bumpClaimIndex(
     if (used >= cur) await secureSet(counterKey(networkId, account), used + 1);
 }
 
+// Serialize claim-index allocation (STORAGE-28, CONCURRENCY-07/17): the old
+// two-step nextClaimIndex()+bumpClaimIndex() left a window where two popups both
+// read N and reused deriveBridgeClaimSecret(seed, acct, N) — two claims sharing
+// one secret. allocateClaimIndex reads-increments-writes inside ONE serialized
+// closure so each caller gets a distinct, monotonic index.
+// RESIDUAL: a module-level chain does NOT span realms (background SW + popup);
+// cross-realm allocation is bounded by the recovery scan reserving used indices.
+let _indexAllocChain: Promise<unknown> = Promise.resolve();
+
+export function allocateClaimIndex(
+    networkId: AztecNetwork["id"],
+    account: string,
+): Promise<number> {
+    const run = async () => {
+        const cur = (await secureGet<number>(counterKey(networkId, account))) ?? 0;
+        await secureSet(counterKey(networkId, account), cur + 1);
+        return cur;
+    };
+    const p = _indexAllocChain.then(run, run);
+    _indexAllocChain = p.then(
+        () => undefined,
+        () => undefined,
+    );
+    return p;
+}
+
 // ── once-per-install flag ────────────────────────────────────────────────────
 
 function doneKey(networkId: AztecNetwork["id"], account: string): string {
