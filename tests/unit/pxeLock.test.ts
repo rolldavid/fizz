@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { withPxeLock } from "../../src/lib/aztec/pxeLock";
+import { withPxeLock, resetPxeLock } from "../../src/lib/aztec/pxeLock";
 import { hasActiveOps } from "../../src/lib/state/activity";
 
 /**
@@ -86,5 +86,30 @@ describe("withPxeLock", () => {
         });
         expect(sawActiveInside).toBe(true);
         expect(hasActiveOps()).toBe(false);
+    });
+
+    // CONCURRENCY-02/16 — synchronous re-entrancy is rejected, not deadlocked.
+    it("rejects a synchronously-nested withPxeLock instead of hanging", async () => {
+        await expect(
+            withPxeLock(async () => {
+                // Called from the SYNCHRONOUS body of a running locked op.
+                return withPxeLock(async () => 1);
+            }),
+        ).rejects.toThrow(/re-entered/i);
+    });
+
+    // CONCURRENCY-19 — resetPxeLock abandons a wedged queue so new work runs.
+    it("resetPxeLock lets a fresh op run past a never-resolving one", async () => {
+        let neverDone = false;
+        // Queue an op that never resolves (a hung old-wallet op).
+        void withPxeLock(() => new Promise<void>(() => {})).then(() => {
+            neverDone = true;
+        });
+        await tick();
+        resetPxeLock();
+        // A freshly queued op must NOT be stuck behind the hung one.
+        const ran = await withPxeLock(async () => "fresh");
+        expect(ran).toBe("fresh");
+        expect(neverDone).toBe(false);
     });
 });

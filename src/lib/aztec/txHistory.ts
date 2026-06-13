@@ -60,10 +60,41 @@ function cursorKey(networkId: string, account: string): string {
     return `${KEYS.txHistoryPrefix}.${networkId}.${account}.cursor`;
 }
 
-async function readList(key: string): Promise<TxHistoryEntry[]> {
-    const stored = await secureGet<TxHistoryEntry[]>(key);
-    return Array.isArray(stored) ? stored : [];
+const VALID_KINDS = new Set([
+    "transfer",
+    "shield",
+    "unshield",
+    "mint",
+    "deploy",
+    "authorization",
+]);
+
+/**
+ * Per-entry shape guard (STORAGE-25/26/27, HISTORY-20): drop malformed rows on
+ * read so a single corrupt entry can't throw through listHistory/the render.
+ * Filter-on-read only — the next normal write flushes the cleaned list.
+ */
+function sanitizeHistory(stored: unknown): TxHistoryEntry[] {
+    if (!Array.isArray(stored)) return [];
+    return (stored as unknown[]).filter(
+        (e): e is TxHistoryEntry =>
+            !!e &&
+            typeof e === "object" &&
+            typeof (e as { id?: unknown }).id === "string" &&
+            typeof (e as { at?: unknown }).at === "number" &&
+            typeof (e as { kind?: unknown }).kind === "string" &&
+            VALID_KINDS.has((e as { kind: string }).kind),
+    );
 }
+
+async function readList(key: string): Promise<TxHistoryEntry[]> {
+    return sanitizeHistory(await secureGet<TxHistoryEntry[]>(key));
+}
+
+// Per-account write queue (HISTORY-18): the unawaited transfer/mint/deploy
+// recordEntry calls and scanIncoming's awaited writes both do a read-modify-write
+// of one storage key — serialize per key so neither clobbers the other's row.
+const writeQueue = new Map<string, Promise<unknown>>();
 
 /**
  * Append one entry to the per-account list, newest-first, deduped by `id` and
@@ -74,17 +105,28 @@ export async function recordEntry(
     account: string,
     entry: TxHistoryEntry,
 ): Promise<void> {
-    try {
-        const key = accountKey(networkId, account);
-        const list = await readList(key);
-        if (list.some((e) => e.id === entry.id)) return; // already recorded
-        const next = [entry, ...list].slice(0, MAX_ACCOUNT_ENTRIES);
-        await secureSet(key, next);
-    } catch (err) {
-        // Best-effort: recording is non-load-bearing convenience — never let a
-        // history write break the send/flow that produced it.
-        console.warn(`tx-history: recordEntry failed for ${redact(account)}`, describeError(err));
-    }
+    const key = accountKey(networkId, account);
+    const run = async () => {
+        try {
+            const list = await readList(key);
+            if (list.some((e) => e.id === entry.id)) return; // already recorded
+            const next = [entry, ...list].slice(0, MAX_ACCOUNT_ENTRIES);
+            await secureSet(key, next);
+        } catch (err) {
+            // Best-effort: recording is non-load-bearing convenience — never let
+            // a history write break the send/flow that produced it.
+            console.warn(`tx-history: recordEntry failed for ${redact(account)}`, describeError(err));
+        }
+    };
+    const tail = (writeQueue.get(key) ?? Promise.resolve()).then(run, run);
+    writeQueue.set(
+        key,
+        tail.then(
+            () => undefined,
+            () => undefined,
+        ),
+    );
+    await tail;
 }
 
 /**
@@ -132,15 +174,16 @@ export async function listHistory(networkId: string, account: string): Promise<T
     }
 }
 
-/** Last block the incoming scan reached for this account+network, or null if never run. */
+/**
+ * Last block the incoming scan reached for this account+network, or null if
+ * never run (first run). A storage ERROR THROWS (HISTORY-11): the caller must
+ * NOT conflate a read failure with "first run" — that would plant the cursor at
+ * the chain tip and silently skip all historical incoming. scanIncoming catches
+ * the throw and leaves the cursor unset so the next open retries the same span.
+ */
 export async function getScanCursor(networkId: string, account: string): Promise<number | null> {
-    try {
-        const v = await secureGet<number>(cursorKey(networkId, account));
-        return typeof v === "number" ? v : null;
-    } catch (err) {
-        console.warn(`tx-history: getScanCursor failed for ${redact(account)}`, describeError(err));
-        return null;
-    }
+    const v = await secureGet<number>(cursorKey(networkId, account));
+    return typeof v === "number" ? v : null;
 }
 
 export async function setScanCursor(networkId: string, account: string, block: number): Promise<void> {

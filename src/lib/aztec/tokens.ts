@@ -88,18 +88,46 @@ export async function saveTokens(
     await storage.set(accountKey(networkId, account), tokens);
 }
 
+/**
+ * Serialize the load→modify→save sequence for the per-account token list
+ * (CONCURRENCY-07/17/32). Two concurrent addToken calls (e.g. a deploy adding
+ * its token while the user imports another) would otherwise each read the same
+ * snapshot and the second write would clobber the first. The whole read is taken
+ * INSIDE the lock. NOTE: a same-document chain — cross-realm (background SW +
+ * popup) writes are not covered, but the field-merge on read tolerates that.
+ */
+let _tokenWriteChain: Promise<unknown> = Promise.resolve();
+function withTokenLock<T>(fn: () => Promise<T>): Promise<T> {
+    const run = _tokenWriteChain.then(fn, fn);
+    _tokenWriteChain = run.then(
+        () => undefined,
+        () => undefined,
+    );
+    return run;
+}
+
+/** Forward-only cap on user-imported tokens (STORAGE-14); fee_juice excluded. */
+const MAX_TOKENS = 100;
+
 export async function addToken(
     networkId: AztecNetwork["id"],
     account: string,
     entry: Omit<TokenEntry, "kind">,
 ): Promise<TokenEntry[]> {
-    const tokens = await loadTokens(networkId, account);
-    if (tokens.find((t) => t.address.toLowerCase() === entry.address.toLowerCase())) {
-        throw new Error("Token already imported.");
-    }
-    const next = [...tokens, { ...entry, kind: "token" as const }];
-    await saveTokens(networkId, account, next);
-    return next;
+    return withTokenLock(async () => {
+        const tokens = await loadTokens(networkId, account);
+        if (tokens.find((t) => t.address.toLowerCase() === entry.address.toLowerCase())) {
+            throw new Error("Token already imported.");
+        }
+        if (tokens.filter((t) => t.kind === "token").length >= MAX_TOKENS) {
+            throw new Error(
+                `Token limit reached (${MAX_TOKENS}). Remove a token before importing another.`,
+            );
+        }
+        const next = [...tokens, { ...entry, kind: "token" as const }];
+        await saveTokens(networkId, account, next);
+        return next;
+    });
 }
 
 export async function removeToken(
@@ -107,10 +135,12 @@ export async function removeToken(
     account: string,
     address: string,
 ): Promise<TokenEntry[]> {
-    const tokens = await loadTokens(networkId, account);
-    const next = tokens.filter(
-        (t) => t.kind === "fee_juice" || t.address.toLowerCase() !== address.toLowerCase(),
-    );
-    await saveTokens(networkId, account, next);
-    return next;
+    return withTokenLock(async () => {
+        const tokens = await loadTokens(networkId, account);
+        const next = tokens.filter(
+            (t) => t.kind === "fee_juice" || t.address.toLowerCase() !== address.toLowerCase(),
+        );
+        await saveTokens(networkId, account, next);
+        return next;
+    });
 }

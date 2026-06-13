@@ -29,18 +29,58 @@ import { trackOp } from "../state/activity";
 
 let tail: Promise<unknown> = Promise.resolve();
 
+// Synchronous nesting depth of a running locked op. A withPxeLock-wrapped fn
+// that calls withPxeLock again FROM ITS OWN SYNCHRONOUS BODY would queue behind
+// the op currently holding the lock and deadlock; we surface that as an error
+// instead of a silent hang (CONCURRENCY-02/16). NOTE: this only detects
+// SYNCHRONOUS nesting — a true async-context tracker (AsyncLocalStorage) is
+// unavailable in the browser, and a naive "is an op running" flag would wrongly
+// reject legitimately CONCURRENT callers (which invoke from their own stacks
+// while the holder is awaiting). Concurrent callers queue normally.
+let syncDepth = 0;
+
 /** Run `fn` after every previously-queued PXE operation has fully settled. */
 export function withPxeLock<T>(fn: () => Promise<T>): Promise<T> {
+    if (syncDepth > 0) {
+        return Promise.reject(
+            new Error(
+                "withPxeLock re-entered from a running locked op — acquire the lock only at an " +
+                    "outermost entry point; a nested acquire deadlocks.",
+            ),
+        );
+    }
     // Chain onto the tail regardless of whether the prior op resolved or threw,
     // so one failure never wedges the queue. trackOp bumps the activity counter
     // only once it's actually our turn (not while we wait).
+    const guarded = (): Promise<T> => {
+        syncDepth++;
+        try {
+            // fn()'s SYNCHRONOUS portion runs here under syncDepth>0; the finally
+            // restores it the instant fn returns its promise, so concurrent ops
+            // (and fn's own post-await continuation) are not falsely flagged.
+            return Promise.resolve(fn());
+        } finally {
+            syncDepth--;
+        }
+    };
     const run = tail.then(
-        () => trackOp(fn),
-        () => trackOp(fn),
+        () => trackOp(guarded),
+        () => trackOp(guarded),
     );
     tail = run.then(
         () => undefined,
         () => undefined,
     );
     return run;
+}
+
+/**
+ * Abandon the current lock queue (CONCURRENCY-19). Called on wallet teardown:
+ * an op left hung against the OLD wallet's PXE/IndexedDB must not wedge the new
+ * wallet's first op behind it forever. The abandoned promises still settle on
+ * their own; we just stop chaining new work behind them.
+ */
+export function resetPxeLock(): void {
+    tail = Promise.resolve();
+    syncDepth = 0;
 }

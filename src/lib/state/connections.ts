@@ -35,16 +35,50 @@ function sessionArea(): { get: Function; set: Function; remove: Function } | nul
     return (globalThis as any).chrome?.storage?.session ?? null;
 }
 
+/** Forward-only cap on stored connections (STORAGE-14). */
+const MAX_CONNECTIONS = 50;
+
+/**
+ * Per-entry shape guard (AUTH-24/28, STORAGE-25/26/27): a single null/corrupt
+ * row in storage must not throw through listConnections/isConnected/save/remove
+ * (mirrors the claim-storage hardening). Drop malformed entries on read.
+ */
+function isValidEntry(c: unknown): c is Connection {
+    return (
+        !!c &&
+        typeof c === "object" &&
+        typeof (c as { origin?: unknown }).origin === "string" &&
+        (c as { origin: string }).origin.length > 0 &&
+        typeof (c as { approvedAt?: unknown }).approvedAt === "number" &&
+        typeof (c as { expiresAt?: unknown }).expiresAt === "number"
+    );
+}
+
 async function readAll(): Promise<Connection[]> {
     const area = localArea();
     if (!area) return [];
     const got = await area.get(CONNECTIONS_KEY);
     const list = got?.[CONNECTIONS_KEY];
-    return Array.isArray(list) ? (list as Connection[]) : [];
+    return Array.isArray(list) ? (list as unknown[]).filter(isValidEntry) : [];
 }
 
 async function writeAll(list: Connection[]): Promise<void> {
     await localArea()?.set({ [CONNECTIONS_KEY]: list });
+}
+
+/**
+ * Serialize the read-filter-write of the connections store (AUTH-25): a
+ * concurrent user-Disconnect and a site fizz:disconnect would otherwise read the
+ * same snapshot and the second write would clobber the first.
+ */
+let _pendingWrite: Promise<unknown> = Promise.resolve();
+function serialized<T>(fn: () => Promise<T>): Promise<T> {
+    const p = _pendingWrite.then(fn, fn);
+    _pendingWrite = p.then(
+        () => undefined,
+        () => undefined,
+    );
+    return p;
 }
 
 /** Live connections only — expired entries are pruned on read. */
@@ -64,10 +98,21 @@ export async function isConnected(origin: string): Promise<boolean> {
 
 /** Approve (or refresh) a connection for an origin. */
 export async function saveConnection(origin: string): Promise<Connection> {
-    const now = Date.now();
-    const conn: Connection = { origin, approvedAt: now, expiresAt: now + CONNECTION_TTL_MS };
-    const others = (await readAll()).filter((c) => c.origin !== origin);
-    await writeAll([...others, conn]);
+    const conn = await serialized(async () => {
+        const now = Date.now();
+        const c: Connection = { origin, approvedAt: now, expiresAt: now + CONNECTION_TTL_MS };
+        const others = (await readAll()).filter((x) => x.origin !== origin);
+        // Forward-only cap on distinct LIVE origins (refreshing an existing
+        // origin is always allowed — it's in `others`-excluded).
+        const liveOthers = others.filter((x) => x.expiresAt > now);
+        if (liveOthers.length >= MAX_CONNECTIONS) {
+            throw new Error(
+                `Connected-site limit reached (${MAX_CONNECTIONS}). Disconnect a site first.`,
+            );
+        }
+        await writeAll([...others, c]);
+        return c;
+    });
     // Best-effort local-history record — recordAuth swallows its own errors, so
     // it can never throw into the connect flow. Runs while unlocked.
     recordAuth("approved", origin);
@@ -75,8 +120,10 @@ export async function saveConnection(origin: string): Promise<Connection> {
 }
 
 export async function removeConnection(origin: string): Promise<void> {
-    const others = (await readAll()).filter((c) => c.origin !== origin);
-    await writeAll(others);
+    await serialized(async () => {
+        const others = (await readAll()).filter((c) => c.origin !== origin);
+        await writeAll(others);
+    });
     // Best-effort local-history record (see saveConnection).
     recordAuth("revoked", origin);
 }

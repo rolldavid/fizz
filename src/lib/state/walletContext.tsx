@@ -42,7 +42,7 @@ import { hasActiveOps, trackOp } from "./activity";
 import { drainClaimInbox } from "../aztec/claimInbox";
 import { autoClaimTick } from "../aztec/autoClaim";
 import { describeError } from "../errors";
-import { withPxeLock } from "../aztec/pxeLock";
+import { withPxeLock, resetPxeLock } from "../aztec/pxeLock";
 
 type AccountManager = Awaited<ReturnType<AztecWallet["createSchnorrAccount"]>>;
 
@@ -62,6 +62,21 @@ const IDLE_LOCK_MS = 5 * 60_000;
  * active ops (tearing down an op that has clearly hung).
  */
 const MAX_IDLE_DEFERRAL_MS = 20 * 60_000;
+
+// Serialize the secureGet+secureSet read-modify-write of the accounts-meta blob
+// (CONCURRENCY-07/17): two same-document mutations (e.g. a rapid switchAccount
+// then addAccount) must not both read the same snapshot and interleave. The
+// field-merge inside handles the CROSS-document case; this adds intra-document
+// ordering. Module-scoped so all hook instances in one document share it.
+let accountsMetaWriteChain: Promise<unknown> = Promise.resolve();
+function serializeAccountsMetaWrite<T>(fn: () => Promise<T>): Promise<T> {
+    const run = accountsMetaWriteChain.then(fn, fn);
+    accountsMetaWriteChain = run.then(
+        () => undefined,
+        () => undefined,
+    );
+    return run;
+}
 
 export type Account = {
     address: AztecAddress;
@@ -262,6 +277,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         const prev = walletInstanceRef.current;
         walletInstanceRef.current = null;
         managersRef.current = new Map();
+        // Abandon the PXE lock queue FIRST: an op left hung against this (old)
+        // wallet must not wedge the next wallet's first op behind it forever
+        // (CONCURRENCY-19).
+        resetPxeLock();
         if (!prev) return;
         await prev.stop().catch((e) => console.warn("PXE stop failed:", e));
     }, []);
@@ -486,22 +505,27 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }, [status, wallet, account, ensureAccountDeployed]);
 
     const persistAccountsMeta = useCallback(async (meta: AccountsMeta) => {
-        // Re-read the latest persisted meta and merge field-wise so a concurrent
-        // wallet document (detached window + toolbar popup, both unlocked from
-        // the shared session cache) can't clobber a change the other committed.
-        // Conservative: NEVER reduce the account count — that would silently drop
-        // a just-added account from PXE discovery on the next boot — and UNION
-        // labels so a rename in one window survives an add in the other. The
-        // active index and hidden set follow the action the user just took here.
-        const stored = (await secureGet<AccountsMeta>(KEYS.accountsMeta)) ?? meta;
-        const merged: AccountsMeta = {
-            count: Math.max(meta.count, stored.count),
-            activeIndex: meta.activeIndex,
-            labels: { ...stored.labels, ...meta.labels },
-            hidden: meta.hidden,
-        };
-        accountsMetaRef.current = merged;
-        await secureSet(KEYS.accountsMeta, merged);
+        // Serialized so two same-document mutations can't read the same snapshot
+        // and interleave (CONCURRENCY-07/17).
+        await serializeAccountsMetaWrite(async () => {
+            // Re-read the latest persisted meta and merge field-wise so a
+            // concurrent wallet document (detached window + toolbar popup, both
+            // unlocked from the shared session cache) can't clobber a change the
+            // other committed. Conservative: NEVER reduce the account count —
+            // that would silently drop a just-added account from PXE discovery on
+            // the next boot — and UNION labels so a rename in one window survives
+            // an add in the other. The active index and hidden set follow the
+            // action the user just took here.
+            const stored = (await secureGet<AccountsMeta>(KEYS.accountsMeta)) ?? meta;
+            const merged: AccountsMeta = {
+                count: Math.max(meta.count, stored.count),
+                activeIndex: meta.activeIndex,
+                labels: { ...stored.labels, ...meta.labels },
+                hidden: meta.hidden,
+            };
+            accountsMetaRef.current = merged;
+            await secureSet(KEYS.accountsMeta, merged);
+        });
     }, []);
 
     // Keep accountsMetaRef fresh when ANOTHER extension document writes the
