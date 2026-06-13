@@ -640,6 +640,39 @@ export function releaseClaimSpendLock(id: string): void {
  * "No L1 to L2 message found". We ask for a membership witness at the PXE's
  * synced block: if one exists, simulation is guaranteed to find the message.
  */
+/**
+ * Drive the PXE's block sync and return the hash of its synced anchor block —
+ * the L1-checkpointed view that witness / membership queries MUST be keyed to (a
+ * node serves these by block hash; lookups by number or "latest" hit the node's
+ * mutable, un-validated tip). Returns null when the PXE has not yet anchored its
+ * first block (fresh wallet / quiet chain): no claim can be ready or consumed
+ * before that point. Throws LOUDLY on a genuine PXE/internal fault or SDK drift —
+ * never swallow that as "nothing to do" (that would hide a funded claim).
+ *
+ * Shared by listReadyClaims (offer-for-spend) and the auto-claim nullifier sweep
+ * (consume) so both anchor to the identical validated view.
+ */
+export async function syncAndGetAnchorBlockHash(wallet: AztecWallet): Promise<unknown | null> {
+    const pxe = (wallet as any).pxe;
+    const synchronizer = (pxe as any).blockStateSynchronizer;
+    if (typeof synchronizer?.sync !== "function") {
+        throw new Error(
+            "PXE internals changed: blockStateSynchronizer.sync() unavailable — " +
+                "update bridge sync for this SDK version.",
+        );
+    }
+    await synchronizer.sync();
+    try {
+        const syncedHeader = await pxe.getSyncedBlockHeader();
+        return await syncedHeader.hash();
+    } catch (err) {
+        const msg = describeError(err);
+        if (/not-yet-synchronized|not yet synchronized/i.test(msg)) return null;
+        console.warn("syncAndGetAnchorBlockHash: unexpected getSyncedBlockHeader failure:", err);
+        throw err;
+    }
+}
+
 export async function listReadyClaims(
     wallet: AztecWallet,
     networkId: AztecNetwork["id"],
@@ -654,44 +687,12 @@ export async function listReadyClaims(
     );
     if (mine.length === 0) return [];
     const node = (wallet as any).aztecNode;
-    const pxe = (wallet as any).pxe;
 
-    // The PXE only advances its anchor block during private-state sync —
-    // getSyncedBlockHeader alone does NOT sync, and neither do public-storage
-    // utility reads. A wallet polling claim readiness would otherwise sit on a
-    // stale anchor forever (witness queries against pruned blocks then fail
-    // with "failed to get block data"). Drive the synchronizer explicitly;
-    // verified against SDK 4.3.0. If the internal moves in an upgrade, fail
-    // LOUDLY here rather than silently reporting claims unready forever.
-    const synchronizer = (pxe as any).blockStateSynchronizer;
-    if (typeof synchronizer?.sync !== "function") {
-        throw new Error(
-            "PXE internals changed: blockStateSynchronizer.sync() unavailable — " +
-                "update listReadyClaims for this SDK version.",
-        );
-    }
-    await synchronizer.sync();
-
-    // Identify the EXACT view the simulation will use: the PXE's anchor block,
-    // referenced BY HASH — the node serves witness lookups keyed by block hash
-    // (the PXE oracle's own path); lookups by number fail with "failed to get
-    // block data" on nodes that don't index historical snapshots that way.
-    let anchorBlockHash: unknown;
-    try {
-        const syncedHeader = await pxe.getSyncedBlockHeader();
-        anchorBlockHash = await syncedHeader.hash();
-    } catch (err) {
-        // The PXE throws a specific "not-yet-synchronized" error before it has
-        // anchored its first block (fresh wallet, quiet chain): no claim can be
-        // consumed before that point, so report none ready. But do NOT swallow a
-        // genuine PXE/IDB fault as "no gas" — that would hide a funded claim and
-        // present a real error as an empty wallet (and violates the no-swallow
-        // rule). Surface anything else.
-        const msg = describeError(err);
-        if (/not-yet-synchronized|not yet synchronized/i.test(msg)) return [];
-        console.warn("listReadyClaims: unexpected getSyncedBlockHeader failure:", err);
-        throw err;
-    }
+    // Anchor witness queries to the PXE's SYNCED, L1-checkpointed view (by hash).
+    // null = the PXE has no anchor yet (fresh wallet / quiet chain): no claim can
+    // be ready before that point.
+    const anchorBlockHash = await syncAndGetAnchorBlockHash(wallet);
+    if (anchorBlockHash == null) return [];
     // The claim's nullifier is keyed on the FeeJuice protocol contract.
     const feeJuiceAddress = FeeJuiceContract.at(wallet as any).address;
 

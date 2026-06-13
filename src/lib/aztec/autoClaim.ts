@@ -24,7 +24,6 @@ import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/foundation/curves/bn254";
 import { FeeJuiceContract } from "@aztec/aztec.js/protocol";
 import { computeL1ToL2MessageNullifier } from "@aztec/stdlib/hash";
-import { MerkleTreeId } from "@aztec/stdlib/trees";
 import { TxExecutionResult, TxHash, TxStatus } from "@aztec/stdlib/tx";
 import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
@@ -38,6 +37,7 @@ import {
     markBridgeConsumed,
     recordBridgeDeposit,
     recoverInFlightBridges,
+    syncAndGetAnchorBlockHash,
     type PendingBridge,
 } from "./bridge";
 
@@ -193,62 +193,96 @@ export async function autoClaimTick(args: {
     // sit in the optimistic gas number forever while the balance also holds
     // its value — a permanent double count.
     //
-    // We mark consumed ONLY on a POSITIVELY confirmed on-chain nullifier.
-    // markBridgeConsumed is irreversible (and the recovery dedupe then blocks
-    // re-adoption), so it must never fire on ambiguous evidence:
-    // getNonNullifiedL1ToL2MessageWitness throws for THREE indistinguishable
-    // reasons — message absent, nullifier present, OR a transient node error in
-    // its internal Promise.all — and "is the message in the tree right now?" is
-    // ALSO not proof of a spend (a freshly-synced UNspent claim is in-tree).
-    // Inferring consumption from either would let a lying node, or even
-    // ordinary sync/RPC timing, permanently strand a real funded claim. So we
-    // compute the claim's nullifier and look it up in the NULLIFIER_TREE
-    // directly: only a present leaf proves the claim was actually spent.
+    // markBridgeConsumed is irreversible for THIS entry, so a FALSE consume must
+    // never strand a funded claim. Two layered defenses (BRIDGE-39/45 + 47):
+    //
+    //  1. AUTHENTICATED EVIDENCE (here): we require a real nullifier MEMBERSHIP
+    //     WITNESS, anchored to the PXE's SYNCED, L1-checkpointed view (by block
+    //     hash) — NOT the old `findLeavesIndexes("latest", …)`, which trusted a
+    //     bare, forgeable index against the node's mutable tip. The witness must
+    //     carry a leaf preimage whose nullifier EXACTLY equals our locally
+    //     computed nullifier; `undefined` (absent → unspent), a mismatched/low
+    //     leaf, or any thrown RPC error leaves the claim pending. This kills the
+    //     trivially-forgeable index and every honest-node RPC-timing false
+    //     positive; it fails SAFE in every ambiguous case.
+    //  2. SELF-HEAL (bridge.ts adoptRecoveredBridge + claimRecovery): a malicious
+    //     node could still hand back a fabricated witness. That is recoverable —
+    //     recoverBridgedClaims reads the portal's deposit events from L1 (via
+    //     l1RpcUrl, an authority the Aztec node cannot forge) and RE-ADOPTS a
+    //     wrongly-consumed claim (dedupe is against LIVE entries only). Full
+    //     sibling-path-to-synced-root verification is the remaining hardening.
     const node = (wallet as any).aztecNode;
     const feeJuiceAddress = FeeJuiceContract.at(wallet as any).address;
-    for (const b of mine.filter(
-        (x) => (x.status ?? "pending") === "pending" && x.messageHash && !x.consumedAt && !x.claimTxHash,
-    )) {
-        // Parse the stored fields ONCE, under a guard: a malformed entry must
-        // never abort the whole tick (one did — its messageHash parsed badly,
-        // and the re-parse inside the old catch threw synchronously, killing
-        // every subsequent tick with "Tried to create a Fr from an invalid
-        // string: [object Object]").
-        let messageHash: Fr;
-        let claimSecret: Fr;
-        try {
-            messageHash = Fr.fromHexString(b.messageHash!);
-            claimSecret = Fr.fromHexString(b.claimSecret);
-        } catch (err) {
-            console.error(
-                `Claim ${b.id} is malformed and was skipped by the sweep. ` +
-                    `messageHash=${JSON.stringify(b.messageHash)} ` +
-                    `claimSecretType=${typeof b.claimSecret} status=${b.status} ` +
-                    `createdAt=${new Date(b.createdAt).toISOString()}`,
-                err,
-            );
-            continue;
-        }
-        let nullifier: Fr;
-        try {
-            nullifier = await computeL1ToL2MessageNullifier(feeJuiceAddress, messageHash, claimSecret);
-        } catch (err) {
-            // Can't derive the nullifier (e.g. a malformed field slipped the
-            // parse guard above) — never consume on a derivation failure.
-            console.error(`Claim ${b.id}: could not compute nullifier; left untouched.`, err);
-            continue;
-        }
-        // findLeavesIndexes returns a sparse array: a defined index at [0]
-        // means the nullifier leaf EXISTS, i.e. the claim was provably spent.
-        // Anything else (undefined, or a thrown RPC error that propagates and
-        // ends this tick) leaves the claim pending for a later, cleaner tick —
-        // never a false irreversible consume.
-        const [idx] = await node.findLeavesIndexes("latest", MerkleTreeId.NULLIFIER_TREE, [
-            nullifier,
-        ]);
-        if (idx !== undefined) {
-            console.info(`Claim ${b.id}: nullifier present on-chain — marking consumed.`);
-            await markBridgeConsumed(b.id);
+
+    // Anchor to the PXE's synced view ONCE for the whole sweep. null = no anchor
+    // yet (fresh wallet / quiet chain) → nothing can be consumed this tick.
+    let anchorBlockHash: unknown = null;
+    try {
+        anchorBlockHash = await syncAndGetAnchorBlockHash(wallet);
+    } catch (err) {
+        // A genuine PXE/sync fault — do NOT consume anything on an unverifiable
+        // view. Leave every claim pending for a later, cleaner tick.
+        console.warn("Nullifier sweep: could not anchor the synced view; skipping this tick.", err);
+        anchorBlockHash = null;
+    }
+    if (anchorBlockHash != null) {
+        for (const b of mine.filter(
+            (x) =>
+                (x.status ?? "pending") === "pending" && x.messageHash && !x.consumedAt && !x.claimTxHash,
+        )) {
+            // Parse the stored fields ONCE, under a guard: a malformed entry must
+            // never abort the whole tick (one did — its messageHash parsed badly,
+            // and the re-parse inside the old catch threw synchronously, killing
+            // every subsequent tick with "Tried to create a Fr from an invalid
+            // string: [object Object]").
+            let messageHash: Fr;
+            let claimSecret: Fr;
+            try {
+                messageHash = Fr.fromHexString(b.messageHash!);
+                claimSecret = Fr.fromHexString(b.claimSecret);
+            } catch (err) {
+                console.error(
+                    `Claim ${b.id} is malformed and was skipped by the sweep. ` +
+                        `messageHash=${JSON.stringify(b.messageHash)} ` +
+                        `claimSecretType=${typeof b.claimSecret} status=${b.status} ` +
+                        `createdAt=${new Date(b.createdAt).toISOString()}`,
+                    err,
+                );
+                continue;
+            }
+            let nullifier: Fr;
+            try {
+                nullifier = await computeL1ToL2MessageNullifier(
+                    feeJuiceAddress,
+                    messageHash,
+                    claimSecret,
+                );
+            } catch (err) {
+                // Can't derive the nullifier (e.g. a malformed field slipped the
+                // parse guard above) — never consume on a derivation failure.
+                console.error(`Claim ${b.id}: could not compute nullifier; left untouched.`, err);
+                continue;
+            }
+
+            // Membership witness keyed to the SYNCED block hash. undefined =
+            // absent (unspent); a thrown error = leave pending for a cleaner tick.
+            let witness: any;
+            try {
+                witness = await node.getNullifierMembershipWitness(anchorBlockHash, nullifier);
+            } catch (err) {
+                console.warn(`Claim ${b.id}: nullifier witness query failed; left pending.`, err);
+                continue;
+            }
+
+            // Consume ONLY when the witness proves OUR nullifier is present: its
+            // leaf preimage's nullifier must equal what we computed. A
+            // non-membership / low-nullifier witness carries a DIFFERENT leaf and
+            // is correctly rejected here.
+            const leafNullifier: Fr | undefined = witness?.leafPreimage?.leaf?.nullifier;
+            if (witness && leafNullifier && leafNullifier.equals(nullifier)) {
+                console.info(`Claim ${b.id}: nullifier present (verified witness) — marking consumed.`);
+                await markBridgeConsumed(b.id);
+            }
         }
     }
 

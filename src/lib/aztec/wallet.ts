@@ -120,11 +120,17 @@ export async function deriveBridgeClaimSecret(
     );
 }
 
-async function checkNodeReachable(nodeUrl: string, timeoutMs = 6000): Promise<void> {
+async function checkNodeReachable(network: AztecNetwork, timeoutMs = 6000): Promise<void> {
     // Aztec node speaks JSON-RPC. A trivial node_getNodeInfo call confirms the URL
-    // is up before we spend time spinning up PXE + WASM.
+    // is up AND lets us verify node IDENTITY before spending time on PXE + WASM:
+    // a node on the WRONG L1 chain (NETWORK-22) or a protocol-incompatible
+    // rollup version (NETWORK-36) must be caught here, not surfaced later as
+    // confusing tx failures. Without this a swapped/misconfigured node could
+    // anchor the wallet to a different chain entirely.
+    const nodeUrl = network.nodeUrl;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let body: any;
     try {
         const res = await fetch(nodeUrl, {
             method: "POST",
@@ -135,6 +141,7 @@ async function checkNodeReachable(nodeUrl: string, timeoutMs = 6000): Promise<vo
         if (!res.ok) {
             throw new Error(`Aztec node at ${nodeUrl} returned HTTP ${res.status}`);
         }
+        body = await res.json();
     } catch (err) {
         if ((err as any)?.name === "AbortError") {
             throw new Error(
@@ -142,11 +149,48 @@ async function checkNodeReachable(nodeUrl: string, timeoutMs = 6000): Promise<vo
                     `Check the network selector or start your local sandbox.`,
             );
         }
-        throw new Error(
-            `Cannot reach Aztec node at ${nodeUrl}: ${describeError(err)}`,
-        );
+        throw new Error(`Cannot reach Aztec node at ${nodeUrl}: ${describeError(err)}`);
     } finally {
         clearTimeout(timer);
+    }
+
+    // Identity checks. Skip for the local sandbox (l1ChainId === 0 sentinel /
+    // rollupVersion === 0): those are intentionally unpinned.
+    const info = body?.result ?? {};
+    // l1ChainId is sometimes serialized as a string over JSON-RPC — coerce.
+    const nodeChainId = Number(info.l1ChainId ?? info.chainId);
+    if (network.l1ChainId !== 0) {
+        if (!Number.isFinite(nodeChainId)) {
+            // Shape drift, not a confirmed mismatch — warn loudly, don't brick boot.
+            console.warn(
+                `Node identity: node_getNodeInfo returned no l1ChainId (SDK shape drift?). ` +
+                    `Skipping the chain-id check for ${nodeUrl}.`,
+            );
+        } else if (nodeChainId !== network.l1ChainId) {
+            // Unambiguous: the node is on a DIFFERENT L1 chain than this network.
+            // Hard fail — anchoring the wallet here is never safe.
+            throw new Error(
+                `Connected to the wrong chain: the node at ${nodeUrl} reports L1 chain ` +
+                    `${nodeChainId}, but ${network.name} expects ${network.l1ChainId}. ` +
+                    `Check the network selector.`,
+            );
+        }
+    }
+    // Rollup/protocol version: a mismatch signals the bundled wallet may be
+    // incompatible with the live network (an upgrade happened). We WARN rather
+    // than hard-throw: the PXE reads the canonical rollupVersion from the node,
+    // and a hard brick would take every user offline if the node is upgraded
+    // before this pinned value + Web Store build catch up. The §release gate
+    // re-verifies this value after any network upgrade.
+    if (network.rollupVersion !== 0) {
+        const nodeRollup = Number(info.rollupVersion);
+        if (Number.isFinite(nodeRollup) && nodeRollup !== network.rollupVersion) {
+            console.warn(
+                `Node rollup version ${nodeRollup} differs from the pinned ${network.rollupVersion} ` +
+                    `for ${network.name}. This build of Fizz may be incompatible with the current ` +
+                    `network — update from the Web Store if transactions start failing.`,
+            );
+        }
     }
 }
 
@@ -163,7 +207,7 @@ export async function createBrowserWallet(
     network: AztecNetwork,
     overrides: WalletBootOverrides = {},
 ): Promise<AztecWallet> {
-    await checkNodeReachable(network.nodeUrl);
+    await checkNodeReachable(network);
     return EmbeddedWallet.create(network.nodeUrl, {
         ...(overrides.ephemeral ? { ephemeral: true } : {}),
         pxeConfig: {

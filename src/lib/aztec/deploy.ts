@@ -26,6 +26,7 @@ import {
 import { assertWithinU128, getTokenContract } from "./tokenContract";
 import { withPxeLock } from "./pxeLock";
 import { recordEntry } from "./txHistory";
+import { PostBroadcastBookkeepingError } from "../errors";
 
 export type DeployTokenInput = {
     wallet: AztecWallet;
@@ -127,12 +128,19 @@ async function deployTokenImpl(input: DeployTokenInput): Promise<DeployTokenResu
         releaseFee(fee); // claim un-consumed — return it to the pool
         throw err;
     }
-    await markFeeConsumed(fee);
+    // BROADCAST — capture the hash before bookkeeping so a post-broadcast
+    // failure surfaces a "verify in Activity" message, not a double-deploy retry
+    // (ERRORS-22). The fee is spent on-chain here, so no releaseFee.
+    const txHash: string = sent.receipt.txHash.toString();
+    try {
+        await markFeeConsumed(fee);
+    } catch (err) {
+        throw new PostBroadcastBookkeepingError(txHash, err);
+    }
 
     const contract: any = sent.contract;
     const address: AztecAddress | undefined = contract?.address;
     if (!address) throw new Error("Deployment did not return a contract address.");
-    const txHash: string = sent.receipt.txHash.toString();
 
     // Accumulate the ACTUAL fee across all of the deploy's txs for the receipt.
     let totalFee = 0n;

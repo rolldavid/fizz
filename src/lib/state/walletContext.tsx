@@ -690,7 +690,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     );
 
     const lock = useCallback(() => {
-        vaultStore.lock();
+        // vaultStore.lock() zeroes the in-memory seed SYNCHRONOUSLY before its
+        // internal await, so the live secret is gone the instant this returns;
+        // the awaited part only clears the session-cache storage (and the
+        // persistSession self-heal covers a concurrent write). Fire-and-forget
+        // is therefore safe here (CRYPTO-47).
+        void vaultStore.lock();
         setMetaKeyProvider(null);
         void stopCurrentWallet();
         setWallet(null);

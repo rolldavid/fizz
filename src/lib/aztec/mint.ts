@@ -16,6 +16,7 @@ import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { ensureTokenRegistered } from "./balances";
 import { withPxeLock } from "./pxeLock";
+import { PostBroadcastBookkeepingError } from "../errors";
 import {
     displayFeeForSource,
     estimateUiFee,
@@ -82,8 +83,12 @@ async function mintTokenImpl(params: MintParams): Promise<{ txHash: string; feeJ
         releaseFee(fee); // claim un-consumed — return it to the pool
         throw err;
     }
-    await markFeeConsumed(fee);
-    const txHash = txHashOf(sent);
+    const txHash = txHashOf(sent); // BROADCAST — capture before bookkeeping (ERRORS-22)
+    try {
+        await markFeeConsumed(fee);
+    } catch (err) {
+        throw new PostBroadcastBookkeepingError(txHash, err);
+    }
     const feeJuice = displayFeeForSource(fee.label, sent);
     // Best-effort local-history record AFTER the mint succeeded — recordEntry
     // swallows its own errors, so this can never throw into the mint.

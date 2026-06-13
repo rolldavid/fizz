@@ -85,6 +85,65 @@ function hexToSeed(hex: string): Uint8Array {
     return out;
 }
 
+/**
+ * A stable per-vault identity string used to BIND the session-cache blob to THIS
+ * vault (CRYPTO-46/50). Excludes the seed and the ciphertext blob; uses only the
+ * envelope's key-derivation identity, so the binding key is recomputable on
+ * restore without a passphrase prompt yet a session blob written under a
+ * DIFFERENT or RECREATED vault (new salt / new passkey) fails authentication and
+ * is rejected. Note (residual, see CRYPTO-49 / R3): MV3 has no popup-only
+ * storage that both survives a popup reopen and is hidden from the service
+ * worker, so this binding — not in-memory-key encryption — is the achievable
+ * integrity control; an adversary with full chrome.storage read+write is already
+ * out of scope (they own the device).
+ */
+function vaultBindingMaterial(env: VaultEnvelope): string {
+    if (env.method === "passphrase") {
+        return `passphrase:${env.salt ?? ""}:${JSON.stringify(env.kdf ?? {})}`;
+    }
+    return `passkey:${env.credentialId ?? ""}:${env.prfSalt ?? ""}`;
+}
+
+async function sessionMacKey(env: VaultEnvelope): Promise<CryptoKey> {
+    const ikm = new TextEncoder().encode(vaultBindingMaterial(env));
+    const base = await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveKey"]);
+    return crypto.subtle.deriveKey(
+        {
+            name: "HKDF",
+            hash: "SHA-256",
+            salt: new Uint8Array(0),
+            info: new TextEncoder().encode("aztec-wallet/session-hmac/v1"),
+        },
+        base,
+        { name: "HMAC", hash: "SHA-256", length: 256 },
+        false,
+        ["sign", "verify"],
+    );
+}
+
+async function computeSessionTag(env: VaultEnvelope, seedHex: string, at: number): Promise<string> {
+    const key = await sessionMacKey(env);
+    const data = new TextEncoder().encode(`${seedHex}:${at}`);
+    const sig = await crypto.subtle.sign("HMAC", key, data);
+    return b64.encode(new Uint8Array(sig));
+}
+
+/** Constant-time MAC verification via WebCrypto (no string compare). */
+async function verifySessionTag(
+    env: VaultEnvelope,
+    seedHex: string,
+    at: number,
+    macB64: string,
+): Promise<boolean> {
+    try {
+        const key = await sessionMacKey(env);
+        const data = new TextEncoder().encode(`${seedHex}:${at}`);
+        return await crypto.subtle.verify("HMAC", key, b64.decode(macB64), data);
+    } catch {
+        return false;
+    }
+}
+
 function decryptFailure(err: unknown): Error {
     // WebCrypto reports GCM auth failure as an opaque OperationError, which is
     // also what a wrong passphrase produces. Surface something actionable
@@ -108,8 +167,15 @@ class VaultStore {
     /** Cache the unlocked seed in session memory so re-opening skips the prompt. */
     private async persistSession(): Promise<void> {
         const area = sessionArea();
-        if (!area || !this.unlocked) return;
-        await area.set({ [SESSION_KEY]: { seed: seedToHex(this.unlocked.seed), at: Date.now() } });
+        if (!area || !this.unlocked || !this.envelope) return;
+        const seedHex = seedToHex(this.unlocked.seed);
+        const at = Date.now();
+        const mac = await computeSessionTag(this.envelope, seedHex, at);
+        await area.set({ [SESSION_KEY]: { seed: seedHex, at, mac } });
+        // TOCTOU self-heal (CRYPTO-47): a concurrent lock() may have cleared the
+        // unlocked state WHILE this set() was in flight. If so, remove what we
+        // just wrote so a locked wallet never leaves a live seed in session.
+        if (!this.unlocked) await area.remove(SESSION_KEY);
     }
 
     /** Restore a still-valid (< 30 days, same browser session) cached unlock. */
@@ -123,6 +189,19 @@ class VaultStore {
             await area.remove(SESSION_KEY);
             return;
         }
+        // Strict hex charset (CRYPTO-38): hexToSeed's parseInt silently yields
+        // garbage bytes for non-hex / upper-case input — reject, don't unlock.
+        if (!/^[0-9a-f]{64}$/.test(blob.seed)) {
+            await area.remove(SESSION_KEY);
+            return;
+        }
+        // Authenticity (CRYPTO-46/50): the blob MUST carry a MAC bound to this
+        // vault. A substituted seed, a tag from a different/recreated vault, or a
+        // missing tag fails closed — never unlock on unverified session data.
+        if (typeof blob.mac !== "string" || !(await verifySessionTag(this.envelope, blob.seed, blob.at, blob.mac))) {
+            await area.remove(SESSION_KEY);
+            return;
+        }
         const seed = hexToSeed(blob.seed);
         if (seed.length !== 32) {
             await area.remove(SESSION_KEY);
@@ -131,8 +210,8 @@ class VaultStore {
         this.unlocked = { seed };
     }
 
-    private clearSession(): void {
-        void sessionArea()?.remove(SESSION_KEY);
+    private async clearSession(): Promise<void> {
+        await sessionArea()?.remove(SESSION_KEY);
     }
 
     isInitialized(): boolean {
@@ -159,13 +238,15 @@ class VaultStore {
         return this.metaKeyPromise;
     }
 
-    lock(): void {
-        // Zero the seed bytes before dropping the reference, and drop the
-        // cached session unlock — an explicit lock requires the password again.
+    async lock(): Promise<void> {
+        // Zero the seed bytes and drop the in-memory reference SYNCHRONOUSLY
+        // first (so the live seed is gone immediately even if the caller doesn't
+        // await), then await the session clear as the LAST step so a locked
+        // wallet never leaves a cached seed behind (CRYPTO-47).
         if (this.unlocked) this.unlocked.seed.fill(0);
         this.unlocked = null;
         this.metaKeyPromise = null;
-        this.clearSession();
+        await this.clearSession();
     }
 
     private assertSupportedVersion(env: VaultEnvelope): void {
@@ -336,7 +417,7 @@ class VaultStore {
         if (this.unlocked) this.unlocked.seed.fill(0);
         this.unlocked = null;
         this.metaKeyPromise = null;
-        this.clearSession();
+        await this.clearSession();
     }
 }
 

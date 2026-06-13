@@ -17,6 +17,7 @@ import type { AztecWallet } from "./wallet";
 import type { AztecNetwork } from "./networks";
 import { ensureTokenRegistered } from "./balances";
 import { withPxeLock } from "./pxeLock";
+import { PostBroadcastBookkeepingError } from "../errors";
 import {
     displayFeeForSource,
     estimateUiFee,
@@ -97,8 +98,16 @@ async function transferImpl(params: TransferParams): Promise<{ txHash: string; f
         releaseFee(feeResolution); // claim un-consumed — return it to the pool
         throw err;
     }
-    await markFeeConsumed(feeResolution);
+    // BROADCAST. Capture the hash before any bookkeeping: a post-broadcast
+    // failure must tell the user the tx may have landed, never "retry"
+    // (double-send safety, ERRORS-22). The fee is already spent on-chain here,
+    // so we do NOT releaseFee on a bookkeeping failure.
     const txHash = txHashOf(sent);
+    try {
+        await markFeeConsumed(feeResolution);
+    } catch (err) {
+        throw new PostBroadcastBookkeepingError(txHash, err);
+    }
     const feeJuice = displayFeeForSource(feeResolution.label, sent);
     // Best-effort local-history record AFTER the tx succeeded — recordEntry
     // swallows its own errors, so this can never throw into the send.
@@ -157,8 +166,12 @@ async function shieldImpl(params: ShieldParams): Promise<{ txHash: string; feeJu
         releaseFee(feeResolution);
         throw err;
     }
-    await markFeeConsumed(feeResolution);
-    const txHash = txHashOf(sent);
+    const txHash = txHashOf(sent); // BROADCAST — capture before bookkeeping (ERRORS-22)
+    try {
+        await markFeeConsumed(feeResolution);
+    } catch (err) {
+        throw new PostBroadcastBookkeepingError(txHash, err);
+    }
     const feeJuice = displayFeeForSource(feeResolution.label, sent);
     // Best-effort local-history record (see transferImpl).
     recordEntry(params.network.id, params.sender.toString(), {
@@ -190,8 +203,12 @@ async function unshieldImpl(params: ShieldParams): Promise<{ txHash: string; fee
         releaseFee(feeResolution);
         throw err;
     }
-    await markFeeConsumed(feeResolution);
-    const txHash = txHashOf(sent);
+    const txHash = txHashOf(sent); // BROADCAST — capture before bookkeeping (ERRORS-22)
+    try {
+        await markFeeConsumed(feeResolution);
+    } catch (err) {
+        throw new PostBroadcastBookkeepingError(txHash, err);
+    }
     const feeJuice = displayFeeForSource(feeResolution.label, sent);
     // Best-effort local-history record (see transferImpl).
     recordEntry(params.network.id, params.sender.toString(), {
