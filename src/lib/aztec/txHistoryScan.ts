@@ -34,9 +34,7 @@ import { loadTokens } from "./tokens";
 import { getTokenContract } from "./tokenContract";
 import { withPxeLock } from "./pxeLock";
 import { getScanCursor, recordEntry, setScanCursor } from "./txHistory";
-import { describeError } from "../errors";
-
-const redact = (a: string): string => (a.length > 12 ? `${a.slice(0, 10)}…` : a);
+import { describeError, redact } from "../errors";
 
 /** Never scan more than this many blocks of incoming history in one pass. */
 const MAX_SPAN = 20000;

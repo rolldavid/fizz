@@ -23,10 +23,7 @@
 
 import { KEYS } from "../storage";
 import { secureGet, secureSet } from "../secureStorage";
-import { describeError } from "../errors";
-
-/** Redact an address for logs — never print a full account/recipient address. */
-const redact = (a: string): string => (a.length > 12 ? `${a.slice(0, 10)}…` : a);
+import { describeError, redact } from "../errors";
 
 export type TxHistoryEntry = {
     /** txHash for txns; `auth:${origin}:${at}` for auth; `${txHash}:${logIndex}` for incoming. */

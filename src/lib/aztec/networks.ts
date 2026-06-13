@@ -126,6 +126,14 @@ export const SELECTABLE_NETWORKS: AztecNetwork[] = SELECTABLE_NETWORK_IDS.map(ge
 
 import { KEYS, storage } from "../storage";
 
+/**
+ * Hosts a CUSTOM node URL may use, beyond localhost. MUST be a subset of the
+ * manifest's connect-src (a host the validator accepts but the CSP blocks is the
+ * opaque fetch failure this list exists to avoid) — asserted in
+ * tests/unit/networks.test.ts (RELEASE-09). Exported for that test.
+ */
+export const ALLOWED_NODE_HOSTS = ["rpc.testnet.aztec-labs.com", "v4-devnet-2.aztec-labs.com"];
+
 export function validateCustomNodeUrl(raw: string): string {
     let url: URL;
     try {
@@ -148,7 +156,6 @@ export function validateCustomNodeUrl(raw: string): string {
     // This allowlist MUST stay in sync with manifest.ts connect-src — a node the
     // validator accepts but the CSP blocks is exactly the opaque failure this
     // check exists to avoid.
-    const ALLOWED_NODE_HOSTS = ["rpc.testnet.aztec-labs.com", "v4-devnet-2.aztec-labs.com"];
     if (!isLocal && !ALLOWED_NODE_HOSTS.includes(url.hostname)) {
         throw new Error(
             "For your seed's safety the wallet only permits network egress to localhost and the " +
@@ -178,8 +185,12 @@ export async function loadCustomNodeUrl(): Promise<string | undefined> {
  */
 export async function resolveNetwork(id: AztecNetwork["id"]): Promise<AztecNetwork> {
     if (id !== "custom") return getNetwork(id);
-    const nodeUrl = await loadCustomNodeUrl();
-    if (!nodeUrl) throw new Error("No custom node configured.");
+    const stored = await loadCustomNodeUrl();
+    if (!stored) throw new Error("No custom node configured.");
+    // Re-validate on load (NETWORK-05/06/07): a URL saved when the allowlist was
+    // wider, or a now-blocked host, must be rejected up front — not fail later as
+    // an opaque CSP fetch error.
+    const nodeUrl = validateCustomNodeUrl(stored);
     return {
         id: "custom",
         name: "Custom node",

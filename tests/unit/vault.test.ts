@@ -24,6 +24,15 @@ function randomKeyBytes(): Uint8Array {
 }
 
 describe("vault crypto primitives", () => {
+    // CRYPTO-39 — a future cost-reduction PR must fail CI, not silently weaken
+    // the vault's offline-attack resistance below the OWASP Argon2id floor.
+    it("ARGON2_DEFAULTS meets the OWASP Argon2id floor", () => {
+        expect(ARGON2_DEFAULTS.m).toBeGreaterThanOrEqual(65536);
+        expect(ARGON2_DEFAULTS.t).toBeGreaterThanOrEqual(2);
+        expect(ARGON2_DEFAULTS.p).toBeGreaterThanOrEqual(1);
+        expect(ARGON2_DEFAULTS.algo).toBe("argon2id");
+    });
+
     it("encrypt/decrypt round-trips with AAD", async () => {
         const key = await importContentKey(randomKeyBytes());
         const aad = vaultAAD({

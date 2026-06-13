@@ -24,13 +24,10 @@
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { KEYS } from "../storage";
 import { secureGet, secureSet } from "../secureStorage";
-import { describeError } from "../errors";
+import { describeError, redact } from "../errors";
 import type { AztecNetwork } from "./networks";
 import type { AztecWallet } from "./wallet";
 
-/** Short, non-identifying prefix for log lines — never log a full address
- *  (devtools/screen-share/console-scraping leak vectors). */
-const redact = (a: string): string => (a.length > 12 ? `${a.slice(0, 10)}…` : a);
 
 export type ContactSource = "manual" | "sent" | "received" | "imported";
 
