@@ -77,6 +77,23 @@ describe("humanizeTxError — bucket priority (ERRORS-03/04/22/27)", () => {
         const msg = humanizeTxError(new Error("node_getTxReceipt failed during reorg / unknown block"));
         expect(msg.toLowerCase()).toContain("submitted"); // bucket 2 wins (safety)
     });
+    it("a wallet-locked + receipt string hits the locked bucket (1 before 2)", () => {
+        // A lock teardown mid-send can surface both signals; bucket 1 (locked)
+        // is more specific about the cause and is checked first.
+        const msg = humanizeTxError(
+            new Error("wallet is locked — node_getTxReceipt aborted"),
+        );
+        expect(msg.toLowerCase()).toContain("locked");
+        expect(msg.toLowerCase()).toContain("transaction history");
+    });
+    it("PostBroadcast (bucket 0) wins even when its message mentions a lock", () => {
+        // The structured error must dominate substring matches: its cause text
+        // ('wallet locked') must not demote it into bucket 1.
+        const e = new PostBroadcastBookkeepingError(ADDR64, new Error("wallet locked"));
+        const msg = humanizeTxError(e);
+        expect(msg.toLowerCase()).toContain("submitted");
+        expect(msg).toContain(ADDR64.slice(0, 12)); // carries the hash → bucket 0
+    });
     it("unknown errors pass through describeError (scrubbed)", () => {
         const msg = humanizeTxError(new Error(`weird failure at ${ADDR40}`));
         expect(msg).not.toContain(ADDR40);
