@@ -23,6 +23,9 @@ CLAUDE.MD
 .claude
 
 # Internal security invariants spec/audit + the verified fix backlog. Contain
-# unfixed CRITICAL/HIGH findings = an attacker roadmap. KEEP LOCAL until the open
-# findings are closed, then publish a sanitized "practices" version.
-INVARIANTS*.md
+# unfixed findings + file:line pointers = an attacker roadmap. KEEP LOCAL.
+# The sanitized, leak-checked public versions live at /INVARIANTS.md and
+# /SECURITY.md (committed). The two internal files are anchored to root so the
+# public docs are never caught by the ignore.
+/INVARIANTS.internal.md
+/INVARIANTS.fixlist.md
