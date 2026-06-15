@@ -113,10 +113,20 @@ export async function addToken(
     networkId: AztecNetwork["id"],
     account: string,
     entry: Omit<TokenEntry, "kind">,
+    /**
+     * What to do when the token is already in the list. Manual import (the
+     * default) surfaces "already imported" to the user. The deploy + crash-
+     * recovery paths pass "ignore": the token being present already IS their
+     * success condition, so a duplicate add (a recovery probe or a retry that
+     * raced the deploy) must be an idempotent no-op — NOT an error that flips a
+     * landed on-chain deploy to "failed".
+     */
+    opts: { ifExists?: "throw" | "ignore" } = {},
 ): Promise<TokenEntry[]> {
     return withTokenLock(async () => {
         const tokens = await loadTokens(networkId, account);
         if (tokens.find((t) => t.address.toLowerCase() === entry.address.toLowerCase())) {
+            if (opts.ifExists === "ignore") return tokens;
             throw new Error("Token already imported.");
         }
         if (tokens.filter((t) => t.kind === "token").length >= MAX_TOKENS) {

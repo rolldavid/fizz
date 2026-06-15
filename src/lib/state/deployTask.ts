@@ -156,12 +156,16 @@ export function startTokenDeploy(args: {
             },
         });
         const addrStr = res.address.toString();
-        await addToken(args.network.id, args.deployer.toString(), {
-            address: addrStr,
-            symbol,
-            name,
-            decimals,
-        });
+        // The token is on-chain now — this IS success. Adding it to the local
+        // list is bookkeeping that must never demote a landed deploy to
+        // "failed": ifExists:"ignore" makes a duplicate add (e.g. a crash-
+        // recovery probe that already imported it) an idempotent no-op.
+        await addToken(
+            args.network.id,
+            args.deployer.toString(),
+            { address: addrStr, symbol, name, decimals },
+            { ifExists: "ignore" },
+        );
         await clearDeployJournal();
         setTask({ phase: "done", ...base, address: addrStr, txHash: res.txHash, feeJuice: res.feeJuice });
     }).catch(async (e) => {

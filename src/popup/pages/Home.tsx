@@ -16,6 +16,7 @@ import {
     TrashIcon,
 } from "../components/icons";
 import { useWallet } from "../../lib/state/walletContext";
+import { useDeployTask } from "../../lib/state/deployTask";
 import {
     formatUnits,
     getTokenBalance,
@@ -69,6 +70,10 @@ export function Home({
         lock,
         network,
     } = useWallet();
+    // While a deploy is in flight (or its result is unacknowledged) the Shell
+    // pins its own bottom status bar over Home — hide the "Launch a token" CTA
+    // so the user never sees two stacked bottom bars (one of them wrong).
+    const deployTask = useDeployTask();
     // STRICT rule: rows are tagged with the address they were fetched FOR, and
     // are only ever rendered while that address is still the active account.
     // Without this, a refresh started for account 1 could resolve after a
@@ -363,11 +368,15 @@ export function Home({
                 </div>
 
                 {/* Sticky CTA — straight to the in-wallet Deploy screen. The
-                    whole flow (form, proving, result) lives in the wallet. */}
-                <button className="sticky-cta" onClick={() => onNavigate("deploy")}>
-                    <span>Launch a token on Aztec</span>
-                    <span className="link">Deploy →</span>
-                </button>
+                    whole flow (form, proving, result) lives in the wallet.
+                    Suppressed during a deploy: the Shell's DeployStatusBar owns
+                    the bottom slot then, and two bars stacked read as a bug. */}
+                {!deployTask && (
+                    <button className="sticky-cta" onClick={() => onNavigate("deploy")}>
+                        <span>Launch a token on Aztec</span>
+                        <span className="link">Deploy →</span>
+                    </button>
+                )}
             </div>
         </>
     );

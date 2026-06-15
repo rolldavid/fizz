@@ -42,6 +42,23 @@ describe("token registry (per-network, per-account)", () => {
         ).rejects.toThrow(/already imported/i);
     });
 
+    // The deploy + crash-recovery paths pass ifExists:"ignore": a token that's
+    // already in the list IS their success condition, so a duplicate add must
+    // be an idempotent no-op — NOT the throw that once flipped a landed deploy
+    // to "Deploying X failed: Token already imported."
+    it("ifExists:'ignore' makes a duplicate add an idempotent no-op", async () => {
+        await addToken("sandbox", ACCT, { address: ADDR_A, symbol: "AAA", name: "Token A", decimals: 18 });
+        const after = await addToken(
+            "sandbox",
+            ACCT,
+            { address: ADDR_A, symbol: "IGNORED", name: "Re-add", decimals: 6 },
+            { ifExists: "ignore" },
+        );
+        // Resolves (no throw), and the original entry is untouched — not duplicated.
+        expect(after.filter((t) => t.address.toLowerCase() === ADDR_A.toLowerCase())).toHaveLength(1);
+        expect(after.find((t) => t.address === ADDR_A)?.symbol).toBe("AAA");
+    });
+
     it("removeToken removes the token but never fee juice", async () => {
         await addToken("sandbox", ACCT, { address: ADDR_A, symbol: "AAA", name: "Token A", decimals: 18 });
         await addToken("sandbox", ACCT, { address: ADDR_B, symbol: "BBB", name: "Token B", decimals: 6 });
