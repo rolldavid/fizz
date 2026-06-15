@@ -58,6 +58,25 @@ function emitLanded(): void {
 }
 
 /**
+ * The consume gate for the nullifier sweep (BRIDGE-39 / TRUST-01). A pending
+ * claim may be marked consumed ONLY when the node returns a membership witness
+ * whose leaf preimage carries OUR exact nullifier. Returns false for every
+ * ambiguous shape — a null/undefined witness (absent → unspent), a witness with
+ * no leaf nullifier, or a witness whose leaf nullifier differs from ours (a
+ * non-membership / low-leaf witness). Pure + exported so this fail-safe is
+ * unit-pinned: a future refactor that reverts to a bare findLeavesIndexes index
+ * (forgeable — the node is handed the target nullifier in the query) or that
+ * drops the exact-equality check would turn a covered test red.
+ */
+export function nullifierWitnessProvesPresence(
+    witness: { leafPreimage?: { leaf?: { nullifier?: { equals(o: unknown): boolean } } } } | null | undefined,
+    nullifier: unknown,
+): boolean {
+    const leafNullifier = witness?.leafPreimage?.leaf?.nullifier;
+    return !!(witness && leafNullifier && leafNullifier.equals(nullifier));
+}
+
+/**
  * Settle a landing tx broadcast by the old eager-claim model (claimTxHash on
  * the entry). Returns true when the entry reached a terminal state.
  */
@@ -305,8 +324,7 @@ async function autoClaimTickImpl(args: {
             // leaf preimage's nullifier must equal what we computed. A
             // non-membership / low-nullifier witness carries a DIFFERENT leaf and
             // is correctly rejected here.
-            const leafNullifier: Fr | undefined = witness?.leafPreimage?.leaf?.nullifier;
-            if (witness && leafNullifier && leafNullifier.equals(nullifier)) {
+            if (nullifierWitnessProvesPresence(witness, nullifier)) {
                 console.info(`Claim ${b.id}: nullifier present (verified witness) — marking consumed.`);
                 await markBridgeConsumed(b.id);
             }

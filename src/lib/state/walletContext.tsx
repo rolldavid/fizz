@@ -24,6 +24,7 @@ import {
     createBrowserWallet,
     deployAccountContract,
     deriveAccount,
+    discoverAccountCount,
     type AztecWallet,
 } from "../aztec/wallet";
 import { markFeeConsumed, releaseFee, resolveFeePaymentMethod } from "../aztec/fee";
@@ -171,7 +172,12 @@ async function loadNetwork(): Promise<AztecNetwork> {
     }
 }
 
-async function loadAccountsMeta(): Promise<AccountsMeta> {
+/**
+ * Read the persisted account list, or `null` if none exists yet (fresh device /
+ * first boot after import, or an unreadable meta blob). A null return is what
+ * triggers on-chain account discovery in `bootWallet`.
+ */
+async function loadAccountsMeta(): Promise<AccountsMeta | null> {
     let stored = await secureGet<AccountsMeta>(KEYS.accountsMeta);
     if (!stored) {
         // STORAGE-38: migrate a legacy v1 accountMeta → v2, once. The v1 schema
@@ -195,7 +201,7 @@ async function loadAccountsMeta(): Promise<AccountsMeta> {
         }
     }
     if (!stored || !Number.isInteger(stored.count) || stored.count < 1) {
-        return DEFAULT_ACCOUNTS_META;
+        return null;
     }
     const count = Math.min(stored.count, MAX_ACCOUNTS);
     // Sanitize hidden: in-range only, and NEVER all of them — a meta that
@@ -228,6 +234,39 @@ async function isInitialized(wallet: AztecWallet, address: AztecAddress): Promis
     return meta.initializationStatus === ContractInitializationStatus.INITIALIZED;
 }
 
+/**
+ * Rediscover the accounts a freshly imported seed already owns on-chain
+ * (INVARIANT LIFECYCLE-36). The gap-limit scan itself lives in `discoverAccountCount`
+ * (pure, unit-tested); here we supply the probe — derive each index, register a
+ * Schnorr account to obtain its address, and ask the node whether it's deployed.
+ *
+ * Caveat: finds only DEPLOYED accounts. One that received notes but was never
+ * deployed has no on-chain footprint and is recovered via "+ New account".
+ */
+async function discoverAccounts(
+    wallet: AztecWallet,
+    seed: Uint8Array,
+): Promise<{ meta: AccountsMeta; managers: Map<number, AccountManager> }> {
+    const probed = new Map<number, AccountManager>();
+    const count = await discoverAccountCount(async (i) => {
+        const { secret, salt } = await deriveAccount(seed, i);
+        const manager = await wallet.createSchnorrAccount(secret, salt, undefined, `Account ${i + 1}`);
+        probed.set(i, manager);
+        return isInitialized(wallet, manager.address);
+    }, MAX_ACCOUNTS);
+    // Keep only managers within the final range. The extra indices probed past
+    // the last deployed account stay registered in this PXE for the session but
+    // are not tracked — the next boot reads the persisted count and re-registers
+    // exactly [0, count), so the phantom registrations don't survive a relock.
+    const managers = new Map<number, AccountManager>();
+    for (let i = 0; i < count; i++) {
+        const m = probed.get(i);
+        if (m) managers.set(i, m);
+    }
+    console.info(`Account discovery: found ${count} account(s) for this seed.`);
+    return { meta: { count, activeIndex: 0, labels: {}, hidden: [] }, managers };
+}
+
 async function bootWallet(
     network: AztecNetwork,
     secret: UnlockedSecret,
@@ -239,18 +278,51 @@ async function bootWallet(
     meta: AccountsMeta;
 }> {
     const wallet = await createBrowserWallet(network);
-    const meta = await loadAccountsMeta();
+
+    const managers = new Map<number, AccountManager>();
+    let meta = await loadAccountsMeta();
+    if (!meta) {
+        // No local account list yet (fresh device / first boot after import, or
+        // an unreadable meta blob). The seed may already own deployed accounts
+        // on-chain — rediscover them by a gap-limit scan, reuse the managers the
+        // scan already created, and persist the resulting list. On a brand-new
+        // wallet this finds only index 0 (count 1) and costs a few quick probes.
+        const discovered = await discoverAccounts(wallet, secret.seed);
+        for (const [i, m] of discovered.managers) managers.set(i, m);
+        // Persist through the serialized, never-shrink merge the provider uses
+        // (STORAGE-19/43, CONCURRENCY-07): if another document persisted a list
+        // while we were scanning, keep the higher count (the register loop below
+        // derives any indices our scan didn't populate) and union labels rather
+        // than clobbering it.
+        meta = await serializeAccountsMetaWrite(async () => {
+            const concurrent = await secureGet<AccountsMeta>(KEYS.accountsMeta);
+            if (!concurrent || !Number.isInteger(concurrent.count) || concurrent.count < 1) {
+                await secureSet(KEYS.accountsMeta, discovered.meta);
+                return discovered.meta;
+            }
+            const merged: AccountsMeta = {
+                count: Math.max(discovered.meta.count, concurrent.count),
+                activeIndex: concurrent.activeIndex,
+                labels: { ...discovered.meta.labels, ...concurrent.labels },
+                hidden: concurrent.hidden ?? [],
+            };
+            await secureSet(KEYS.accountsMeta, merged);
+            return merged;
+        });
+    }
 
     // Register every VISIBLE account in the PXE so notes for all of them are
     // discovered continuously; only the active one drives the UI. Hidden
     // (removed) indices are skipped entirely — not derived, not synced.
-    const managers = new Map<number, AccountManager>();
     const accounts: AccountListEntry[] = [];
     for (const i of visibleIndices(meta)) {
-        const { secret: accSecret, salt } = await deriveAccount(secret.seed, i);
         const label = accountLabel(meta, i);
-        const manager = await wallet.createSchnorrAccount(accSecret, salt, undefined, label);
-        managers.set(i, manager);
+        let manager = managers.get(i);
+        if (!manager) {
+            const { secret: accSecret, salt } = await deriveAccount(secret.seed, i);
+            manager = await wallet.createSchnorrAccount(accSecret, salt, undefined, label);
+            managers.set(i, manager);
+        }
         accounts.push({ index: i, label, address: manager.address });
     }
 

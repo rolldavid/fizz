@@ -20,6 +20,19 @@ describe("scrubAddresses", () => {
     it("leaves non-address text untouched", () => {
         expect(scrubAddresses("plain error, no secrets")).toBe("plain error, no secrets");
     });
+    it("collapses a >64-hex run whole (no trailing-half leak)", () => {
+        // The old fixed-{64} pass matched the first 64 and left the trailing 64
+        // hex (now un-0x'd) in the clear. A single greedy ≥40 match collapses it.
+        const long = "0x" + "c".repeat(128);
+        const out = scrubAddresses(`payload ${long} end`);
+        expect(out).not.toMatch(/c{40,}/); // no long hex run survives
+        expect(out).toContain("⟨addr⟩");
+    });
+    it("collapses an 0X-cased prefix too", () => {
+        const out = scrubAddresses("0X" + "d".repeat(64));
+        expect(out).not.toMatch(/d{40,}/);
+        expect(out).toContain("⟨addr⟩");
+    });
 });
 
 describe("describeError — totality + scrubbing (ERRORS-01/02, PRIVACY-01/35)", () => {

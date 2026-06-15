@@ -29,9 +29,14 @@ export function redact(a: string): string {
  * hardcoded slice OUTSIDE this path, so scrubbing here is always safe.
  */
 export function scrubAddresses(s: string): string {
-    return s
-        .replace(/0x[0-9a-fA-F]{64}/g, (m) => `${m.slice(0, 10)}…⟨addr⟩`)
-        .replace(/0x[0-9a-fA-F]{40}/g, (m) => `${m.slice(0, 10)}…⟨addr⟩`);
+    // Collapse any 0x-prefixed hex run of 40+ chars to a short prefix. ONE greedy
+    // ≥40 match (not the old fixed {64} then {40} pair) closes two leaks: a
+    // 128-hex value (e.g. a serialized point / two concatenated hashes) where the
+    // old {64} pass matched the first half and left the trailing 64 hex un-0x'd
+    // and un-scrubbed; and an `0X`-cased prefix (some SDK/node output) the
+    // lowercase-only literal missed. ETH (40), Aztec/tx-hash (64), and longer runs
+    // all collapse. Over-scrubbing a long non-address hex blob is privacy-safe.
+    return s.replace(/0[xX][0-9a-fA-F]{40,}/g, (m) => `${m.slice(0, 10)}…⟨addr⟩`);
 }
 
 export function describeError(err: unknown): string {

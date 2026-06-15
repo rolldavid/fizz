@@ -99,6 +99,58 @@ export async function exportAccountSecretHex(seed: Uint8Array, accountIndex = 0)
 }
 
 /**
+ * Stop a forward discovery scan after this many consecutive undeployed indices.
+ * Accounts are created at contiguous indices from 0 (the wallet's "+ New account"
+ * always fills the lowest free/hidden slot), so the highest DEPLOYED index sets
+ * the count; the gap tolerates a middle account that was created but never
+ * deployed (e.g. deployed 0 and 2, skipped 1).
+ */
+export const ACCOUNT_DISCOVERY_GAP_LIMIT = 5;
+
+/**
+ * BIP44-style gap-limit account-discovery scan (INVARIANT LIFECYCLE-36). On a
+ * fresh import there is no local account list, but the seed may already own
+ * accounts that were deployed on-chain in a previous install. Derivation is
+ * deterministic and indexed (deriveAccount), so we rediscover them by probing
+ * each index: `isDeployed(i)` reports whether the account at derivation index
+ * `i` is initialized on-chain.
+ *
+ * Returns the number of accounts to track — the highest deployed index + 1.
+ * Index 0 is ALWAYS counted (result >= 1) so a never-deployed fresh import still
+ * lands on its primary account. The scan stops after `gapLimit` consecutive
+ * undeployed indices and never probes past `maxAccounts`, so a node that always
+ * answers "deployed" cannot drive an unbounded scan (availability — S1/S12).
+ *
+ * `isDeployed` is a trust-the-node read (see LIFECYCLE-36's adversarial note): a
+ * lying node can under-report (undercount, recoverable via "+ New account") or
+ * over-report (a harmless empty phantom account). A throw propagates so a probe
+ * failure aborts the boot for retry rather than persisting a partial count.
+ *
+ * Pure except for the injected probe, so the bound/gap/keep-index-0 logic is
+ * unit-tested directly (tests/unit/discovery.test.ts).
+ */
+export async function discoverAccountCount(
+    isDeployed: (index: number) => Promise<boolean>,
+    maxAccounts: number,
+    gapLimit: number = ACCOUNT_DISCOVERY_GAP_LIMIT,
+): Promise<number> {
+    if (!Number.isInteger(maxAccounts) || maxAccounts < 1) {
+        throw new Error(`discoverAccountCount: maxAccounts must be a positive integer, got ${maxAccounts}`);
+    }
+    let highestDeployed = 0; // index 0 is always part of the wallet
+    let gap = 0;
+    for (let i = 0; i < maxAccounts && gap < gapLimit; i++) {
+        if (await isDeployed(i)) {
+            highestDeployed = i;
+            gap = 0;
+        } else {
+            gap++;
+        }
+    }
+    return highestDeployed + 1;
+}
+
+/**
  * Deterministic bridge-claim secret. Claims used to be RANDOM, which made the
  * extension's local storage the only copy — uninstalling mid-bridge stranded
  * the deposit forever (observed live, real funds). Deriving from the seed
@@ -118,6 +170,61 @@ export async function deriveBridgeClaimSecret(
         seed,
         `v${DERIVATION_VERSION}/account/${accountIndex}/bridge-claim/${claimIndex}`,
     );
+}
+
+/**
+ * Decide whether a node's reported identity is compatible with the configured
+ * network (NETWORK-22 / NETWORK-36). Pure + exported so the wrong-chain HARD
+ * FAIL and the version-drift soft-warn are unit-pinned independently of the
+ * fetch wrapper that calls it. `body` is the parsed node_getNodeInfo JSON-RPC
+ * response.
+ *
+ *  - THROWS on a definite L1 chain-id mismatch — anchoring the wallet to the
+ *    wrong chain is never safe.
+ *  - Returns a non-fatal warning for SDK shape drift (no l1ChainId field) and
+ *    for a rollup-version mismatch: the node may have upgraded ahead of this
+ *    build, and a hard brick would take every user offline on an upgrade.
+ *  - Skips BOTH checks for sandbox/custom networks (l1ChainId === 0 /
+ *    rollupVersion === 0 sentinels).
+ */
+export function assertNodeIdentity(
+    body: unknown,
+    network: Pick<AztecNetwork, "name" | "nodeUrl" | "l1ChainId" | "rollupVersion">,
+): { warnings: string[] } {
+    const info = ((body as { result?: Record<string, unknown> } | null)?.result ?? {}) as Record<
+        string,
+        unknown
+    >;
+    const warnings: string[] = [];
+    // l1ChainId is sometimes serialized as a string over JSON-RPC — coerce.
+    const nodeChainId = Number(info.l1ChainId ?? info.chainId);
+    if (network.l1ChainId !== 0) {
+        if (!Number.isFinite(nodeChainId)) {
+            // Shape drift, not a confirmed mismatch — warn loudly, don't brick boot.
+            warnings.push(
+                `node_getNodeInfo returned no l1ChainId (SDK shape drift?). ` +
+                    `Skipping the chain-id check for ${network.nodeUrl}.`,
+            );
+        } else if (nodeChainId !== network.l1ChainId) {
+            // Unambiguous: the node is on a DIFFERENT L1 chain than this network.
+            throw new Error(
+                `Connected to the wrong chain: the node at ${network.nodeUrl} reports L1 chain ` +
+                    `${nodeChainId}, but ${network.name} expects ${network.l1ChainId}. ` +
+                    `Check the network selector.`,
+            );
+        }
+    }
+    if (network.rollupVersion !== 0) {
+        const nodeRollup = Number(info.rollupVersion);
+        if (Number.isFinite(nodeRollup) && nodeRollup !== network.rollupVersion) {
+            warnings.push(
+                `Node rollup version ${nodeRollup} differs from the pinned ${network.rollupVersion} ` +
+                    `for ${network.name}. This build of Fizz may be incompatible with the current ` +
+                    `network — update from the Web Store if transactions start failing.`,
+            );
+        }
+    }
+    return { warnings };
 }
 
 async function checkNodeReachable(network: AztecNetwork, timeoutMs = 6000): Promise<void> {
@@ -154,43 +261,12 @@ async function checkNodeReachable(network: AztecNetwork, timeoutMs = 6000): Prom
         clearTimeout(timer);
     }
 
-    // Identity checks. Skip for the local sandbox (l1ChainId === 0 sentinel /
-    // rollupVersion === 0): those are intentionally unpinned.
-    const info = body?.result ?? {};
-    // l1ChainId is sometimes serialized as a string over JSON-RPC — coerce.
-    const nodeChainId = Number(info.l1ChainId ?? info.chainId);
-    if (network.l1ChainId !== 0) {
-        if (!Number.isFinite(nodeChainId)) {
-            // Shape drift, not a confirmed mismatch — warn loudly, don't brick boot.
-            console.warn(
-                `Node identity: node_getNodeInfo returned no l1ChainId (SDK shape drift?). ` +
-                    `Skipping the chain-id check for ${nodeUrl}.`,
-            );
-        } else if (nodeChainId !== network.l1ChainId) {
-            // Unambiguous: the node is on a DIFFERENT L1 chain than this network.
-            // Hard fail — anchoring the wallet here is never safe.
-            throw new Error(
-                `Connected to the wrong chain: the node at ${nodeUrl} reports L1 chain ` +
-                    `${nodeChainId}, but ${network.name} expects ${network.l1ChainId}. ` +
-                    `Check the network selector.`,
-            );
-        }
-    }
-    // Rollup/protocol version: a mismatch signals the bundled wallet may be
-    // incompatible with the live network (an upgrade happened). We WARN rather
-    // than hard-throw: the PXE reads the canonical rollupVersion from the node,
-    // and a hard brick would take every user offline if the node is upgraded
-    // before this pinned value + Web Store build catch up. The §release gate
-    // re-verifies this value after any network upgrade.
-    if (network.rollupVersion !== 0) {
-        const nodeRollup = Number(info.rollupVersion);
-        if (Number.isFinite(nodeRollup) && nodeRollup !== network.rollupVersion) {
-            console.warn(
-                `Node rollup version ${nodeRollup} differs from the pinned ${network.rollupVersion} ` +
-                    `for ${network.name}. This build of Fizz may be incompatible with the current ` +
-                    `network — update from the Web Store if transactions start failing.`,
-            );
-        }
+    // Identity checks (extracted + unit-pinned in assertNodeIdentity): a definite
+    // wrong-chain throws (propagates → boot error); shape drift and a rollup
+    // version mismatch surface as non-fatal warnings. Both are skipped for the
+    // sandbox/custom sentinels (l1ChainId === 0 / rollupVersion === 0).
+    for (const w of assertNodeIdentity(body, network).warnings) {
+        console.warn(`Node identity: ${w}`);
     }
 }
 
