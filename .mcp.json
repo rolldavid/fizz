@@ -7,6 +7,10 @@
     "noir": {
       "command": "npx",
       "args": ["-y", "noir-mcp-server@latest"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
     }
   }
 }

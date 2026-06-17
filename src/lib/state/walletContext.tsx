@@ -49,8 +49,11 @@ type AccountManager = Awaited<ReturnType<AztecWallet["createSchnorrAccount"]>>;
 
 type Status = "uninitialized" | "locked" | "unlocking" | "loading" | "ready";
 
-/** Re-lock the wallet after this much user inactivity while unlocked. */
-const IDLE_LOCK_MS = 5 * 60_000;
+/** Re-lock the wallet after this much user inactivity while unlocked. 60 min: a
+ *  pocket-change light wallet favors not nagging the user over a tight window —
+ *  the decrypted seed stays in memory + the session cache while idle for this
+ *  long (acceptable for low-value use; disk encryption is the at-rest backstop). */
+const IDLE_LOCK_MS = 60 * 60_000;
 
 /**
  * Absolute ceiling on how long the idle auto-lock may be DEFERRED by an
@@ -762,9 +765,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     );
 
     const unlockWithPasskey = useCallback(async () => {
+        // Verify FIRST, while the Unlock screen is still mounted, so a failure
+        // surfaces its error there. Only flip to the "unlocking" loading screen
+        // once the secret is in hand — otherwise the failure path remounts a
+        // fresh Unlock and the error is discarded (and a wrong attempt flashes a
+        // misleading "Connecting…").
+        const secret = await vaultStore.unlockWithPasskey();
         setStatus("unlocking");
         try {
-            const secret = await vaultStore.unlockWithPasskey();
             await handleUnlocked(network, secret);
         } catch (err) {
             setStatus("locked");
@@ -774,9 +782,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     const unlockWithPassphrase = useCallback(
         async (passphrase: string) => {
+            // Verify FIRST (Unlock still mounted) so a wrong passphrase shows its
+            // error there; flip to the loading screen only after success. See
+            // unlockWithPasskey above.
+            const secret = await vaultStore.unlockWithPassphrase(passphrase);
             setStatus("unlocking");
             try {
-                const secret = await vaultStore.unlockWithPassphrase(passphrase);
                 await handleUnlocked(network, secret);
             } catch (err) {
                 setStatus("locked");

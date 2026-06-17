@@ -1,7 +1,7 @@
 {
   "name": "fizz-wallet",
   "version": "0.1.3",
-  "description": "Fizz \u2014 dark-mode Aztec network browser-extension wallet. Private + public balances, in-browser PXE, passkey or mnemonic unlock.",
+  "description": "Fizz — dark-mode Aztec network browser-extension wallet. Private + public balances, in-browser PXE, passkey or mnemonic unlock.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,6 +14,12 @@
     "test:watch": "vitest --project unit",
     "test:e2e": "vitest run --project e2e",
     "test:all": "vitest run",
+    "test:pw": "playwright test",
+    "test:pw:headless": "PW_HEADLESS=1 playwright test",
+    "test:pw:ui": "playwright test --ui",
+    "test:pw:network": "PW_NETWORK=1 playwright test",
+    "test:pw:funded": "playwright test funded",
+    "test:pw:report": "playwright show-report",
     "verify": "yarn install --frozen-lockfile && yarn typecheck && yarn test && yarn build",
     "package": "yarn verify && cd dist && zip -rq ../aztec-wallet-$npm_package_version.zip . && cd .. && echo \"Packaged: aztec-wallet-$npm_package_version.zip\"",
     "package:store": "yarn verify && node scripts/strip-manifest-key.mjs && cd dist && zip -rq ../fizz-webstore-$npm_package_version.zip . && cd .. && echo \"Packaged for the Web Store (no key): fizz-webstore-$npm_package_version.zip\"",
@@ -40,6 +46,7 @@
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "2.4.0",
+    "@playwright/test": "1.61.0",
     "@types/chrome": "0.0.279",
     "@types/qrcode": "1.5.6",
     "@types/react": "18.3.29",

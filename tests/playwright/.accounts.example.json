@@ -1,0 +1,18 @@
+{
+  "_comment": "Copy to .accounts.local.json (gitignored) and fill in REAL values. Never commit the filled copy. See tests/playwright/README.md. network 'alpha' = the LIVE Aztec mainnet (prod) — real funds, real fees. No password/passkey needed: the test sets its own password when importing the phrase.",
+  "_mode_same_wallet": "Provide ONLY 'a' (one phrase) + 'token' + 'accounts' (two addresses from that seed) → transfers between those two accounts.",
+  "_mode_two_wallets": "Instead add 'b' with a DIFFERENT phrase → transfers between two separate wallets.",
+  "network": "alpha",
+  "amount": "1",
+  "token": {
+    "address": "0xREPLACE_WITH_A_SENDABLE_TOKEN_CONTRACT_ADDRESS",
+    "symbol": "TEST"
+  },
+  "a": {
+    "mnemonic": "word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12"
+  },
+  "accounts": [
+    "0xACCOUNT_ADDRESS_ONE_FROM_WALLET_A",
+    "0xACCOUNT_ADDRESS_TWO_FROM_WALLET_A"
+  ]
+}

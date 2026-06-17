@@ -29,3 +29,14 @@ CLAUDE.MD
 # public docs are never caught by the ignore.
 /INVARIANTS.internal.md
 /INVARIANTS.fixlist.md
+
+# Playwright e2e artifacts
+/playwright-report
+/test-results
+/blob-report
+
+# Funded e2e accounts — REAL 12-word seed phrases with live tokens. NEVER
+# commit. Fill in tests/playwright/.accounts.local.json (the committed
+# .accounts.example.json shows the shape), or use PW_ACCOUNT_* env vars.
+/tests/playwright/.accounts.local.json
+.env.e2e.local
